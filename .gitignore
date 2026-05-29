@@ -1,0 +1,14 @@
+# Swift / SwiftPM
+.build/
+.swiftpm/
+Package.resolved
+
+# Xcode userdata (if anyone opens the package in Xcode)
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+
+# Built app bundle (rebuilt by make-app.sh on demand)
+BigEdit.app/
+
+# macOS
+.DS_Store

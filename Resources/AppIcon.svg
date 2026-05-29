@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <title>Iceberg</title>
+  <desc>App icon: a faceted iceberg crossing the waterline. The visible portion above water is bright; the submerged mass is the same shape, tinted by the water below.</desc>
+
+  <defs>
+    <!--
+      Iceberg silhouette as a single continuous path.
+      Coordinate system: 1024x1024. Waterline at y=512.
+      Peak1 at (469, 102), valley at (589, 273), peak2 at (708, 170),
+      shape widens below water and tapers to a base.
+    -->
+    <clipPath id="berg-clip">
+      <path d="M 290 512
+               L 469 102
+               L 589 273
+               L 708 170
+               L 794 512
+               L 887 768
+               L 750 990
+               L 410 1015
+               L 188 870
+               L 154 632
+               Z"/>
+    </clipPath>
+  </defs>
+
+  <!-- Sky (above water) -->
+  <rect x="0" y="0" width="1024" height="512" fill="#dde8f2"/>
+
+  <!-- Water (below water) -->
+  <rect x="0" y="512" width="1024" height="512" fill="#0d2940"/>
+
+  <!-- Iceberg base silhouette -->
+  <path d="M 290 512 L 469 102 L 589 273 L 708 170 L 794 512 L 887 768 L 750 990 L 410 1015 L 188 870 L 154 632 Z"
+        fill="#dce8f2"
+        stroke="#0d2940"
+        stroke-width="3"
+        stroke-linejoin="round"/>
+
+  <!-- Internal facets, clipped to silhouette -->
+  <g clip-path="url(#berg-clip)">
+    <!-- Above-water facets -->
+    <polygon points="290,512 469,102 504,512" fill="#ffffff"/>
+    <polygon points="469,102 589,273 504,512" fill="#c4d6e6"/>
+    <polygon points="589,273 708,170 640,512 504,512" fill="#a8c0d4"/>
+    <polygon points="708,170 794,512 640,512" fill="#8eaac0"/>
+
+    <!-- Underwater facets (same lightness; will be tinted by overlay below) -->
+    <polygon points="154,632 540,512 188,870" fill="#c4d6e4"/>
+    <polygon points="540,512 887,768 750,990 540,820" fill="#a8c0d4"/>
+    <polygon points="540,512 540,820 188,870" fill="#b4c8dc"/>
+    <polygon points="540,820 750,990 410,1015 188,870" fill="#9ab4cc"/>
+
+    <!-- Ridge lines -->
+    <line x1="469" y1="102" x2="504" y2="512" stroke="#0d2940" stroke-width="2.5" opacity="0.5"/>
+    <line x1="589" y1="273" x2="504" y2="512" stroke="#0d2940" stroke-width="2.5" opacity="0.5"/>
+    <line x1="708" y1="170" x2="640" y2="512" stroke="#0d2940" stroke-width="2.5" opacity="0.5"/>
+    <line x1="540" y1="512" x2="540" y2="820" stroke="#0d2940" stroke-width="2" opacity="0.4"/>
+    <line x1="540" y1="820" x2="188" y2="870" stroke="#0d2940" stroke-width="2" opacity="0.4"/>
+    <line x1="540" y1="820" x2="750" y2="990" stroke="#0d2940" stroke-width="2" opacity="0.4"/>
+
+    <!-- Water tint over underwater portion -->
+    <rect x="0" y="512" width="1024" height="512" fill="#0d2940" opacity="0.55"/>
+  </g>
+
+  <!-- Crisp outline on top -->
+  <path d="M 290 512 L 469 102 L 589 273 L 708 170 L 794 512 L 887 768 L 750 990 L 410 1015 L 188 870 L 154 632 Z"
+        fill="none"
+        stroke="#0d2940"
+        stroke-width="3"
+        stroke-linejoin="round"/>
+
+  <!-- Waterline -->
+  <line x1="0" y1="512" x2="1024" y2="512" stroke="#000000" stroke-width="3" opacity="0.55"/>
+</svg>
