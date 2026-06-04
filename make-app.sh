@@ -19,29 +19,24 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp .build/release/BigEdit "$APP/Contents/MacOS/BigEdit"
 
 # --- App icon -----------------------------------------------------------------
-# Renders Resources/AppIcon.svg into a full multi-resolution .icns via
-# rsvg-convert + iconutil. Skipped (without failing) if rsvg-convert is missing.
-ICON_SVG="Resources/AppIcon.svg"
+# Slices the 1024² master Resources/AppIcon.png into a full multi-resolution
+# .icns via sips + iconutil (both ship with macOS — no extra dependency).
+# Regenerate the master from new artwork with tools/make-icon.swift.
+ICON_PNG="Resources/AppIcon.png"
 ICON_KEY=""
-if [ -f "$ICON_SVG" ] && command -v rsvg-convert >/dev/null; then
+if [ -f "$ICON_PNG" ]; then
     PNGS=$(mktemp -d)
     ICONSET="$PNGS/AppIcon.iconset"
     mkdir -p "$ICONSET"
 
-    for size in 16 32 64 128 256 512 1024; do
-        rsvg-convert -w "$size" -h "$size" "$ICON_SVG" -o "$PNGS/$size.png"
+    for spec in \
+        "16:icon_16x16" "32:icon_16x16@2x" "32:icon_32x32" "64:icon_32x32@2x" \
+        "128:icon_128x128" "256:icon_128x128@2x" "256:icon_256x256" \
+        "512:icon_256x256@2x" "512:icon_512x512" "1024:icon_512x512@2x"; do
+        px="${spec%%:*}"
+        name="${spec##*:}"
+        sips -z "$px" "$px" "$ICON_PNG" --out "$ICONSET/$name.png" >/dev/null
     done
-
-    cp "$PNGS/16.png"   "$ICONSET/icon_16x16.png"
-    cp "$PNGS/32.png"   "$ICONSET/icon_16x16@2x.png"
-    cp "$PNGS/32.png"   "$ICONSET/icon_32x32.png"
-    cp "$PNGS/64.png"   "$ICONSET/icon_32x32@2x.png"
-    cp "$PNGS/128.png"  "$ICONSET/icon_128x128.png"
-    cp "$PNGS/256.png"  "$ICONSET/icon_128x128@2x.png"
-    cp "$PNGS/256.png"  "$ICONSET/icon_256x256.png"
-    cp "$PNGS/512.png"  "$ICONSET/icon_256x256@2x.png"
-    cp "$PNGS/512.png"  "$ICONSET/icon_512x512.png"
-    cp "$PNGS/1024.png" "$ICONSET/icon_512x512@2x.png"
 
     iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
     rm -rf "$PNGS"
