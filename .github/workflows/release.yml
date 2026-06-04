@@ -77,16 +77,38 @@ jobs:
           BUILD_NUMBER: ${{ github.run_number }}
         run: ./make-app.sh
 
-      - name: Build DMG
-        run: scripts/make-dmg.sh "$DMG_NAME"
+      - name: Write notarization key
+        env:
+          PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+        run: printf '%s' "$PRIVATE_KEY" > "$RUNNER_TEMP/AuthKey.p8"
 
-      - name: Notarize and staple
+      - name: Notarize and staple the app
         env:
           KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
-          PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
         run: |
-          printf '%s' "$PRIVATE_KEY" > "$RUNNER_TEMP/AuthKey.p8"
+          # Notarize the app itself and staple the ticket into the bundle, so it
+          # launches even on a first run with no network (e.g. after the user
+          # copies it out of the DMG to /Applications while offline).
+          ditto -c -k --keepParent BigEdit.app "$RUNNER_TEMP/BigEdit-app.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/BigEdit-app.zip" \
+            --key "$RUNNER_TEMP/AuthKey.p8" \
+            --key-id "$KEY_ID" \
+            --issuer "$ISSUER_ID" \
+            --wait
+          xcrun stapler staple BigEdit.app
+          xcrun stapler validate BigEdit.app
+
+      - name: Build DMG
+        run: scripts/make-dmg.sh "$DMG_NAME"
+
+      - name: Notarize and staple the DMG
+        env:
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: |
+          # The DMG is built from the already-stapled app, so it ships both
+          # tickets. Notarize and staple the DMG container as well.
           xcrun notarytool submit "$DMG_NAME" \
             --key "$RUNNER_TEMP/AuthKey.p8" \
             --key-id "$KEY_ID" \
@@ -94,7 +116,7 @@ jobs:
             --wait
           xcrun stapler staple "$DMG_NAME"
           xcrun stapler validate "$DMG_NAME"
-          rm -f "$RUNNER_TEMP/AuthKey.p8"
+          rm -f "$RUNNER_TEMP/AuthKey.p8" "$RUNNER_TEMP/BigEdit-app.zip"
 
       - name: Rename DMG with version
         id: artifact

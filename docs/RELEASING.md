@@ -60,9 +60,11 @@ The release workflow needs five repository secrets
 3. The **Release** workflow then:
    - runs the tests,
    - builds the arm64 app and signs it with the hardened runtime,
-   - packages a DMG (with an `/Applications` drag-install shortcut) and signs it,
-   - submits the DMG to Apple's notary service and waits for the result,
-   - staples the notarization ticket,
+   - notarizes the app and staples the ticket into the bundle (so it launches
+     even on a first run with no network),
+   - packages a DMG (with an `/Applications` drag-install shortcut) from the
+     stapled app and signs the DMG,
+   - notarizes the DMG and staples it too,
    - creates a GitHub Release named **BigEdit 1.2.3** with the
      `BigEdit-1.2.3.dmg` attached and auto-generated notes.
 
@@ -95,7 +97,10 @@ security find-identity -v -p codesigning | grep "Developer ID Application"
 ## Verifying a built DMG
 
 ```sh
-xcrun stapler validate BigEdit-1.2.3.dmg          # ticket is stapled
-spctl -a -t open --context context:primary-signal -vvv BigEdit-1.2.3.dmg
+xcrun stapler validate BigEdit-1.2.3.dmg          # DMG ticket is stapled
+hdiutil attach BigEdit-1.2.3.dmg
+xcrun stapler validate /Volumes/BigEdit/BigEdit.app   # app ticket is stapled too
 codesign --verify --strict --verbose=2 /Volumes/BigEdit/BigEdit.app
+spctl -a -t exec -vvv /Volumes/BigEdit/BigEdit.app    # -> accepted, Notarized Developer ID
+hdiutil detach /Volumes/BigEdit
 ```
