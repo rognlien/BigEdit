@@ -10,5 +10,8 @@ Package.resolved
 # Built app bundle (rebuilt by make-app.sh on demand)
 BigEdit.app/
 
+# Release artifacts (built by scripts/make-dmg.sh and CI)
+*.dmg
+
 # macOS
 .DS_Store

@@ -4,6 +4,13 @@
 set -e
 cd "$(dirname "$0")"
 
+# Bundle metadata. CI overrides MARKETING_VERSION / BUILD_NUMBER from the git
+# tag and run number; locally they fall back to the defaults below.
+BUNDLE_ID="${BUNDLE_ID:-io.maendeleo.BigEdit}"
+MARKETING_VERSION="${MARKETING_VERSION:-0.7}"
+BUILD_NUMBER="${BUILD_NUMBER:-7}"
+COPYRIGHT="${COPYRIGHT:-© 2026 Bendik Johansen}"
+
 swift build -c release
 
 APP="BigEdit.app"
@@ -48,13 +55,14 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <plist version="1.0">
 <dict>
     <key>CFBundleExecutable</key><string>BigEdit</string>
-    <key>CFBundleIdentifier</key><string>dev.bigedit.BigEdit</string>
+    <key>CFBundleIdentifier</key><string>${BUNDLE_ID}</string>
     <key>CFBundleName</key><string>BigEdit</string>
     <key>CFBundleDisplayName</key><string>BigEdit</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-    <key>CFBundleShortVersionString</key><string>0.7</string>
-    <key>CFBundleVersion</key><string>7</string>
+    <key>CFBundleShortVersionString</key><string>${MARKETING_VERSION}</string>
+    <key>CFBundleVersion</key><string>${BUILD_NUMBER}</string>
+    <key>NSHumanReadableCopyright</key><string>${COPYRIGHT}</string>
     <key>LSMinimumSystemVersion</key><string>13.0</string>
     <key>NSHighResolutionCapable</key><true/>
     <key>NSPrincipalClass</key><string>NSApplication</string>
@@ -82,5 +90,21 @@ $ICON_KEY
 </dict>
 </plist>
 PLIST
+
+# --- Code signing (optional) --------------------------------------------------
+# When SIGN_IDENTITY is set (e.g. in CI, or locally for a release build), sign
+# the bundle with the hardened runtime so it can be notarized. Plain local
+# builds leave SIGN_IDENTITY unset and ship unsigned.
+if [ -n "${SIGN_IDENTITY:-}" ]; then
+    ENTITLEMENTS="${ENTITLEMENTS:-BigEdit.entitlements}"
+    codesign --force --options runtime --timestamp \
+        --entitlements "$ENTITLEMENTS" \
+        --sign "$SIGN_IDENTITY" "$APP/Contents/MacOS/BigEdit"
+    codesign --force --options runtime --timestamp \
+        --entitlements "$ENTITLEMENTS" \
+        --sign "$SIGN_IDENTITY" "$APP"
+    codesign --verify --strict --verbose=2 "$APP"
+    echo "Signed $APP with: $SIGN_IDENTITY"
+fi
 
 echo "Built $APP — launch with: open $APP"

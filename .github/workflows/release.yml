@@ -1,0 +1,120 @@
+name: Release
+
+# Cuts a signed, notarized, stapled DMG and (for tag pushes) publishes it to a
+# GitHub Release. Push a tag like `v1.2.3` to release, or run manually from the
+# Actions tab to produce a downloadable artifact without publishing.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Marketing version (e.g. 1.2.3)'
+        required: false
+        default: '0.0.0-dev'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-15
+    env:
+      DMG_NAME: BigEdit.dmg
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install librsvg (renders the app icon)
+        run: brew install librsvg
+
+      - name: Run tests
+        run: swift test
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="${{ github.event.inputs.version }}"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Building BigEdit $VERSION (build ${GITHUB_RUN_NUMBER})"
+
+      - name: Import Developer ID certificate
+        env:
+          CERT_B64: ${{ secrets.DEVELOPER_ID_CERT_P12_BASE64 }}
+          CERT_PW: ${{ secrets.DEVELOPER_ID_CERT_PASSWORD }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/build.keychain-db"
+          KEYCHAIN_PW="$(openssl rand -base64 24)"
+          echo "$CERT_B64" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+
+          security create-keychain -p "$KEYCHAIN_PW" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PW" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" -P "$CERT_PW" \
+            -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PW" \
+            "$KEYCHAIN" >/dev/null
+          # Put our keychain first in the search list so codesign finds the key.
+          security list-keychains -d user -s "$KEYCHAIN" login.keychain-db
+
+          IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN" \
+            | grep 'Developer ID Application' | head -1 | sed -E 's/.*"(.*)".*/\1/')"
+          if [ -z "$IDENTITY" ]; then
+            echo "error: no Developer ID Application identity found in the keychain" >&2
+            exit 1
+          fi
+          echo "::add-mask::$IDENTITY"
+          echo "SIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
+          rm -f "$RUNNER_TEMP/cert.p12"
+
+      - name: Build and sign the app
+        env:
+          MARKETING_VERSION: ${{ steps.version.outputs.version }}
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: ./make-app.sh
+
+      - name: Build DMG
+        run: scripts/make-dmg.sh "$DMG_NAME"
+
+      - name: Notarize and staple
+        env:
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+        run: |
+          printf '%s' "$PRIVATE_KEY" > "$RUNNER_TEMP/AuthKey.p8"
+          xcrun notarytool submit "$DMG_NAME" \
+            --key "$RUNNER_TEMP/AuthKey.p8" \
+            --key-id "$KEY_ID" \
+            --issuer "$ISSUER_ID" \
+            --wait
+          xcrun stapler staple "$DMG_NAME"
+          xcrun stapler validate "$DMG_NAME"
+          rm -f "$RUNNER_TEMP/AuthKey.p8"
+
+      - name: Rename DMG with version
+        id: artifact
+        run: |
+          OUT="BigEdit-${{ steps.version.outputs.version }}.dmg"
+          mv "$DMG_NAME" "$OUT"
+          echo "path=$OUT" >> "$GITHUB_OUTPUT"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BigEdit-dmg
+          path: ${{ steps.artifact.outputs.path }}
+
+      - name: Publish GitHub Release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            "${{ steps.artifact.outputs.path }}" \
+            --title "BigEdit ${{ steps.version.outputs.version }}" \
+            --generate-notes
