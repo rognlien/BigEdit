@@ -87,6 +87,20 @@ final class DocumentView: NSView, FindBarDelegate {
         return editModel.rule
     }
 
+    /// True while the document has an unsaved deferred-edit rule.
+    var isEdited: Bool {
+        return editModel.isDirty
+    }
+
+    /// Cancels all background work for this document. Call before dropping the
+    /// document so its `MappedFile` can be unmapped cleanly.
+    func close() {
+        resetSearch()
+        statisticsScan?.cancel()
+        statisticsScan = nil
+        editModel.clear()
+    }
+
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
         layoutComponents()

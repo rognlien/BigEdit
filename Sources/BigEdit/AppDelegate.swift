@@ -1,19 +1,26 @@
 import AppKit
 
-/// Owns the window, the menu, and the open-file flow.
-final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, NSMenuDelegate {
+/// Owns the window, the menu, and the set of open documents. Several documents
+/// can be open at once; a left-side sidebar switches between them, and the
+/// active document is mounted in the content area on the right.
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
+                         NSMenuDelegate, NSSplitViewDelegate {
 
     private var window: NSWindow!
-    private let documentView = DocumentView(frame: NSRect(x: 0, y: 0, width: 900, height: 640))
+    private let splitView = NSSplitView()
+    private let sidebar = DocumentListView(frame: NSRect(x: 0, y: 0, width: 220, height: 640))
+    private let contentContainer = ContentContainerView(frame: NSRect(x: 0, y: 0, width: 680, height: 640))
 
-    private var openFile: MappedFile?
-    private var lineIndex: LineIndex?
-    private var fileName = ""
+    private var documents: [Document] = []
+    private var activeIndex: Int?
     private var saveProgressSheet: SaveProgressSheet?
 
     private let openRecentMenu = NSMenu(title: "Open Recent")
     private var didOpenFromURL = false
     private static let lastFilePathDefaultsKey = "BigEditLastFilePath"
+
+    private static let minSidebarWidth: CGFloat = 190
+    private static let minContentWidth: CGFloat = 360
 
     private let numberFormatter: NumberFormatter = {
         let formatter = NumberFormatter()
@@ -21,28 +28,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         return formatter
     }()
 
+    // MARK: - Active document accessors
+
+    private var activeDocument: Document? {
+        guard let activeIndex, documents.indices.contains(activeIndex) else {
+            return nil
+        }
+        return documents[activeIndex]
+    }
+
+    private var activeView: DocumentView? {
+        activeDocument?.view
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         buildMenu()
-
-        window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 900, height: 640),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
-            backing: .buffered,
-            defer: false
-        )
-        window.title = "BigEdit"
-        window.contentView = documentView
-        // BigEdit has only one document per process — opt out of the system
-        // tab bar AppKit would otherwise show when "Prefer tabs" is on.
-        window.tabbingMode = .disallowed
-        // Keep the window object alive after the user closes it, so a Dock
-        // click can reopen the same document instead of relaunching the app.
-        window.isReleasedWhenClosed = false
-        // AppKit will remember the window's size and position between launches.
-        window.setFrameAutosaveName("BigEditMainWindow")
-        window.center()
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        buildWindow()
 
         // If the launch didn't come with a file (via `application(_:open:)`),
         // restore the last one viewed. Scheduled on the next run loop tick so
@@ -50,6 +51,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         DispatchQueue.main.async { [weak self] in
             self?.restoreLastFileIfNeeded()
         }
+    }
+
+    private func buildWindow() {
+        window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 900, height: 640),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "BigEdit"
+        // We do our own multi-document switching in one window — opt out of the
+        // system tab bar AppKit would otherwise show when "Prefer tabs" is on.
+        window.tabbingMode = .disallowed
+        // Keep the window object alive after the user closes it, so a Dock
+        // click can reopen the same documents instead of relaunching the app.
+        window.isReleasedWhenClosed = false
+        window.setFrameAutosaveName("BigEditMainWindow")
+
+        splitView.isVertical = true
+        splitView.dividerStyle = .thin
+        splitView.delegate = self
+        splitView.addArrangedSubview(sidebar)
+        splitView.addArrangedSubview(contentContainer)
+        splitView.setHoldingPriority(.defaultLow + 1, forSubviewAt: 0)
+        splitView.autosaveName = "BigEditSplit"
+
+        sidebar.onSelect = { [weak self] index in
+            self?.selectDocument(at: index)
+        }
+        sidebar.onClose = { [weak self] index in
+            self?.closeDocument(at: index)
+        }
+
+        window.contentView = splitView
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -64,9 +102,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     ) -> Bool {
         if !hasVisibleWindows {
             window.makeKeyAndOrderFront(nil)
-            // If we never opened anything (rare — only if the user closed the
-            // window before opening a file), try to restore the last one.
-            if openFile == nil {
+            // If nothing is open (rare — only if the window was closed before a
+            // file was opened), try to restore the last one.
+            if documents.isEmpty {
                 restoreLastFileIfNeeded()
             }
         }
@@ -76,21 +114,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     // MARK: - URL opens (Finder double-click, drag-to-Dock, Open Recent)
 
     func application(_ sender: NSApplication, open urls: [URL]) {
-        if let url = urls.first {
+        if !urls.isEmpty {
             didOpenFromURL = true
-            loadFile(at: url)
+            openDocuments(at: urls)
         }
     }
 
     private func restoreLastFileIfNeeded() {
-        if didOpenFromURL || openFile != nil {
+        if didOpenFromURL || !documents.isEmpty {
             return
         }
         guard let path = UserDefaults.standard.string(forKey: AppDelegate.lastFilePathDefaultsKey),
               FileManager.default.fileExists(atPath: path) else {
             return
         }
-        loadFile(at: URL(fileURLWithPath: path))
+        openDocuments(at: [URL(fileURLWithPath: path)])
     }
 
     // MARK: - Open Recent menu
@@ -134,7 +172,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
 
     @objc private func openRecentDocument(_ sender: NSMenuItem) {
         if let url = sender.representedObject as? URL {
-            loadFile(at: url)
+            openDocuments(at: [url])
         }
     }
 
@@ -187,11 +225,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
 
         fileMenu.addItem(NSMenuItem.separator())
 
-        fileMenu.addItem(
-            withTitle: "Close Window",
-            action: #selector(NSWindow.performClose(_:)),
+        let closeItem = NSMenuItem(
+            title: "Close",
+            action: #selector(closeActiveDocument),
             keyEquivalent: "w"
         )
+        closeItem.target = self
+        fileMenu.addItem(closeItem)
         fileMenuItem.submenu = fileMenu
 
         let editMenuItem = NSMenuItem()
@@ -275,27 +315,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     }
 
     @objc private func performFind() {
-        documentView.showFindBar(replace: false)
+        activeView?.showFindBar(replace: false)
     }
 
     @objc private func performFindReplace() {
-        documentView.showFindBar(replace: true)
+        activeView?.showFindBar(replace: true)
     }
 
     @objc private func toggleInfoPane() {
-        documentView.toggleInfoPane()
+        activeView?.toggleInfoPane()
     }
 
     @objc private func performGoToLine() {
-        documentView.showGoToLineSheet()
+        activeView?.showGoToLineSheet()
     }
 
     @objc private func findNext() {
-        documentView.findNext()
+        activeView?.findNext()
     }
 
     @objc private func findPrevious() {
-        documentView.findPrevious()
+        activeView?.findPrevious()
     }
 
     // MARK: - Opening files
@@ -304,54 +344,117 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         let panel = NSOpenPanel()
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = false
+        panel.allowsMultipleSelection = true
         panel.begin { [weak self] response in
-            if response == .OK, let url = panel.url {
-                self?.loadFile(at: url)
+            if response == .OK {
+                self?.openDocuments(at: panel.urls)
             }
         }
     }
 
-    private func loadFile(at url: URL) {
-        if let file = MappedFile(path: url.path) {
-            beginViewing(file: file, name: url.lastPathComponent)
-        } else {
-            presentError("Could not open \(url.lastPathComponent).")
+    /// Opens each URL as a new document and selects the last one.
+    private func openDocuments(at urls: [URL]) {
+        var lastOpened: Int?
+        for url in urls {
+            if let document = makeDocument(at: url) {
+                documents.append(document)
+                lastOpened = documents.count - 1
+                NSDocumentController.shared.noteNewRecentDocumentURL(url)
+                UserDefaults.standard.set(url.path, forKey: AppDelegate.lastFilePathDefaultsKey)
+            } else {
+                presentError("Could not open \(url.lastPathComponent).")
+            }
+        }
+        if let lastOpened {
+            sidebar.reload(documents: documents, selectedIndex: lastOpened)
+            selectDocument(at: lastOpened)
         }
     }
 
-    /// Shows the file immediately and kicks off background indexing.
-    private func beginViewing(file: MappedFile, name: String) {
-        // Stop the previous file's indexer so we don't keep churning on a
-        // document the user has already moved on from.
-        lineIndex?.cancel()
-
+    /// Maps the file, builds a view + index, and kicks off background indexing.
+    private func makeDocument(at url: URL) -> Document? {
+        guard let file = MappedFile(path: url.path) else {
+            return nil
+        }
         let index = LineIndex()
-        openFile = file
-        lineIndex = index
-        fileName = name
+        let view = DocumentView(frame: contentContainer.bounds)
+        let document = Document(url: url, file: file, index: index, view: view)
 
-        let url = URL(fileURLWithPath: file.path)
-        NSDocumentController.shared.noteNewRecentDocumentURL(url)
-        UserDefaults.standard.set(file.path, forKey: AppDelegate.lastFilePathDefaultsKey)
+        view.load(file: file, index: index)
+        index.build(from: file) { [weak self, weak document] in
+            if let self, let document {
+                self.documentDidUpdate(document)
+            }
+        }
+        return document
+    }
 
-        documentView.load(file: file, index: index)
-        window.makeFirstResponder(documentView.viewport)
+    /// Mounts the document at `index` and refreshes window chrome from it.
+    private func selectDocument(at index: Int) {
+        guard documents.indices.contains(index) else {
+            return
+        }
+        activeIndex = index
+        let document = documents[index]
+        contentContainer.setActiveView(document.view)
+        window.makeFirstResponder(document.view.viewport)
+        window.isDocumentEdited = document.isEdited
+        sidebar.applySelection(index)
         updateTitle()
+    }
 
-        index.build(from: file) { [weak self] in
-            self?.documentView.refresh()
-            self?.updateTitle()
+    @objc private func closeActiveDocument() {
+        if let activeIndex {
+            closeDocument(at: activeIndex)
+        }
+    }
+
+    /// Tears down and removes the document at `index`, then selects a neighbour
+    /// (or shows the empty state when the last one closes).
+    private func closeDocument(at index: Int) {
+        guard documents.indices.contains(index) else {
+            return
+        }
+        let document = documents[index]
+        document.view.close()
+        document.index.cancel()
+        documents.remove(at: index)
+
+        if documents.isEmpty {
+            activeIndex = nil
+            contentContainer.setActiveView(nil)
+            window.isDocumentEdited = false
+            sidebar.reload(documents: documents, selectedIndex: nil)
+            updateTitle()
+        } else {
+            let next = min(index, documents.count - 1)
+            sidebar.reload(documents: documents, selectedIndex: next)
+            selectDocument(at: next)
+        }
+    }
+
+    /// Called as a document's index reports progress / completes. Refreshes its
+    /// view and sidebar row, and the window title when it's the active document.
+    private func documentDidUpdate(_ document: Document) {
+        guard let index = documents.firstIndex(where: { $0 === document }) else {
+            return
+        }
+        document.view.refresh()
+        sidebar.reloadRow(index)
+        if index == activeIndex {
+            updateTitle()
         }
     }
 
     private func updateTitle() {
         var title = "BigEdit"
-        if let index = lineIndex, let file = openFile {
-            let lines = numberFormatter.string(from: NSNumber(value: index.count)) ?? "\(index.count)"
-            let bytes = ByteCountFormatter.string(fromByteCount: Int64(file.size), countStyle: .file)
-            let status = index.isComplete ? "" : "  (indexing…)"
-            title = "BigEdit — \(fileName) — \(bytes) — \(lines) lines\(status)"
+        if let document = activeDocument {
+            let lines = numberFormatter.string(from: NSNumber(value: document.index.count))
+                ?? "\(document.index.count)"
+            let bytes = ByteCountFormatter.string(
+                fromByteCount: Int64(document.file.size), countStyle: .file)
+            let status = document.index.isComplete ? "" : "  (indexing…)"
+            title = "BigEdit — \(document.fileName) — \(bytes) — \(lines) lines\(status)"
         }
         window.title = title
     }
@@ -372,30 +475,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         alert.runModal()
     }
 
+    // MARK: - Split view sizing
+
+    func splitView(
+        _ splitView: NSSplitView,
+        constrainMinCoordinate proposedMinimumPosition: CGFloat,
+        ofSubviewAt dividerIndex: Int
+    ) -> CGFloat {
+        max(proposedMinimumPosition, AppDelegate.minSidebarWidth)
+    }
+
+    func splitView(
+        _ splitView: NSSplitView,
+        constrainMaxCoordinate proposedMaximumPosition: CGFloat,
+        ofSubviewAt dividerIndex: Int
+    ) -> CGFloat {
+        min(proposedMaximumPosition, splitView.bounds.width - AppDelegate.minContentWidth)
+    }
+
     // MARK: - Saving
 
     @objc private func save() {
-        if let file = openFile, let rule = documentView.currentRule {
-            performSave(of: file, rule: rule, to: URL(fileURLWithPath: file.path))
+        if let document = activeDocument, let rule = document.view.currentRule {
+            performSave(of: document, rule: rule, to: document.url)
         }
     }
 
     @objc private func saveAs() {
-        if let file = openFile, let rule = documentView.currentRule {
+        if let document = activeDocument, let rule = document.view.currentRule {
             let panel = NSSavePanel()
-            panel.nameFieldStringValue = fileName
-            panel.directoryURL = URL(fileURLWithPath: file.path).deletingLastPathComponent()
+            panel.nameFieldStringValue = document.fileName
+            panel.directoryURL = document.url.deletingLastPathComponent()
             panel.beginSheetModal(for: window) { [weak self] response in
                 if response == .OK, let url = panel.url {
-                    self?.performSave(of: file, rule: rule, to: url)
+                    self?.performSave(of: document, rule: rule, to: url)
                 }
             }
         }
     }
 
-    /// Runs the streaming write under a progress sheet; on success re-loads
-    /// the saved file so the document reflects what is now on disk.
-    private func performSave(of file: MappedFile, rule: ReplacementRule, to destination: URL) {
+    /// Runs the streaming write under a progress sheet; on success re-loads the
+    /// saved document so it reflects what is now on disk (the rule clears).
+    private func performSave(of document: Document, rule: ReplacementRule, to destination: URL) {
         let sheet = SaveProgressSheet(fileName: destination.lastPathComponent)
         let cancelToken = CancelToken()
         sheet.onCancel = { cancelToken.cancel() }
@@ -403,7 +524,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         window.beginSheet(sheet.window) { _ in }
 
         FileWriter.save(
-            file: file,
+            file: document.file,
             rule: rule,
             to: destination,
             cancelToken: cancelToken,
@@ -413,23 +534,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
             completion: { [weak self] result in
                 self?.window.endSheet(sheet.window)
                 self?.saveProgressSheet = nil
-                self?.handleSaveResult(result, destination: destination)
+                self?.handleSaveResult(result, document: document, destination: destination)
             }
         )
     }
 
     private func handleSaveResult(
         _ result: Result<Void, FileWriter.WriteError>,
+        document: Document,
         destination: URL
     ) {
         switch result {
         case .success:
-            loadFile(at: destination)
+            reloadDocument(document, from: destination)
         case .failure(let error):
             if case .cancelled = error {
                 return  // Silent on cancel; original file untouched.
             }
             presentSaveError(error.localizedDescription)
+        }
+    }
+
+    /// Re-points a document at the freshly written file and restarts indexing.
+    private func reloadDocument(_ document: Document, from destination: URL) {
+        guard let file = MappedFile(path: destination.path) else {
+            presentSaveError("Could not reopen \(destination.lastPathComponent).")
+            return
+        }
+        let index = LineIndex()
+        document.view.close()
+        document.reload(url: destination, file: file, index: index)
+        document.view.load(file: file, index: index)
+        index.build(from: file) { [weak self, weak document] in
+            if let self, let document {
+                self.documentDidUpdate(document)
+            }
+        }
+
+        NSDocumentController.shared.noteNewRecentDocumentURL(destination)
+        UserDefaults.standard.set(destination.path, forKey: AppDelegate.lastFilePathDefaultsKey)
+
+        if let index = documents.firstIndex(where: { $0 === document }) {
+            sidebar.reloadRow(index)
+            if index == activeIndex {
+                selectDocument(at: index)
+            }
         }
     }
 
@@ -439,12 +588,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         var enabled = true
         switch menuItem.action {
         case #selector(save), #selector(saveAs):
-            enabled = openFile != nil && documentView.currentRule != nil
+            enabled = activeView?.currentRule != nil
+        case #selector(closeActiveDocument):
+            enabled = activeDocument != nil
         case #selector(toggleInfoPane):
-            menuItem.state = documentView.isInfoPaneVisible ? .on : .off
-            enabled = openFile != nil
-        case #selector(performGoToLine):
-            enabled = openFile != nil
+            menuItem.state = (activeView?.isInfoPaneVisible ?? false) ? .on : .off
+            enabled = activeDocument != nil
+        case #selector(performGoToLine), #selector(performFind),
+             #selector(performFindReplace), #selector(findNext), #selector(findPrevious):
+            enabled = activeDocument != nil
         default:
             break
         }
