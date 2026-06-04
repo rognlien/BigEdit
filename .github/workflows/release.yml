@@ -23,7 +23,7 @@ jobs:
     env:
       DMG_NAME: BigEdit.dmg
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install librsvg (renders the app icon)
         run: brew install librsvg
