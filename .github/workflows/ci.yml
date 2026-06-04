@@ -1,0 +1,20 @@
+name: CI
+
+# Fast correctness guard: builds the release configuration and runs the unit
+# tests on every push to main and on pull requests. No signing or packaging.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-test:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build (release)
+        run: swift build -c release
+
+      - name: Test
+        run: swift test
