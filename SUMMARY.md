@@ -57,7 +57,7 @@ constructs (comments, fences, block scalars) only colour their first row.
 - **Auto-detected syntax mode** by extension (`json` / `xml` / `md` / `yaml` / …) or by first non-whitespace byte (`{`/`[` → JSON, `<` → XML).
 - **Soft wrap for long lines**: lines under 1024 bytes never wrap (they overflow with horizontal scroll if narrower than the window); lines at or above 1024 bytes re-wrap to the viewport width on resize. Minified JSON becomes vertically navigable.
 - **Close-window-keeps-app-alive**: closing the window leaves BigEdit in the Dock; clicking the icon brings the same document back. `⌘Q` quits.
-- **Iceberg icon** rendered from `Resources/AppIcon.svg` into a full multi-resolution `.icns` at build time.
+- **Iceberg icon** sliced from the `Resources/AppIcon.png` master into a full multi-resolution `.icns` at build time (via `sips` + `iconutil`; regenerate the master from new artwork with `tools/make-icon.swift`).
 
 ## The deferred-edit feature (Stage 1 of the "lazy editor")
 
@@ -88,7 +88,7 @@ and the four highlighters. Run with `swift test`.
 
 ## Build & distribution
 
-- `./make-app.sh` — `swift build -c release` → bundle the binary → render the SVG icon at seven sizes via `rsvg-convert` + `iconutil` → write `Info.plist`. Bundle is **currently unsigned**; signing + notarization wiring is on the TODO.
+- `./make-app.sh` — `swift build -c release` → bundle the binary → slice `Resources/AppIcon.png` into the iconset via `sips` + `iconutil` → write `Info.plist` → optionally hardened-runtime-sign when `SIGN_IDENTITY` is set. `scripts/make-dmg.sh` packages the styled installer DMG (via `appdmg`). Signing + notarization run in CI (`.github/workflows/release.yml`).
 - `Package.swift` — executable target + test target.
 - `TODO.md` — outstanding pre-beta items (distribution blockers, polish, optional). The signing/notarization step is the only thing strictly gating a public beta.
 
