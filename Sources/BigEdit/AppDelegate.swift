@@ -18,6 +18,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
     private let openRecentMenu = NSMenu(title: "Open Recent")
     private var didOpenFromURL = false
     private static let lastFilePathDefaultsKey = "BigEditLastFilePath"
+    private static let fontSizeDefaultsKey = "BigEditFontSize"
+
+    /// The editor font size shared by all open documents, persisted across launches.
+    private lazy var editorFontSize: CGFloat = {
+        let stored = UserDefaults.standard.double(forKey: AppDelegate.fontSizeDefaultsKey)
+        return stored > 0 ? CGFloat(stored) : ViewportView.defaultFontSize
+    }()
 
     private static let minSidebarWidth: CGFloat = 190
     private static let minContentWidth: CGFloat = 360
@@ -82,6 +89,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         }
         sidebar.onClose = { [weak self] index in
             self?.closeDocument(at: index)
+        }
+        contentContainer.onOpenFiles = { [weak self] urls in
+            self?.openDocuments(at: urls)
         }
 
         window.contentView = splitView
@@ -271,6 +281,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         infoItem.keyEquivalentModifierMask = [.command, .option]
         infoItem.target = self
         viewMenu.addItem(infoItem)
+
+        viewMenu.addItem(NSMenuItem.separator())
+
+        let zoomInItem = NSMenuItem(title: "Zoom In", action: #selector(zoomIn), keyEquivalent: "+")
+        zoomInItem.target = self
+        viewMenu.addItem(zoomInItem)
+
+        let zoomOutItem = NSMenuItem(title: "Zoom Out", action: #selector(zoomOut), keyEquivalent: "-")
+        zoomOutItem.target = self
+        viewMenu.addItem(zoomOutItem)
+
+        let actualSizeItem = NSMenuItem(title: "Actual Size", action: #selector(actualSize), keyEquivalent: "0")
+        actualSizeItem.target = self
+        viewMenu.addItem(actualSizeItem)
+
         viewMenuItem.submenu = viewMenu
 
         let findMenuItem = NSMenuItem()
@@ -324,6 +349,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
 
     @objc private func toggleInfoPane() {
         activeView?.toggleInfoPane()
+    }
+
+    @objc private func zoomIn() {
+        setEditorFontSize(editorFontSize + 1)
+    }
+
+    @objc private func zoomOut() {
+        setEditorFontSize(editorFontSize - 1)
+    }
+
+    @objc private func actualSize() {
+        setEditorFontSize(ViewportView.defaultFontSize)
+    }
+
+    /// Applies a new editor font size to every open document and persists it.
+    private func setEditorFontSize(_ size: CGFloat) {
+        let clamped = min(max(size, ViewportView.minFontSize), ViewportView.maxFontSize)
+        editorFontSize = clamped
+        UserDefaults.standard.set(Double(clamped), forKey: AppDelegate.fontSizeDefaultsKey)
+        for document in documents {
+            document.view.viewport.setFontSize(clamped)
+        }
     }
 
     @objc private func performGoToLine() {
@@ -381,6 +428,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         let document = Document(url: url, file: file, index: index, view: view)
 
         view.load(file: file, index: index)
+        view.viewport.setFontSize(editorFontSize)
         index.build(from: file) { [weak self, weak document] in
             if let self, let document {
                 self.documentDidUpdate(document)
@@ -565,6 +613,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         document.view.close()
         document.reload(url: destination, file: file, index: index)
         document.view.load(file: file, index: index)
+        document.view.viewport.setFontSize(editorFontSize)
         index.build(from: file) { [weak self, weak document] in
             if let self, let document {
                 self.documentDidUpdate(document)
@@ -595,7 +644,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
             menuItem.state = (activeView?.isInfoPaneVisible ?? false) ? .on : .off
             enabled = activeDocument != nil
         case #selector(performGoToLine), #selector(performFind),
-             #selector(performFindReplace), #selector(findNext), #selector(findPrevious):
+             #selector(performFindReplace), #selector(findNext), #selector(findPrevious),
+             #selector(zoomIn), #selector(zoomOut), #selector(actualSize):
             enabled = activeDocument != nil
         default:
             break
