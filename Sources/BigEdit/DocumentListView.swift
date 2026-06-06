@@ -27,6 +27,7 @@ final class DocumentListView: NSView, NSTableViewDataSource, NSTableViewDelegate
         tableView.backgroundColor = .clear
         tableView.rowHeight = 42
         tableView.style = .sourceList
+        tableView.selectionHighlightStyle = .sourceList
         tableView.allowsEmptySelection = true
         tableView.allowsMultipleSelection = false
         tableView.dataSource = self
@@ -92,8 +93,17 @@ final class DocumentListView: NSView, NSTableViewDataSource, NSTableViewDelegate
         let document = documents[row]
         cell.nameField.stringValue = document.fileName
         cell.detailField.stringValue = document.secondaryLine
-        cell.editedField.isHidden = !document.isEdited
+        cell.showsEditedDot = document.isEdited
+        cell.closeButton.target = self
+        cell.closeButton.action = #selector(closeButtonClicked(_:))
         return cell
+    }
+
+    @objc private func closeButtonClicked(_ sender: NSButton) {
+        let row = tableView.row(for: sender)
+        if row >= 0 {
+            onClose?(row)
+        }
     }
 
     func tableViewSelectionDidChange(_ notification: Notification) {
@@ -138,13 +148,23 @@ final class DocumentListView: NSView, NSTableViewDataSource, NSTableViewDelegate
     }
 }
 
-/// A two-line cell: file name above a smaller, muted size / line-count line,
-/// with a small edited dot on the trailing edge.
+/// A two-line cell: file name above a smaller, muted size / line-count line.
+/// The trailing edge shows an edited dot, replaced by a close button on hover.
 final class DocumentRowView: NSTableCellView {
 
     let nameField = NSTextField(labelWithString: "")
     let detailField = NSTextField(labelWithString: "")
     let editedField = NSTextField(labelWithString: "●")
+    let closeButton = NSButton()
+
+    /// Whether this document has unsaved edits, so the dot returns when the
+    /// pointer leaves and the close button hides.
+    var showsEditedDot = false {
+        didSet { updateTrailingVisibility() }
+    }
+
+    private var hoverTrackingArea: NSTrackingArea?
+    private var isHovered = false
 
     init() {
         super.init(frame: .zero)
@@ -163,10 +183,52 @@ final class DocumentRowView: NSTableCellView {
         editedField.textColor = .controlAccentColor
         editedField.alignment = .right
         addSubview(editedField)
+
+        closeButton.isBordered = false
+        closeButton.bezelStyle = .inline
+        closeButton.imagePosition = .imageOnly
+        closeButton.image = NSImage(systemSymbolName: "xmark.circle.fill",
+                                    accessibilityDescription: "Close")
+        closeButton.contentTintColor = .secondaryLabelColor
+        closeButton.toolTip = "Close"
+        closeButton.isHidden = true
+        addSubview(closeButton)
     }
 
     required init?(coder: NSCoder) {
         fatalError("DocumentRowView is created programmatically")
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let area = hoverTrackingArea {
+            removeTrackingArea(area)
+        }
+        let area = NSTrackingArea(
+            rect: .zero,
+            options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(area)
+        hoverTrackingArea = area
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        isHovered = true
+        updateTrailingVisibility()
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        isHovered = false
+        updateTrailingVisibility()
+    }
+
+    /// On hover the close button takes the trailing slot; otherwise the edited
+    /// dot shows (when the document has unsaved edits).
+    private func updateTrailingVisibility() {
+        closeButton.isHidden = !isHovered
+        editedField.isHidden = isHovered || !showsEditedDot
     }
 
     override func layout() {
@@ -194,6 +256,12 @@ final class DocumentRowView: NSTableCellView {
         editedField.frame = NSRect(
             x: bounds.width - horizontalPadding - dotWidth, y: nameY,
             width: dotWidth, height: nameHeight
+        )
+        let closeSize: CGFloat = 16
+        closeButton.frame = NSRect(
+            x: bounds.width - horizontalPadding - closeSize,
+            y: (bounds.height - closeSize) / 2,
+            width: closeSize, height: closeSize
         )
     }
 }
