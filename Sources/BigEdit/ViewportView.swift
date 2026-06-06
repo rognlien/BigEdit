@@ -66,20 +66,57 @@ final class ViewportView: NSView {
     /// Last drag event location, used by the auto-scroll tick.
     private var lastDragLocationInWindow: NSPoint?
 
-    private let font: NSFont
-    private let lineHeight: CGFloat
-    private let characterWidth: CGFloat
+    private var font: NSFont
+    private var lineHeight: CGFloat
+    private var characterWidth: CGFloat
+    private var fontSize: CGFloat
     private let gutterPadding: CGFloat = 10
+
+    static let defaultFontSize: CGFloat = 12
+    static let minFontSize: CGFloat = 8
+    static let maxFontSize: CGFloat = 28
 
     /// Cap on highlight rectangles per row, so a saturated query stays cheap.
     private let maxHighlightsPerRow = 512
 
     override init(frame frameRect: NSRect) {
-        let editorFont = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+        let size = ViewportView.defaultFontSize
+        let editorFont = NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
+        self.fontSize = size
         self.font = editorFont
-        self.lineHeight = ceil(editorFont.ascender - editorFont.descender + editorFont.leading) + 3
-        self.characterWidth = ("0" as NSString).size(withAttributes: [.font: editorFont]).width
+        self.lineHeight = ViewportView.lineHeight(for: editorFont)
+        self.characterWidth = ViewportView.characterWidth(for: editorFont)
         super.init(frame: frameRect)
+    }
+
+    private static func lineHeight(for font: NSFont) -> CGFloat {
+        ceil(font.ascender - font.descender + font.leading) + 3
+    }
+
+    private static func characterWidth(for font: NSFont) -> CGFloat {
+        ("0" as NSString).size(withAttributes: [.font: font]).width
+    }
+
+    // MARK: - Font size
+
+    /// The current editor font size in points.
+    var editorFontSize: CGFloat { fontSize }
+
+    /// Sets the editor font size (clamped), re-wrapping long lines and keeping
+    /// the scroll position valid for the new row height.
+    func setFontSize(_ size: CGFloat) {
+        let clamped = min(max(size, ViewportView.minFontSize), ViewportView.maxFontSize)
+        if clamped != fontSize {
+            fontSize = clamped
+            font = NSFont.monospacedSystemFont(ofSize: clamped, weight: .regular)
+            lineHeight = ViewportView.lineHeight(for: font)
+            characterWidth = ViewportView.characterWidth(for: font)
+            updateWrapBytes()
+            setScrollRow(scrollRow)            // re-clamp: rowsPerPage changed
+            window?.invalidateCursorRects(for: self)
+            needsDisplay = true
+            onScrollChange?()                  // knob proportion changed
+        }
     }
 
     required init?(coder: NSCoder) {
@@ -186,13 +223,14 @@ final class ViewportView: NSView {
     }
 
     override func keyDown(with event: NSEvent) {
+        let command = event.modifierFlags.contains(.command)
         switch event.keyCode {
-        case 126: scrollByRows(-1)                        // up arrow
-        case 125: scrollByRows(1)                         // down arrow
-        case 116: scrollByPages(-1)                       // page up
-        case 121: scrollByPages(1)                        // page down
-        case 115: setScrollRow(0)                         // home
-        case 119: setScrollRow(maxScrollRow)              // end
+        case 126: command ? setScrollRow(0) : scrollByRows(-1)             // (⌘)up
+        case 125: command ? setScrollRow(maxScrollRow) : scrollByRows(1)   // (⌘)down
+        case 116: scrollByPages(-1)                        // page up
+        case 121: scrollByPages(1)                         // page down
+        case 115: setScrollRow(0)                          // home
+        case 119: setScrollRow(maxScrollRow)               // end
         case 123: shiftHorizontally(by: -characterWidth * 8)  // left arrow
         case 124: shiftHorizontally(by: characterWidth * 8)   // right arrow
         default: super.keyDown(with: event)
@@ -207,8 +245,11 @@ final class ViewportView: NSView {
     // MARK: - Selection
 
     override func resetCursorRects() {
-        // I-beam over the whole viewport so the cursor looks like a text view.
-        addCursorRect(bounds, cursor: .iBeam)
+        // I-beam over the text area only; the gutter keeps the default arrow.
+        let gutterW = index.map { gutterWidth(for: $0.count) } ?? 0
+        let textRect = NSRect(x: gutterW, y: 0,
+                              width: max(0, bounds.width - gutterW), height: bounds.height)
+        addCursorRect(textRect, cursor: .iBeam)
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {
