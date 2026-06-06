@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
     private let splitView = NSSplitView()
     private let sidebar = DocumentListView(frame: NSRect(x: 0, y: 0, width: 220, height: 640))
     private let contentContainer = ContentContainerView(frame: NSRect(x: 0, y: 0, width: 680, height: 640))
+    private let titleLabel = NSTextField(labelWithString: "")
 
     private var documents: [Document] = []
     private var activeIndex: Int?
@@ -19,6 +20,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
     private var didOpenFromURL = false
     private static let lastFilePathDefaultsKey = "BigEditLastFilePath"
     private static let openDocumentsDefaultsKey = "BigEditOpenDocuments"
+    private static let scrollRowsDefaultsKey = "BigEditScrollRows"
     private static let activeIndexDefaultsKey = "BigEditActiveIndex"
     private static let fontSizeDefaultsKey = "BigEditFontSize"
 
@@ -30,12 +32,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
 
     private static let minSidebarWidth: CGFloat = 190
     private static let minContentWidth: CGFloat = 360
-
-    private let numberFormatter: NumberFormatter = {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        return formatter
-    }()
 
     // MARK: - Active document accessors
 
@@ -95,17 +91,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         contentContainer.onOpenFiles = { [weak self] urls in
             self?.openDocuments(at: urls)
         }
+        sidebar.onOpenFiles = { [weak self] urls in
+            self?.openDocuments(at: urls)
+        }
 
         window.contentView = splitView
+        installCenteredTitle()
         window.center()
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// Hides the native (leading) title and draws a centered label in the title
+    /// bar instead, so the file name sits in the middle of the window.
+    private func installCenteredTitle() {
+        window.titleVisibility = .hidden
+        guard let titlebar = window.standardWindowButton(.closeButton)?.superview else {
+            return
+        }
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        titleLabel.alignment = .center
+        titleLabel.font = NSFont.titleBarFont(ofSize: NSFont.systemFontSize)
+        titleLabel.textColor = .secondaryLabelColor
+        titleLabel.lineBreakMode = .byTruncatingMiddle
+        titlebar.addSubview(titleLabel)
+        NSLayoutConstraint.activate([
+            titleLabel.centerXAnchor.constraint(equalTo: titlebar.centerXAnchor),
+            titleLabel.centerYAnchor.constraint(equalTo: titlebar.centerYAnchor),
+            titleLabel.widthAnchor.constraint(lessThanOrEqualTo: titlebar.widthAnchor, multiplier: 0.6)
+        ])
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         // Stay alive after the window is closed; a Dock click brings it back.
         // The user quits with ⌘Q.
         false
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        // Capture final scroll positions for next launch.
+        persistSession()
     }
 
     func applicationShouldHandleReopen(
@@ -143,21 +168,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         if paths.isEmpty, let legacy = defaults.string(forKey: AppDelegate.lastFilePathDefaultsKey) {
             paths = [legacy]
         }
-        let existing = paths.filter { FileManager.default.fileExists(atPath: $0) }
-        if existing.isEmpty {
+        let scrolls = defaults.array(forKey: AppDelegate.scrollRowsDefaultsKey) as? [Double] ?? []
+        let savedActive = defaults.integer(forKey: AppDelegate.activeIndexDefaultsKey)
+        let activePath = paths.indices.contains(savedActive) ? paths[savedActive] : nil
+
+        // Keep each surviving path with its saved scroll position.
+        var restorable: [(path: String, scroll: Double)] = []
+        for (i, path) in paths.enumerated() where FileManager.default.fileExists(atPath: path) {
+            restorable.append((path, i < scrolls.count ? scrolls[i] : 0))
+        }
+        if restorable.isEmpty {
             return
         }
-        openDocuments(at: existing.map { URL(fileURLWithPath: $0) })
-        let savedActive = defaults.integer(forKey: AppDelegate.activeIndexDefaultsKey)
-        if documents.indices.contains(savedActive) {
-            selectDocument(at: savedActive)
+
+        openDocuments(at: restorable.map { URL(fileURLWithPath: $0.path) })
+        for (i, item) in restorable.enumerated() where documents.indices.contains(i) {
+            if item.scroll > 0 {
+                documents[i].pendingScrollRow = item.scroll
+            }
+        }
+        if let activePath, let index = restorable.firstIndex(where: { $0.path == activePath }) {
+            selectDocument(at: index)
         }
     }
 
-    /// Persists the open document paths and the active index for next launch.
+    /// Persists the open document paths, scroll positions, and active index.
     private func persistSession() {
         let defaults = UserDefaults.standard
         defaults.set(documents.map { $0.url.path }, forKey: AppDelegate.openDocumentsDefaultsKey)
+        defaults.set(documents.map { $0.view.viewport.scrollRow },
+                     forKey: AppDelegate.scrollRowsDefaultsKey)
         defaults.set(activeIndex ?? 0, forKey: AppDelegate.activeIndexDefaultsKey)
         defaults.set(documents.last?.url.path, forKey: AppDelegate.lastFilePathDefaultsKey)
     }
@@ -458,6 +498,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
 
         view.load(file: file, index: index)
         view.viewport.setFontSize(editorFontSize)
+        view.setFileFormat(document.format)
         document.watcher = FileWatcher(path: url.path) { [weak self, weak document] in
             if let self, let document {
                 self.fileDidChangeOnDisk(document)
@@ -536,6 +577,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         guard let index = documents.firstIndex(where: { $0 === document }) else {
             return
         }
+        // Re-apply a restored scroll position as the row count grows; clear it
+        // once indexing is done and the target is final.
+        if let pending = document.pendingScrollRow {
+            document.view.viewport.setScrollRow(pending)
+            if document.index.isComplete {
+                document.pendingScrollRow = nil
+            }
+        }
         document.view.refresh()
         sidebar.reloadRow(index)
         if index == activeIndex {
@@ -544,19 +593,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
     }
 
     private func updateTitle() {
-        var title = "BigEdit"
-        if let document = activeDocument {
-            let lines = numberFormatter.string(from: NSNumber(value: document.index.count))
-                ?? "\(document.index.count)"
-            let bytes = ByteCountFormatter.string(
-                fromByteCount: Int64(document.file.size), countStyle: .file)
-            var status = document.index.isComplete ? "" : "  (indexing…)"
-            if document.hasDiskChanges {
-                status += "  — changed on disk (⌘R to reload)"
-            }
-            title = "BigEdit — \(document.fileName) — \(bytes) — \(lines) lines\(status)"
-        }
-        window.title = title
+        // Just the file name, drawn by the centered title label. Size, line
+        // count, encoding, and disk-change state live in the info pane / status
+        // bar / sidebar instead.
+        let name = activeDocument?.fileName ?? "BigEdit"
+        window.title = name           // keeps the Window menu / app switcher correct
+        titleLabel.stringValue = name
     }
 
     private func presentError(_ message: String) {
@@ -684,6 +726,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         document.hasDiskChanges = false
         document.view.load(file: file, index: index)
         document.view.viewport.setFontSize(editorFontSize)
+        document.view.setFileFormat(document.format)
         if preserveScroll {
             document.view.viewport.setScrollRow(previousRow)
         }

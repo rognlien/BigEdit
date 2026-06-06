@@ -32,6 +32,53 @@ enum MarkdownHighlighter {
     private static let plus = unichar(UInt8(ascii: "+"))
     private static let dot = unichar(UInt8(ascii: "."))
 
+    /// Stateful entry: when `startState` is `.fencedCode` the row is inside a
+    /// ``` / ~~~ code block. Returns the colouring and the state at the end.
+    static func attributedRow(_ text: String, font: NSFont,
+                              startState: HighlightState) -> (NSAttributedString, HighlightState) {
+        if startState == .fencedCode {
+            let source = text as NSString
+            let result = NSMutableAttributedString(
+                string: text, attributes: [.font: font, .foregroundColor: NSColor.textColor])
+            if isFenceLine(source) {
+                apply(punctuationColor, 0..<source.length, result)   // closing fence
+                return (result, .normal)
+            }
+            apply(codeColor, 0..<source.length, result)
+            return (result, .fencedCode)
+        }
+        return (attributedRow(text, font: font), endState(text, start: .normal))
+    }
+
+    /// Computes the fenced-code state at the end of `text` (line-based).
+    static func endState(_ text: String, start: HighlightState) -> HighlightState {
+        let fence = isFenceLine(text as NSString)
+        if start == .fencedCode {
+            return fence ? .normal : .fencedCode
+        }
+        return fence ? .fencedCode : .normal
+    }
+
+    /// True if the line is a code-fence marker: up to 3 leading spaces then at
+    /// least three backticks or tildes.
+    private static func isFenceLine(_ source: NSString) -> Bool {
+        let indent = leadingSpaceCount(source)
+        if indent > 3 || indent + 3 > source.length {
+            return false
+        }
+        let marker = source.character(at: indent)
+        if marker != backtick && marker != tilde {
+            return false
+        }
+        var count = 0
+        var index = indent
+        while index < source.length && source.character(at: index) == marker {
+            count += 1
+            index += 1
+        }
+        return count >= 3
+    }
+
     static func attributedRow(_ text: String, font: NSFont) -> NSAttributedString {
         let result = NSMutableAttributedString(
             string: text,

@@ -9,6 +9,8 @@ final class DocumentListView: NSView, NSTableViewDataSource, NSTableViewDelegate
     var onSelect: ((Int) -> Void)?
     /// Called when the user closes a row from its context menu.
     var onClose: ((Int) -> Void)?
+    /// Called with file URLs dropped onto the sidebar.
+    var onOpenFiles: (([URL]) -> Void)?
 
     private let scrollView = NSScrollView()
     private let tableView = NSTableView()
@@ -27,7 +29,6 @@ final class DocumentListView: NSView, NSTableViewDataSource, NSTableViewDelegate
         tableView.backgroundColor = .clear
         tableView.rowHeight = 42
         tableView.style = .sourceList
-        tableView.selectionHighlightStyle = .sourceList
         tableView.allowsEmptySelection = true
         tableView.allowsMultipleSelection = false
         tableView.dataSource = self
@@ -41,6 +42,30 @@ final class DocumentListView: NSView, NSTableViewDataSource, NSTableViewDelegate
         scrollView.autoresizingMask = [.width, .height]
         scrollView.frame = bounds
         addSubview(scrollView)
+
+        registerForDraggedTypes([.fileURL])
+    }
+
+    // MARK: - Drag & drop (open files)
+
+    private func fileURLs(from sender: NSDraggingInfo) -> [URL] {
+        let options: [NSPasteboard.ReadingOptionKey: Any] = [.urlReadingFileURLsOnly: true]
+        let objects = sender.draggingPasteboard.readObjects(
+            forClasses: [NSURL.self], options: options)
+        return (objects as? [URL]) ?? []
+    }
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        fileURLs(from: sender).isEmpty ? [] : .copy
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        let urls = fileURLs(from: sender)
+        if urls.isEmpty {
+            return false
+        }
+        onOpenFiles?(urls)
+        return true
     }
 
     required init?(coder: NSCoder) {
@@ -172,17 +197,13 @@ final class DocumentRowView: NSTableCellView {
         nameField.font = NSFont.systemFont(ofSize: 13)
         nameField.textColor = .labelColor
         nameField.lineBreakMode = .byTruncatingMiddle
-        addSubview(nameField)
 
         detailField.font = NSFont.systemFont(ofSize: 11)
         detailField.textColor = .secondaryLabelColor
         detailField.lineBreakMode = .byTruncatingMiddle
-        addSubview(detailField)
 
         editedField.font = NSFont.systemFont(ofSize: 10)
         editedField.textColor = .controlAccentColor
-        editedField.alignment = .right
-        addSubview(editedField)
 
         closeButton.isBordered = false
         closeButton.bezelStyle = .inline
@@ -192,7 +213,34 @@ final class DocumentRowView: NSTableCellView {
         closeButton.contentTintColor = .secondaryLabelColor
         closeButton.toolTip = "Close"
         closeButton.isHidden = true
-        addSubview(closeButton)
+
+        // Auto Layout keeps the close button pinned to the trailing edge across
+        // sidebar resizing, without depending on manual relayout timing.
+        for view in [nameField, detailField, editedField, closeButton] {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            addSubview(view)
+        }
+        for field in [nameField, detailField] {
+            field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        }
+        let padding: CGFloat = 8
+        NSLayoutConstraint.activate([
+            closeButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -padding),
+            closeButton.centerYAnchor.constraint(equalTo: centerYAnchor),
+            closeButton.widthAnchor.constraint(equalToConstant: 16),
+            closeButton.heightAnchor.constraint(equalToConstant: 16),
+
+            editedField.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -padding),
+            editedField.centerYAnchor.constraint(equalTo: nameField.centerYAnchor),
+
+            nameField.leadingAnchor.constraint(equalTo: leadingAnchor, constant: padding),
+            nameField.topAnchor.constraint(equalTo: topAnchor, constant: 5),
+            nameField.trailingAnchor.constraint(lessThanOrEqualTo: closeButton.leadingAnchor, constant: -4),
+
+            detailField.leadingAnchor.constraint(equalTo: leadingAnchor, constant: padding),
+            detailField.topAnchor.constraint(equalTo: nameField.bottomAnchor, constant: 1),
+            detailField.trailingAnchor.constraint(lessThanOrEqualTo: closeButton.leadingAnchor, constant: -4)
+        ])
     }
 
     required init?(coder: NSCoder) {
@@ -231,37 +279,4 @@ final class DocumentRowView: NSTableCellView {
         editedField.isHidden = isHovered || !showsEditedDot
     }
 
-    override func layout() {
-        super.layout()
-        let horizontalPadding: CGFloat = 8
-        let dotWidth: CGFloat = 12
-        let nameHeight: CGFloat = 17
-        let detailHeight: CGFloat = 14
-        let gap: CGFloat = 1
-        let totalHeight = nameHeight + gap + detailHeight
-        let top = (bounds.height - totalHeight) / 2
-        let textWidth = max(0, bounds.width - 2 * horizontalPadding - dotWidth)
-
-        // Not flipped: y grows upward, so the name sits above the detail line.
-        let detailY = top
-        let nameY = detailY + detailHeight + gap
-        nameField.frame = NSRect(
-            x: horizontalPadding, y: nameY,
-            width: textWidth, height: nameHeight
-        )
-        detailField.frame = NSRect(
-            x: horizontalPadding, y: detailY,
-            width: textWidth, height: detailHeight
-        )
-        editedField.frame = NSRect(
-            x: bounds.width - horizontalPadding - dotWidth, y: nameY,
-            width: dotWidth, height: nameHeight
-        )
-        let closeSize: CGFloat = 16
-        closeButton.frame = NSRect(
-            x: bounds.width - horizontalPadding - closeSize,
-            y: (bounds.height - closeSize) / 2,
-            width: closeSize, height: closeSize
-        )
-    }
 }

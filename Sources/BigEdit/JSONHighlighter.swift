@@ -28,6 +28,67 @@ enum JSONHighlighter {
     private static let slash = unichar(UInt8(ascii: "/"))
     private static let star = unichar(UInt8(ascii: "*"))
 
+    /// Stateful entry: when `startState` is `.blockComment` the row begins inside
+    /// a `/* */` comment. Returns the row's colouring and the state at its end.
+    static func attributedRow(_ text: String, font: NSFont,
+                              startState: HighlightState) -> (NSAttributedString, HighlightState) {
+        if startState == .blockComment {
+            let source = text as NSString
+            let result = NSMutableAttributedString(
+                string: text, attributes: [.font: font, .foregroundColor: NSColor.textColor])
+            if let closeEnd = indexAfter(source, of: "*/", from: 0) {
+                apply(commentColor, 0..<closeEnd, result)
+                let rest = source.substring(from: closeEnd)
+                let restAttr = attributedRow(rest, font: font)
+                result.replaceCharacters(
+                    in: NSRange(location: closeEnd, length: source.length - closeEnd),
+                    with: restAttr)
+                return (result, endState(rest, start: .normal))
+            }
+            apply(commentColor, 0..<source.length, result)
+            return (result, .blockComment)
+        }
+        return (attributedRow(text, font: font), endState(text, start: .normal))
+    }
+
+    /// Computes the comment state at the end of `text`, given the state at its
+    /// start. Mirrors the comment/string handling in `attributedRow`.
+    static func endState(_ text: String, start: HighlightState) -> HighlightState {
+        let source = text as NSString
+        let length = source.length
+        var index = 0
+        if start == .blockComment {
+            guard let closeEnd = indexAfter(source, of: "*/", from: 0) else { return .blockComment }
+            index = closeEnd
+        }
+        while index < length {
+            let character = source.character(at: index)
+            if character == quote {
+                index += 1
+                while index < length {
+                    let inner = source.character(at: index)
+                    if inner == backslash && index + 1 < length { index += 2; continue }
+                    if inner == quote { index += 1; break }
+                    index += 1
+                }
+            } else if character == slash && index + 1 < length {
+                let next = source.character(at: index + 1)
+                if next == slash { return .normal }            // // comment to end of row
+                if next == star {
+                    guard let closeEnd = indexAfter(source, of: "*/", from: index + 2) else {
+                        return .blockComment
+                    }
+                    index = closeEnd
+                } else {
+                    index += 1
+                }
+            } else {
+                index += 1
+            }
+        }
+        return .normal
+    }
+
     static func attributedRow(_ text: String, font: NSFont) -> NSAttributedString {
         let result = NSMutableAttributedString(
             string: text,

@@ -52,11 +52,35 @@ final class ViewportView: NSView {
 
     /// The user's current selection, as byte offsets into the original file.
     /// Its `activeOffset` doubles as the keyboard caret (the end being moved).
-    private var selection: TextSelection?
+    private var selection: TextSelection? {
+        didSet {
+            onSelectionChange?()
+            caretVisible = true       // show solid right after a move
+            updateCaretBlink()
+        }
+    }
+
+    /// Invoked whenever the selection or caret changes, so the status bar syncs.
+    var onSelectionChange: (() -> Void)?
+
+    /// The caret (selection's active end) as a byte offset, if any.
+    var caretByteOffset: Int? { selection?.activeOffset }
+
+    /// The selected byte range, or nil when the selection is empty.
+    var selectionByteRange: Range<Int>? {
+        guard let selection, !selection.isEmpty else { return nil }
+        return selection.range
+    }
 
     /// Target x for vertical caret moves, so up/down keep a column. Reset on a
     /// horizontal move or a click.
     private var desiredCaretX: CGFloat?
+
+    /// Insertion-caret blink state (only shown when focused with an empty
+    /// selection).
+    private var isViewportFocused = false
+    private var caretVisible = true
+    private var caretBlinkTimer: Timer?
 
     /// What kind of unit the active mouse interaction is selecting in.
     private var selectionGranularity: SelectionGranularity = .character
@@ -132,6 +156,46 @@ final class ViewportView: NSView {
     override var isFlipped: Bool { true }
 
     override var acceptsFirstResponder: Bool { true }
+
+    override func becomeFirstResponder() -> Bool {
+        isViewportFocused = true
+        updateCaretBlink()
+        needsDisplay = true
+        return super.becomeFirstResponder()
+    }
+
+    override func resignFirstResponder() -> Bool {
+        isViewportFocused = false
+        updateCaretBlink()
+        needsDisplay = true
+        return super.resignFirstResponder()
+    }
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        super.viewWillMove(toWindow: newWindow)
+        if newWindow == nil {
+            isViewportFocused = false
+            updateCaretBlink()
+        }
+    }
+
+    /// Runs the caret blink only while focused with an empty selection.
+    private func updateCaretBlink() {
+        let shouldBlink = isViewportFocused && selection != nil && selectionByteRange == nil
+        if shouldBlink {
+            if caretBlinkTimer == nil {
+                caretVisible = true
+                caretBlinkTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+                    self?.caretVisible.toggle()
+                    self?.needsDisplay = true
+                }
+            }
+        } else {
+            caretBlinkTimer?.invalidate()
+            caretBlinkTimer = nil
+            caretVisible = true
+        }
+    }
 
     // MARK: - Document
 
@@ -231,19 +295,24 @@ final class ViewportView: NSView {
     override func keyDown(with event: NSEvent) {
         let command = event.modifierFlags.contains(.command)
         let shift = event.modifierFlags.contains(.shift)
+        // Once a caret/selection exists, the arrows navigate text (extending
+        // with Shift); before that they scroll, so plain browsing still works.
+        let hasCaret = selection != nil
         switch event.keyCode {
         case 126:                                          // up
-            shift ? extendSelectionVertically(by: -1)
-                  : (command ? setScrollRow(0) : scrollByRows(-1))
+            if command { setScrollRow(0) }
+            else if shift || hasCaret { moveCaretVertically(by: -1, extend: shift) }
+            else { scrollByRows(-1) }
         case 125:                                          // down
-            shift ? extendSelectionVertically(by: 1)
-                  : (command ? setScrollRow(maxScrollRow) : scrollByRows(1))
+            if command { setScrollRow(maxScrollRow) }
+            else if shift || hasCaret { moveCaretVertically(by: 1, extend: shift) }
+            else { scrollByRows(1) }
         case 123:                                          // left
-            shift ? extendSelectionHorizontally(forward: false)
-                  : shiftHorizontally(by: -characterWidth * 8)
+            if shift || hasCaret { moveCaretHorizontally(forward: false, extend: shift) }
+            else { shiftHorizontally(by: -characterWidth * 8) }
         case 124:                                          // right
-            shift ? extendSelectionHorizontally(forward: true)
-                  : shiftHorizontally(by: characterWidth * 8)
+            if shift || hasCaret { moveCaretHorizontally(forward: true, extend: shift) }
+            else { shiftHorizontally(by: characterWidth * 8) }
         case 116: scrollByPages(-1)                        // page up
         case 121: scrollByPages(1)                         // page down
         case 115: setScrollRow(0)                          // home
@@ -252,9 +321,9 @@ final class ViewportView: NSView {
         }
     }
 
-    // MARK: - Keyboard selection
+    // MARK: - Keyboard caret / selection
 
-    /// Ensures there is a caret to extend from — anchored at the start of the
+    /// Ensures there is a caret to move from — anchored at the start of the
     /// first visible row when nothing is selected yet.
     private func ensureCaret() {
         if selection == nil {
@@ -263,19 +332,33 @@ final class ViewportView: NSView {
         }
     }
 
-    private func extendSelectionHorizontally(forward: Bool) {
+    /// Moves the caret to `target`, collapsing the selection unless `extend`.
+    private func setCaret(to target: Int, extend: Bool) {
+        if extend {
+            selection?.activeOffset = target
+        } else {
+            selection = TextSelection(anchorOffset: target, activeOffset: target)
+        }
+    }
+
+    private func moveCaretHorizontally(forward: Bool, extend: Bool) {
         guard let file else { return }
         ensureCaret()
-        let caret = selection?.activeOffset ?? 0
-        let target = forward ? nextCharOffset(after: caret, in: file)
+        let target: Int
+        if !extend, let range = selectionByteRange {
+            target = forward ? range.upperBound : range.lowerBound   // collapse to edge
+        } else {
+            let caret = selection?.activeOffset ?? 0
+            target = forward ? nextCharOffset(after: caret, in: file)
                              : prevCharOffset(before: caret, in: file)
+        }
         desiredCaretX = nil
-        selection?.activeOffset = target
+        setCaret(to: target, extend: extend)
         scrollByteIntoView(target, in: file)
         needsDisplay = true
     }
 
-    private func extendSelectionVertically(by rowDelta: Int) {
+    private func moveCaretVertically(by rowDelta: Int, extend: Bool) {
         guard let file, let index else { return }
         ensureCaret()
         let caret = selection?.activeOffset ?? 0
@@ -287,7 +370,7 @@ final class ViewportView: NSView {
             target = byteOffset(inRow: line, atX: x, file: file)
         }
         desiredCaretX = x
-        selection?.activeOffset = target
+        setCaret(to: target, extend: extend)
         scrollToRow(targetRow)
         needsDisplay = true
     }
@@ -499,7 +582,8 @@ final class ViewportView: NSView {
         if (byte >= 0x30 && byte <= 0x39)
             || (byte >= 0x41 && byte <= 0x5A)
             || (byte >= 0x61 && byte <= 0x7A)
-            || byte == 0x5F {
+            || byte == 0x5F
+            || byte >= 0x80 {              // any UTF-8 multibyte sequence is "word"
             return .word
         }
         if byte == 0x20 || byte == 0x09 || byte == 0x0D {
@@ -734,15 +818,48 @@ final class ViewportView: NSView {
         let rows = index.visualLines(forRows: firstRow..<lastRow, file: file)
 
         let gutterWidth = self.gutterWidth(for: index.count)
-        drawText(rows: rows, file: file, gutterWidth: gutterWidth, fraction: fraction)
+        let startState = seedState(forFirstRow: firstRow, file: file, index: index)
+        drawText(rows: rows, file: file, gutterWidth: gutterWidth, fraction: fraction,
+                 startState: startState)
         drawGutter(rows: rows, width: gutterWidth, fraction: fraction)
+        drawInsertionCaret(file: file, index: index, firstRow: firstRow, fraction: fraction,
+                           gutterWidth: gutterWidth)
+    }
+
+    /// Draws the blinking insertion caret at the empty selection's active end.
+    private func drawInsertionCaret(file: MappedFile, index: LineIndex, firstRow: Int,
+                                    fraction: CGFloat, gutterWidth: CGFloat) {
+        guard isViewportFocused, caretVisible, selectionByteRange == nil,
+              let caret = selection?.activeOffset else {
+            return
+        }
+        let caretRow = index.visualRow(forByteOffset: caret, file: file)
+        let lastRow = min(index.visualRowCount, firstRow + rowsPerPage + 2)
+        guard caretRow >= firstRow, caretRow < lastRow,
+              let visualLine = index.visualLines(forRows: caretRow..<(caretRow + 1), file: file).first else {
+            return
+        }
+        let start = chunkStartByte(visualLine, buffer: file.buffer)
+        let clamped = max(start, min(caret, visualLine.byteRange.upperBound))
+        let widthToCaret = clamped > start ? textWidth(ofBytes: start..<clamped, in: file.buffer) : 0
+        let textOriginX = gutterWidth + gutterPadding
+        let x = textOriginX - horizontalOffset + widthToCaret
+        let y = CGFloat(caretRow - firstRow) * lineHeight - fraction * lineHeight
+
+        NSGraphicsContext.current?.saveGraphicsState()
+        NSBezierPath(rect: NSRect(x: textOriginX, y: 0,
+                                  width: bounds.width - textOriginX, height: bounds.height)).addClip()
+        NSColor.labelColor.setFill()
+        NSRect(x: x, y: y + 1, width: 1, height: lineHeight - 2).fill()
+        NSGraphicsContext.current?.restoreGraphicsState()
     }
 
     private func drawText(
         rows: [LineIndex.VisualLine],
         file: MappedFile,
         gutterWidth: CGFloat,
-        fraction: CGFloat
+        fraction: CGFloat,
+        startState: HighlightState
     ) {
         let textOriginX = gutterWidth + gutterPadding
 
@@ -756,6 +873,7 @@ final class ViewportView: NSView {
         NSBezierPath(rect: textArea).addClip()
 
         let buffer = file.buffer
+        var state = startState
         for (row, visualLine) in rows.enumerated() {
             let y = CGFloat(row) * lineHeight - fraction * lineHeight
             // Search highlights, then selection, then text — each layer above
@@ -763,10 +881,56 @@ final class ViewportView: NSView {
             drawMatchHighlights(for: visualLine, rowY: y, textOriginX: textOriginX, buffer: buffer)
             drawSelectionForRow(visualLine: visualLine, rowY: y, textOriginX: textOriginX, buffer: buffer)
             let text = decodeChunk(visualLine, buffer: buffer)
-            attributedRow(text).draw(at: NSPoint(x: textOriginX - horizontalOffset, y: y))
+            let (attributed, nextState) = highlightedRow(text, startState: state)
+            attributed.draw(at: NSPoint(x: textOriginX - horizontalOffset, y: y))
+            state = nextState
         }
 
         NSGraphicsContext.current?.restoreGraphicsState()
+    }
+
+    /// The starting highlight state for the first visible row, found by replaying
+    /// a bounded window of preceding rows. Constructs that open further above
+    /// than the window won't be detected until scrolled nearer — a deliberate
+    /// bound so cost stays tied to the viewport, not the file.
+    private func seedState(forFirstRow firstRow: Int, file: MappedFile, index: LineIndex) -> HighlightState {
+        guard syntaxMode != .plain, firstRow > 0 else { return .normal }
+        let lookback = 400
+        let start = max(0, firstRow - lookback)
+        let rows = index.visualLines(forRows: start..<firstRow, file: file)
+        var state = HighlightState.normal
+        for visualLine in rows {
+            state = rowEndState(decodeChunk(visualLine, buffer: file.buffer), startState: state)
+        }
+        return state
+    }
+
+    /// Dispatches a row to the active highlighter, returning its colouring and
+    /// the carried state at the row's end.
+    private func highlightedRow(_ text: String, startState: HighlightState)
+        -> (NSAttributedString, HighlightState) {
+        switch syntaxMode {
+        case .xml: return XMLHighlighter.attributedRow(text, font: font, startState: startState)
+        case .json: return JSONHighlighter.attributedRow(text, font: font, startState: startState)
+        case .markdown: return MarkdownHighlighter.attributedRow(text, font: font, startState: startState)
+        case .yaml: return YAMLHighlighter.attributedRow(text, font: font, startState: startState)
+        case .plain:
+            let attributed = NSAttributedString(
+                string: text, attributes: [.font: font, .foregroundColor: NSColor.textColor])
+            return (attributed, .normal)
+        }
+    }
+
+    /// The carried state at the end of a row, without building its colouring
+    /// (used to seed the visible region cheaply).
+    private func rowEndState(_ text: String, startState: HighlightState) -> HighlightState {
+        switch syntaxMode {
+        case .xml: return XMLHighlighter.endState(text, start: startState)
+        case .json: return JSONHighlighter.endState(text, start: startState)
+        case .markdown: return MarkdownHighlighter.endState(text, start: startState)
+        case .yaml: return YAMLHighlighter.endState(text, start: startState)
+        case .plain: return .normal
+        }
     }
 
     private func drawMatchHighlights(
@@ -928,24 +1092,10 @@ final class ViewportView: NSView {
 
     // MARK: - Helpers
 
-    /// Builds the drawable, coloured form of a row's text for the current
-    /// syntax mode.
+    /// Builds the drawable, coloured form of a single row's text from a normal
+    /// start state — used for hit-testing where carried state doesn't matter.
     private func attributedRow(_ text: String) -> NSAttributedString {
-        switch syntaxMode {
-        case .xml:
-            return XMLHighlighter.attributedRow(text, font: font)
-        case .json:
-            return JSONHighlighter.attributedRow(text, font: font)
-        case .markdown:
-            return MarkdownHighlighter.attributedRow(text, font: font)
-        case .yaml:
-            return YAMLHighlighter.attributedRow(text, font: font)
-        case .plain:
-            return NSAttributedString(
-                string: text,
-                attributes: [.font: font, .foregroundColor: NSColor.textColor]
-            )
-        }
+        return highlightedRow(text, startState: .normal).0
     }
 
     /// Decodes one chunk's bytes to a `String`. A chunk is at most

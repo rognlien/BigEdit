@@ -39,8 +39,12 @@ file.** A 50 GB file and a 50 KB file cost the same to display.
 | `MarkdownHighlighter` | headings (bold blue), bold (font), italic (colour), inline code, links (text teal + URL purple), strikethrough, fences, HR, blockquotes, list markers |
 | `YAMLHighlighter` | keys (bare and quoted), strings, numbers, literals (`true`/`false`/`null`/`yes`/`no`/`on`/`off`/`~`), comments, anchors / aliases / tags, block-scalar indicators, document separators |
 
-All four are stateless per-row, which keeps them cheap but means multi-row
-constructs (comments, fences, block scalars) only colour their first row.
+Multi-row constructs (XML/JSONC block comments, Markdown fenced code, YAML
+block scalars) are coloured across rows by threading a small carry-state between
+rows; the visible region's start state is seeded by replaying a bounded window
+(~400 rows) above the viewport, so a construct opening far above the top is only
+picked up once scrolled nearer — a deliberate bound that keeps cost tied to the
+viewport, not the file.
 
 ## What the user gets
 
@@ -98,8 +102,8 @@ and the four highlighters. Run with `swift test`.
 - Hit testing maps clicks to byte offsets with CoreText, so non-ASCII selections land on character boundaries. (It falls back to a monospaced column estimate only while a replacement rule is active, since the drawn text then differs from the underlying bytes.)
 - 64 MB cap on a single copy to the pasteboard.
 - 1,000,000-match cap on the display match list (the save path bypasses this).
-- Highlighters are per-row stateless: multi-row XML comments, Markdown fenced code blocks, and YAML block scalars only colour their opening row.
-- UTF-8 only.
+- Multi-row highlighting only looks back a bounded window (~400 rows) above the viewport, so a comment/fence/block-scalar opened further up isn't coloured until scrolled nearer.
+- UTF-8 only for *display*; other encodings (UTF-16 BOM, binary, invalid UTF-8) are detected and labelled in the status bar but not decoded.
 - No VoiceOver / accessibility yet — the custom-drawn viewport exposes nothing to assistive tech.
 - Keyboard selection is Shift+Arrow (extends from a caret); there's no blinking insertion caret drawn when the selection is empty.
 - Word boundaries for double-click are ASCII-only.

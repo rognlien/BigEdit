@@ -34,6 +34,45 @@ enum XMLHighlighter {
     private static let quote = unichar(UInt8(ascii: "\""))
     private static let apostrophe = unichar(UInt8(ascii: "'"))
 
+    /// Stateful entry: when `startState` is `.blockComment` the row begins inside
+    /// an `<!-- -->` comment. Returns the colouring and the state at the end.
+    static func attributedRow(_ text: String, font: NSFont,
+                              startState: HighlightState) -> (NSAttributedString, HighlightState) {
+        if startState == .blockComment {
+            let source = text as NSString
+            let result = NSMutableAttributedString(
+                string: text, attributes: [.font: font, .foregroundColor: NSColor.textColor])
+            if let closeEnd = indexAfter(source, of: "-->", from: 0) {
+                apply(commentColor, 0..<closeEnd, result)
+                let rest = source.substring(from: closeEnd)
+                let restAttr = attributedRow(rest, font: font)
+                result.replaceCharacters(
+                    in: NSRange(location: closeEnd, length: source.length - closeEnd),
+                    with: restAttr)
+                return (result, endState(rest, start: .normal))
+            }
+            apply(commentColor, 0..<source.length, result)
+            return (result, .blockComment)
+        }
+        return (attributedRow(text, font: font), endState(text, start: .normal))
+    }
+
+    /// Computes the comment state at the end of `text`. XML comments can't nest
+    /// and `<!--` can't appear in attribute values, so a plain scan suffices.
+    static func endState(_ text: String, start: HighlightState) -> HighlightState {
+        let source = text as NSString
+        var index = 0
+        if start == .blockComment {
+            guard let closeEnd = indexAfter(source, of: "-->", from: 0) else { return .blockComment }
+            index = closeEnd
+        }
+        while let open = indexAfter(source, of: "<!--", from: index) {
+            guard let closeEnd = indexAfter(source, of: "-->", from: open) else { return .blockComment }
+            index = closeEnd
+        }
+        return .normal
+    }
+
     /// Returns `text` as an attributed string with XML tokens coloured.
     static func attributedRow(_ text: String, font: NSFont) -> NSAttributedString {
         let result = NSMutableAttributedString(

@@ -17,6 +17,13 @@ final class Document {
     /// True when the file changed on disk since it was loaded.
     var hasDiskChanges = false
 
+    /// Detected encoding / line endings, for the status bar.
+    private(set) var format: FileFormat
+
+    /// A scroll row to apply once indexing has produced enough rows (used when
+    /// restoring a previous session). Cleared after it's applied.
+    var pendingScrollRow: Double?
+
     private static let numberFormatter: NumberFormatter = {
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal
@@ -29,6 +36,7 @@ final class Document {
         self.file = file
         self.index = index
         self.view = view
+        self.format = FileFormat(scanning: file)
     }
 
     /// Re-points an existing document at `newURL` after a save, swapping in a
@@ -39,6 +47,7 @@ final class Document {
         fileName = newURL.lastPathComponent
         file = newFile
         index = newIndex
+        format = FileFormat(scanning: newFile)
     }
 
     /// True while the document has an unsaved deferred-edit rule.
