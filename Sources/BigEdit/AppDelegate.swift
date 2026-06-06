@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
     private let splitView = NSSplitView()
     private let sidebar = DocumentListView(frame: NSRect(x: 0, y: 0, width: 220, height: 640))
     private let contentContainer = ContentContainerView(frame: NSRect(x: 0, y: 0, width: 680, height: 640))
+    private let titleLabel = NSTextField(labelWithString: "")
 
     private var documents: [Document] = []
     private var activeIndex: Int?
@@ -95,9 +96,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         }
 
         window.contentView = splitView
+        installCenteredTitle()
         window.center()
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// Hides the native (leading) title and draws a centered label in the title
+    /// bar instead, so the file name sits in the middle of the window.
+    private func installCenteredTitle() {
+        window.titleVisibility = .hidden
+        guard let titlebar = window.standardWindowButton(.closeButton)?.superview else {
+            return
+        }
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        titleLabel.alignment = .center
+        titleLabel.font = NSFont.titleBarFont(ofSize: NSFont.systemFontSize)
+        titleLabel.textColor = .secondaryLabelColor
+        titleLabel.lineBreakMode = .byTruncatingMiddle
+        titlebar.addSubview(titleLabel)
+        NSLayoutConstraint.activate([
+            titleLabel.centerXAnchor.constraint(equalTo: titlebar.centerXAnchor),
+            titleLabel.centerYAnchor.constraint(equalTo: titlebar.centerYAnchor),
+            titleLabel.widthAnchor.constraint(lessThanOrEqualTo: titlebar.widthAnchor, multiplier: 0.6)
+        ])
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -571,10 +593,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
     }
 
     private func updateTitle() {
-        // Just the file name (macOS centres the window title). Size, line count,
-        // encoding, and disk-change state live in the info pane / status bar /
-        // sidebar instead.
-        window.title = activeDocument?.fileName ?? "BigEdit"
+        // Just the file name, drawn by the centered title label. Size, line
+        // count, encoding, and disk-change state live in the info pane / status
+        // bar / sidebar instead.
+        let name = activeDocument?.fileName ?? "BigEdit"
+        window.title = name           // keeps the Window menu / app switcher correct
+        titleLabel.stringValue = name
     }
 
     private func presentError(_ message: String) {
