@@ -97,10 +97,10 @@ These ripple into several tasks below — worth pinning down before starting.
       `NSAccessibilityStaticText` (or similar) and expose visible row text
       via `accessibilityValue`. Substantial work; honest beta should
       acknowledge it as a known limitation in the meantime.
-- [ ] **Word-width hit testing.** Today the viewport approximates click→byte
-      using `characterWidth` (monospaced ASCII assumption). Non-ASCII text
-      can select a few bytes off the click point. Fix:
-      `CTLineGetStringIndexForPosition` on the row's attributed string.
+- [x] **Word-width hit testing.** Clicks now map to byte offsets via
+      `CTLineGetStringIndexForPosition` on the row's attributed string, so
+      non-ASCII selections land on character boundaries. (Falls back to the
+      monospaced estimate only while a replacement rule is active.)
 - [ ] **Better long-line handling.** Long lines wrap at a fixed 1024-byte
       column. Window-width soft-wrap would be nicer for minified JSON
       viewing but means recomputing chunk counts when the window resizes.

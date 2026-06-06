@@ -1,4 +1,5 @@
 import AppKit
+import CoreText
 
 /// How much the mouse selects per click — driven by `NSEvent.clickCount`.
 private enum SelectionGranularity {
@@ -448,15 +449,71 @@ final class ViewportView: NSView {
                 let gutterW = gutterWidth(for: index.count)
                 let textOriginX = gutterW + gutterPadding
                 let relativeX = point.x - textOriginX + horizontalOffset
-                let approxChars = Int((max(0, relativeX) / characterWidth).rounded())
-                let rs = visualLine.byteRange.lowerBound
-                let re = visualLine.byteRange.upperBound
-                result = max(rs, min(rs + approxChars, re))
+                result = byteOffset(inRow: visualLine, atX: relativeX, file: file)
             } else {
                 result = file.size
             }
         }
         return result
+    }
+
+    /// Maps an x position within a visual row to a byte offset. Uses CoreText so
+    /// the result lands on a character boundary even with non-ASCII or otherwise
+    /// variable-width glyphs, instead of assuming one column equals one byte.
+    /// While a replacement rule is active the drawn text differs from the
+    /// underlying bytes, so it falls back to a monospaced column estimate.
+    private func byteOffset(inRow visualLine: LineIndex.VisualLine,
+                            atX relativeX: CGFloat, file: MappedFile) -> Int {
+        let rs = visualLine.byteRange.lowerBound
+        let re = visualLine.byteRange.upperBound
+
+        if editModel?.rule != nil {
+            let approxChars = Int((max(0, relativeX) / characterWidth).rounded())
+            return max(rs, min(rs + approxChars, re))
+        }
+
+        let buffer = file.buffer
+        let startByte = chunkStartByte(visualLine, buffer: buffer)
+        let text = decodeChunk(visualLine, buffer: buffer)
+        if text.isEmpty {
+            return startByte
+        }
+
+        let line = CTLineCreateWithAttributedString(attributedRow(text) as CFAttributedString)
+        let position = CGPoint(x: max(0, relativeX), y: 0)
+        let utf16Index = CTLineGetStringIndexForPosition(line, position)
+        let target = max(0, min(Int(utf16Index), text.utf16.count))
+
+        // Convert the UTF-16 string index back to a byte offset in the file.
+        var consumedUTF16 = 0
+        var consumedBytes = 0
+        for scalar in text.unicodeScalars {
+            let width = scalar.value > 0xFFFF ? 2 : 1
+            if consumedUTF16 + width > target {
+                break
+            }
+            consumedUTF16 += width
+            let value = scalar.value
+            consumedBytes += value < 0x80 ? 1 : (value < 0x800 ? 2 : (value < 0x10000 ? 3 : 4))
+        }
+        return min(startByte + consumedBytes, re)
+    }
+
+    /// The first fully-decodable byte of a chunk. A continuation chunk can begin
+    /// mid-UTF-8 sequence, so skip leading continuation bytes — mirroring how
+    /// `decodeChunk` builds the displayed text.
+    private func chunkStartByte(_ visualLine: LineIndex.VisualLine,
+                                buffer: UnsafeRawBufferPointer) -> Int {
+        var start = visualLine.byteRange.lowerBound
+        if visualLine.chunkIndex > 0 {
+            var skipped = 0
+            while start < visualLine.byteRange.upperBound && skipped < 3
+                && (buffer[start] & 0xC0) == 0x80 {
+                start += 1
+                skipped += 1
+            }
+        }
+        return start
     }
 
     // MARK: - Copy / Select All
