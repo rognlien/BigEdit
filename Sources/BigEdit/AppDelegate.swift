@@ -18,6 +18,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
     private let openRecentMenu = NSMenu(title: "Open Recent")
     private var didOpenFromURL = false
     private static let lastFilePathDefaultsKey = "BigEditLastFilePath"
+    private static let openDocumentsDefaultsKey = "BigEditOpenDocuments"
+    private static let activeIndexDefaultsKey = "BigEditActiveIndex"
     private static let fontSizeDefaultsKey = "BigEditFontSize"
 
     /// The editor font size shared by all open documents, persisted across launches.
@@ -56,7 +58,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         // restore the last one viewed. Scheduled on the next run loop tick so
         // any pending open-URL event has a chance to fire first.
         DispatchQueue.main.async { [weak self] in
-            self?.restoreLastFileIfNeeded()
+            self?.restoreSessionIfNeeded()
         }
     }
 
@@ -113,9 +115,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         if !hasVisibleWindows {
             window.makeKeyAndOrderFront(nil)
             // If nothing is open (rare — only if the window was closed before a
-            // file was opened), try to restore the last one.
+            // file was opened), try to restore the previous session.
             if documents.isEmpty {
-                restoreLastFileIfNeeded()
+                restoreSessionIfNeeded()
             }
         }
         return true
@@ -130,15 +132,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         }
     }
 
-    private func restoreLastFileIfNeeded() {
+    /// Reopens the set of documents from the last session, selecting the one
+    /// that was active. Falls back to the single legacy last-file key.
+    private func restoreSessionIfNeeded() {
         if didOpenFromURL || !documents.isEmpty {
             return
         }
-        guard let path = UserDefaults.standard.string(forKey: AppDelegate.lastFilePathDefaultsKey),
-              FileManager.default.fileExists(atPath: path) else {
+        let defaults = UserDefaults.standard
+        var paths = defaults.stringArray(forKey: AppDelegate.openDocumentsDefaultsKey) ?? []
+        if paths.isEmpty, let legacy = defaults.string(forKey: AppDelegate.lastFilePathDefaultsKey) {
+            paths = [legacy]
+        }
+        let existing = paths.filter { FileManager.default.fileExists(atPath: $0) }
+        if existing.isEmpty {
             return
         }
-        openDocuments(at: [URL(fileURLWithPath: path)])
+        openDocuments(at: existing.map { URL(fileURLWithPath: $0) })
+        let savedActive = defaults.integer(forKey: AppDelegate.activeIndexDefaultsKey)
+        if documents.indices.contains(savedActive) {
+            selectDocument(at: savedActive)
+        }
+    }
+
+    /// Persists the open document paths and the active index for next launch.
+    private func persistSession() {
+        let defaults = UserDefaults.standard
+        defaults.set(documents.map { $0.url.path }, forKey: AppDelegate.openDocumentsDefaultsKey)
+        defaults.set(activeIndex ?? 0, forKey: AppDelegate.activeIndexDefaultsKey)
+        defaults.set(documents.last?.url.path, forKey: AppDelegate.lastFilePathDefaultsKey)
     }
 
     // MARK: - Open Recent menu
@@ -234,6 +255,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         fileMenu.addItem(saveAsItem)
 
         fileMenu.addItem(NSMenuItem.separator())
+
+        let reloadItem = NSMenuItem(
+            title: "Reload from Disk",
+            action: #selector(reloadActiveFromDisk),
+            keyEquivalent: "r"
+        )
+        reloadItem.target = self
+        fileMenu.addItem(reloadItem)
 
         let closeItem = NSMenuItem(
             title: "Close",
@@ -407,7 +436,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
                 documents.append(document)
                 lastOpened = documents.count - 1
                 NSDocumentController.shared.noteNewRecentDocumentURL(url)
-                UserDefaults.standard.set(url.path, forKey: AppDelegate.lastFilePathDefaultsKey)
             } else {
                 presentError("Could not open \(url.lastPathComponent).")
             }
@@ -416,6 +444,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
             sidebar.reload(documents: documents, selectedIndex: lastOpened)
             selectDocument(at: lastOpened)
         }
+        persistSession()
     }
 
     /// Maps the file, builds a view + index, and kicks off background indexing.
@@ -429,12 +458,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
 
         view.load(file: file, index: index)
         view.viewport.setFontSize(editorFontSize)
+        document.watcher = FileWatcher(path: url.path) { [weak self, weak document] in
+            if let self, let document {
+                self.fileDidChangeOnDisk(document)
+            }
+        }
         index.build(from: file) { [weak self, weak document] in
             if let self, let document {
                 self.documentDidUpdate(document)
             }
         }
         return document
+    }
+
+    /// Marks a document as changed on disk and surfaces it (sidebar + title).
+    private func fileDidChangeOnDisk(_ document: Document) {
+        guard let index = documents.firstIndex(where: { $0 === document }) else {
+            return
+        }
+        document.hasDiskChanges = true
+        sidebar.reloadRow(index)
+        if index == activeIndex {
+            updateTitle()
+        }
     }
 
     /// Mounts the document at `index` and refreshes window chrome from it.
@@ -449,6 +495,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         window.isDocumentEdited = document.isEdited
         sidebar.applySelection(index)
         updateTitle()
+        persistSession()
     }
 
     @objc private func closeActiveDocument() {
@@ -464,6 +511,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
             return
         }
         let document = documents[index]
+        document.watcher?.cancel()
         document.view.close()
         document.index.cancel()
         documents.remove(at: index)
@@ -474,6 +522,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
             window.isDocumentEdited = false
             sidebar.reload(documents: documents, selectedIndex: nil)
             updateTitle()
+            persistSession()
         } else {
             let next = min(index, documents.count - 1)
             sidebar.reload(documents: documents, selectedIndex: next)
@@ -501,7 +550,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
                 ?? "\(document.index.count)"
             let bytes = ByteCountFormatter.string(
                 fromByteCount: Int64(document.file.size), countStyle: .file)
-            let status = document.index.isComplete ? "" : "  (indexing…)"
+            var status = document.index.isComplete ? "" : "  (indexing…)"
+            if document.hasDiskChanges {
+                status += "  — changed on disk (⌘R to reload)"
+            }
             title = "BigEdit — \(document.fileName) — \(bytes) — \(lines) lines\(status)"
         }
         window.title = title
@@ -605,28 +657,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
 
     /// Re-points a document at the freshly written file and restarts indexing.
     private func reloadDocument(_ document: Document, from destination: URL) {
-        guard let file = MappedFile(path: destination.path) else {
-            presentSaveError("Could not reopen \(destination.lastPathComponent).")
+        reload(document, from: destination, preserveScroll: false)
+        NSDocumentController.shared.noteNewRecentDocumentURL(destination)
+    }
+
+    /// Reloads the active document from its file on disk (the ⌘R command),
+    /// keeping the scroll position so log tailing isn't jarring.
+    @objc private func reloadActiveFromDisk() {
+        if let document = activeDocument {
+            reload(document, from: document.url, preserveScroll: true)
+        }
+    }
+
+    /// Swaps a document's contents for a fresh map of `url` and restarts
+    /// indexing, optionally keeping the current scroll position.
+    private func reload(_ document: Document, from url: URL, preserveScroll: Bool) {
+        guard let file = MappedFile(path: url.path) else {
+            presentSaveError("Could not reopen \(url.lastPathComponent).")
             return
         }
+        let previousRow = document.view.viewport.scrollRow
         let index = LineIndex()
+        document.watcher?.cancel()
         document.view.close()
-        document.reload(url: destination, file: file, index: index)
+        document.reload(url: url, file: file, index: index)
+        document.hasDiskChanges = false
         document.view.load(file: file, index: index)
         document.view.viewport.setFontSize(editorFontSize)
+        if preserveScroll {
+            document.view.viewport.setScrollRow(previousRow)
+        }
+        document.watcher = FileWatcher(path: url.path) { [weak self, weak document] in
+            if let self, let document {
+                self.fileDidChangeOnDisk(document)
+            }
+        }
         index.build(from: file) { [weak self, weak document] in
             if let self, let document {
                 self.documentDidUpdate(document)
             }
         }
+        persistSession()
 
-        NSDocumentController.shared.noteNewRecentDocumentURL(destination)
-        UserDefaults.standard.set(destination.path, forKey: AppDelegate.lastFilePathDefaultsKey)
-
-        if let index = documents.firstIndex(where: { $0 === document }) {
-            sidebar.reloadRow(index)
-            if index == activeIndex {
-                selectDocument(at: index)
+        if let position = documents.firstIndex(where: { $0 === document }) {
+            sidebar.reloadRow(position)
+            if position == activeIndex {
+                selectDocument(at: position)
             }
         }
     }
@@ -638,7 +714,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         switch menuItem.action {
         case #selector(save), #selector(saveAs):
             enabled = activeView?.currentRule != nil
-        case #selector(closeActiveDocument):
+        case #selector(closeActiveDocument), #selector(reloadActiveFromDisk):
             enabled = activeDocument != nil
         case #selector(toggleInfoPane):
             menuItem.state = (activeView?.isInfoPaneVisible ?? false) ? .on : .off

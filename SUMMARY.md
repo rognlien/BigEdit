@@ -51,7 +51,8 @@ constructs (comments, fences, block scalars) only colour their first row.
 - `⌥⌘I` toggle Info Inspector.
 - Click + drag to select (with auto-scroll past the viewport edges). Double-click selects a word, triple-click selects the visual line.
 - I-beam cursor over the text area.
-- Window frame remembered across launches. The last file is restored on launch unless the user launched with a different file from Finder or Open Recent.
+- Window frame remembered across launches. The full set of open documents (and which one was active) is restored on launch, unless the user launched with a different file from Finder or Open Recent.
+- Files are watched on disk; an external change is flagged in the title and sidebar, and **⌘R** reloads from disk (keeping the scroll position).
 - **Open Recent** populated via `NSDocumentController.recentDocumentURLs`.
 - **Finder integration**: declared `CFBundleDocumentTypes` covers `public.text` / `public.plain-text` / `public.source-code` / `public.xml` / `public.json` / `public.html`. Double-click and drag-to-Dock both route through `application(_:open:)`.
 - **Auto-detected syntax mode** by extension (`json` / `xml` / `md` / `yaml` / …) or by first non-whitespace byte (`{`/`[` → JSON, `<` → XML).
@@ -100,6 +101,6 @@ and the four highlighters. Run with `swift test`.
 - Highlighters are per-row stateless: multi-row XML comments, Markdown fenced code blocks, and YAML block scalars only colour their opening row.
 - UTF-8 only.
 - No VoiceOver / accessibility yet — the custom-drawn viewport exposes nothing to assistive tech.
-- No keyboard selection extension (shift+arrow).
+- Keyboard selection is Shift+Arrow (extends from a caret); there's no blinking insertion caret drawn when the selection is empty.
 - Word boundaries for double-click are ASCII-only.
 - Stage 2 of the lazy editor (positional edits + undo) not implemented.

@@ -11,6 +11,12 @@ final class Document {
     private(set) var index: LineIndex
     let view: DocumentView
 
+    /// Watches the file on disk; owned by the document so it stops on close.
+    var watcher: FileWatcher?
+
+    /// True when the file changed on disk since it was loaded.
+    var hasDiskChanges = false
+
     private static let numberFormatter: NumberFormatter = {
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal
@@ -48,6 +54,9 @@ final class Document {
     /// The sidebar's secondary line: size and line count, with an indexing
     /// hint until the line index finishes.
     var secondaryLine: String {
+        if hasDiskChanges {
+            return "\(displaySize) · changed on disk"
+        }
         if index.isComplete {
             let lines = Document.numberFormatter.string(from: NSNumber(value: index.count))
                 ?? "\(index.count)"
