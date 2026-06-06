@@ -94,7 +94,7 @@ and the four highlighters. Run with `swift test`.
 
 ## Honest limitations (documented)
 
-- Hit testing assumes a monospaced ASCII font; non-ASCII selections can be a few bytes off the click point.
+- Hit testing maps clicks to byte offsets with CoreText, so non-ASCII selections land on character boundaries. (It falls back to a monospaced column estimate only while a replacement rule is active, since the drawn text then differs from the underlying bytes.)
 - 64 MB cap on a single copy to the pasteboard.
 - 1,000,000-match cap on the display match list (the save path bypasses this).
 - Highlighters are per-row stateless: multi-row XML comments, Markdown fenced code blocks, and YAML block scalars only colour their opening row.
