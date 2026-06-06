@@ -9,6 +9,8 @@ final class DocumentListView: NSView, NSTableViewDataSource, NSTableViewDelegate
     var onSelect: ((Int) -> Void)?
     /// Called when the user closes a row from its context menu.
     var onClose: ((Int) -> Void)?
+    /// Called with file URLs dropped onto the sidebar.
+    var onOpenFiles: (([URL]) -> Void)?
 
     private let scrollView = NSScrollView()
     private let tableView = NSTableView()
@@ -27,7 +29,6 @@ final class DocumentListView: NSView, NSTableViewDataSource, NSTableViewDelegate
         tableView.backgroundColor = .clear
         tableView.rowHeight = 42
         tableView.style = .sourceList
-        tableView.selectionHighlightStyle = .sourceList
         tableView.allowsEmptySelection = true
         tableView.allowsMultipleSelection = false
         tableView.dataSource = self
@@ -41,6 +42,30 @@ final class DocumentListView: NSView, NSTableViewDataSource, NSTableViewDelegate
         scrollView.autoresizingMask = [.width, .height]
         scrollView.frame = bounds
         addSubview(scrollView)
+
+        registerForDraggedTypes([.fileURL])
+    }
+
+    // MARK: - Drag & drop (open files)
+
+    private func fileURLs(from sender: NSDraggingInfo) -> [URL] {
+        let options: [NSPasteboard.ReadingOptionKey: Any] = [.urlReadingFileURLsOnly: true]
+        let objects = sender.draggingPasteboard.readObjects(
+            forClasses: [NSURL.self], options: options)
+        return (objects as? [URL]) ?? []
+    }
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        fileURLs(from: sender).isEmpty ? [] : .copy
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        let urls = fileURLs(from: sender)
+        if urls.isEmpty {
+            return false
+        }
+        onOpenFiles?(urls)
+        return true
     }
 
     required init?(coder: NSCoder) {

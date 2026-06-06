@@ -35,6 +35,86 @@ enum YAMLHighlighter {
     private static let greaterThan = unichar(UInt8(ascii: ">"))
     private static let tilde = unichar(UInt8(ascii: "~"))
 
+    /// Stateful entry: when `startState` is `.blockScalar` the row may be a
+    /// continuation line of a `|` / `>` block scalar (coloured as a string).
+    static func attributedRow(_ text: String, font: NSFont,
+                              startState: HighlightState) -> (NSAttributedString, HighlightState) {
+        let source = text as NSString
+        if case .blockScalar(let parentIndent) = startState,
+           isBlank(source) || indentOf(source) > parentIndent {
+            let result = NSMutableAttributedString(
+                string: text, attributes: [.font: font, .foregroundColor: NSColor.textColor])
+            apply(stringColor, 0..<source.length, result)
+            return (result, .blockScalar(indent: parentIndent))
+        }
+        return (attributedRow(text, font: font), endState(text, start: startState))
+    }
+
+    /// Computes the block-scalar state at the end of `text`. A `key: |` (or `>`)
+    /// opens a scalar whose continuation lines are those indented past the key.
+    static func endState(_ text: String, start: HighlightState) -> HighlightState {
+        let source = text as NSString
+        if case .blockScalar(let parentIndent) = start,
+           isBlank(source) || indentOf(source) > parentIndent {
+            return .blockScalar(indent: parentIndent)
+        }
+        return opensBlockScalar(source) ? .blockScalar(indent: indentOf(source)) : .normal
+    }
+
+    private static func indentOf(_ source: NSString) -> Int {
+        var count = 0
+        while count < source.length && source.character(at: count) == space {
+            count += 1
+        }
+        return count
+    }
+
+    private static func isBlank(_ source: NSString) -> Bool {
+        for i in 0..<source.length where source.character(at: i) != space && source.character(at: i) != tab {
+            return false
+        }
+        return true
+    }
+
+    /// True when the line's value is a `|` or `>` block-scalar indicator
+    /// (optionally with chomping/indentation indicators or a trailing comment).
+    private static func opensBlockScalar(_ source: NSString) -> Bool {
+        let length = source.length
+        // Find the value start: after the last ": " or a trailing ":".
+        var valueStart = -1
+        var i = indentOf(source)
+        var inSingle = false
+        var inDouble = false
+        while i < length {
+            let c = source.character(at: i)
+            if c == doubleQuote && !inSingle { inDouble.toggle() }
+            else if c == singleQuote && !inDouble { inSingle.toggle() }
+            else if c == colon && !inSingle && !inDouble {
+                if i + 1 >= length { return false }          // "key:" with nothing after
+                if source.character(at: i + 1) == space { valueStart = i + 2 }
+            }
+            i += 1
+        }
+        guard valueStart >= 0 else { return false }
+        var j = valueStart
+        while j < length && source.character(at: j) == space { j += 1 }
+        guard j < length else { return false }
+        let indicator = source.character(at: j)
+        guard indicator == pipe || indicator == greaterThan else { return false }
+        // Remainder must be only chomping/indent indicators and optional comment.
+        j += 1
+        while j < length {
+            let c = source.character(at: j)
+            if c == space || c == hash { break }                 // trailing comment/space ok
+            let plus = unichar(UInt8(ascii: "+"))
+            let isChomp = c == plus || c == dash
+            let isDigit = c >= 0x31 && c <= 0x39                  // 1–9
+            if !isChomp && !isDigit { return false }
+            j += 1
+        }
+        return true
+    }
+
     static func attributedRow(_ text: String, font: NSFont) -> NSAttributedString {
         let result = NSMutableAttributedString(
             string: text,

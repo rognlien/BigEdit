@@ -14,8 +14,10 @@ final class DocumentView: NSView, FindBarDelegate {
     private let scroller = NSScroller(frame: NSRect(x: 0, y: 0, width: 16, height: 100))
     private let findBar = FindBar(frame: .zero)
     private let infoPane = InfoPane(frame: .zero)
+    private let statusBar = StatusBar(frame: .zero)
 
     private let editModel = EditModel()
+    private var fileFormat: FileFormat?
 
     private var findBarVisible = false
     private var infoPaneVisible = false
@@ -48,8 +50,13 @@ final class DocumentView: NSView, FindBarDelegate {
         infoPane.isHidden = true
         addSubview(infoPane)
 
+        addSubview(statusBar)
+
         viewport.onScrollChange = { [weak self] in
             self?.syncScroller()
+        }
+        viewport.onSelectionChange = { [weak self] in
+            self?.updateStatusBar()
         }
 
         layoutComponents()
@@ -108,22 +115,57 @@ final class DocumentView: NSView, FindBarDelegate {
 
     // MARK: - Layout
 
-    /// Places the find bar, viewport, scroller, and info pane.
+    /// Places the find bar, viewport, scroller, status bar, and info pane.
     private func layoutComponents() {
         let scrollerWidth = NSScroller.scrollerWidth(for: .regular, scrollerStyle: .legacy)
         let findHeight = findBarVisible ? findBar.preferredHeight : 0
         let infoWidth = infoPaneVisible ? InfoPane.preferredWidth : 0
-        let contentHeight = max(0, bounds.height - findHeight)
+        let statusHeight = StatusBar.preferredHeight
         let documentWidth = max(0, bounds.width - infoWidth)
+        let contentHeight = max(0, bounds.height - findHeight - statusHeight)
         let viewportWidth = max(0, documentWidth - scrollerWidth)
 
+        statusBar.frame = NSRect(x: 0, y: 0, width: documentWidth, height: statusHeight)
+        viewport.frame = NSRect(x: 0, y: statusHeight, width: viewportWidth, height: contentHeight)
+        scroller.frame = NSRect(x: viewportWidth, y: statusHeight, width: scrollerWidth, height: contentHeight)
         findBar.isHidden = !findBarVisible
-        findBar.frame = NSRect(x: 0, y: contentHeight, width: documentWidth, height: findHeight)
-        viewport.frame = NSRect(x: 0, y: 0, width: viewportWidth, height: contentHeight)
-        scroller.frame = NSRect(x: viewportWidth, y: 0, width: scrollerWidth, height: contentHeight)
+        findBar.frame = NSRect(x: 0, y: statusHeight + contentHeight, width: documentWidth, height: findHeight)
         infoPane.isHidden = !infoPaneVisible
         infoPane.frame = NSRect(x: documentWidth, y: 0, width: infoWidth, height: bounds.height)
         syncScroller()
+    }
+
+    // MARK: - Status bar
+
+    /// Sets the detected format (encoding / line endings) shown on the right.
+    func setFileFormat(_ format: FileFormat?) {
+        fileFormat = format
+        updateStatusBar()
+    }
+
+    private func updateStatusBar() {
+        var left = ""
+        if let file = viewport.file, let index = viewport.index, file.size > 0,
+           let caret = viewport.caretByteOffset {
+            let row = index.visualRow(forByteOffset: caret, file: file)
+            let line = index.visualLines(forRows: row..<(row + 1), file: file).first
+            let lineNumber = (line?.documentLine ?? 0) + 1
+            let lineText = numberFormatter.string(from: NSNumber(value: lineNumber)) ?? "\(lineNumber)"
+            if let range = viewport.selectionByteRange {
+                let count = numberFormatter.string(from: NSNumber(value: range.count)) ?? "\(range.count)"
+                left = "Ln \(lineText)  ·  \(count) bytes selected"
+            } else {
+                let offset = numberFormatter.string(from: NSNumber(value: caret)) ?? "\(caret)"
+                left = "Ln \(lineText)  ·  Offset \(offset)"
+            }
+        }
+        statusBar.setLeft(left)
+
+        var right = ""
+        if let format = fileFormat {
+            right = format.lineEnding == "—" ? format.encoding : "\(format.lineEnding)  ·  \(format.encoding)"
+        }
+        statusBar.setRight(right)
     }
 
     // MARK: - Scroller
