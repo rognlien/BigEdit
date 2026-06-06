@@ -32,12 +32,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
     private static let minSidebarWidth: CGFloat = 190
     private static let minContentWidth: CGFloat = 360
 
-    private let numberFormatter: NumberFormatter = {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        return formatter
-    }()
-
     // MARK: - Active document accessors
 
     private var activeDocument: Document? {
@@ -577,19 +571,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
     }
 
     private func updateTitle() {
-        var title = "BigEdit"
-        if let document = activeDocument {
-            let lines = numberFormatter.string(from: NSNumber(value: document.index.count))
-                ?? "\(document.index.count)"
-            let bytes = ByteCountFormatter.string(
-                fromByteCount: Int64(document.file.size), countStyle: .file)
-            var status = document.index.isComplete ? "" : "  (indexing…)"
-            if document.hasDiskChanges {
-                status += "  — changed on disk (⌘R to reload)"
-            }
-            title = "BigEdit — \(document.fileName) — \(bytes) — \(lines) lines\(status)"
-        }
-        window.title = title
+        // Just the file name (macOS centres the window title). Size, line count,
+        // encoding, and disk-change state live in the info pane / status bar /
+        // sidebar instead.
+        window.title = activeDocument?.fileName ?? "BigEdit"
     }
 
     private func presentError(_ message: String) {

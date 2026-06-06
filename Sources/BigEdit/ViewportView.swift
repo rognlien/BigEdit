@@ -295,19 +295,24 @@ final class ViewportView: NSView {
     override func keyDown(with event: NSEvent) {
         let command = event.modifierFlags.contains(.command)
         let shift = event.modifierFlags.contains(.shift)
+        // Once a caret/selection exists, the arrows navigate text (extending
+        // with Shift); before that they scroll, so plain browsing still works.
+        let hasCaret = selection != nil
         switch event.keyCode {
         case 126:                                          // up
-            shift ? extendSelectionVertically(by: -1)
-                  : (command ? setScrollRow(0) : scrollByRows(-1))
+            if command { setScrollRow(0) }
+            else if shift || hasCaret { moveCaretVertically(by: -1, extend: shift) }
+            else { scrollByRows(-1) }
         case 125:                                          // down
-            shift ? extendSelectionVertically(by: 1)
-                  : (command ? setScrollRow(maxScrollRow) : scrollByRows(1))
+            if command { setScrollRow(maxScrollRow) }
+            else if shift || hasCaret { moveCaretVertically(by: 1, extend: shift) }
+            else { scrollByRows(1) }
         case 123:                                          // left
-            shift ? extendSelectionHorizontally(forward: false)
-                  : shiftHorizontally(by: -characterWidth * 8)
+            if shift || hasCaret { moveCaretHorizontally(forward: false, extend: shift) }
+            else { shiftHorizontally(by: -characterWidth * 8) }
         case 124:                                          // right
-            shift ? extendSelectionHorizontally(forward: true)
-                  : shiftHorizontally(by: characterWidth * 8)
+            if shift || hasCaret { moveCaretHorizontally(forward: true, extend: shift) }
+            else { shiftHorizontally(by: characterWidth * 8) }
         case 116: scrollByPages(-1)                        // page up
         case 121: scrollByPages(1)                         // page down
         case 115: setScrollRow(0)                          // home
@@ -316,9 +321,9 @@ final class ViewportView: NSView {
         }
     }
 
-    // MARK: - Keyboard selection
+    // MARK: - Keyboard caret / selection
 
-    /// Ensures there is a caret to extend from — anchored at the start of the
+    /// Ensures there is a caret to move from — anchored at the start of the
     /// first visible row when nothing is selected yet.
     private func ensureCaret() {
         if selection == nil {
@@ -327,19 +332,33 @@ final class ViewportView: NSView {
         }
     }
 
-    private func extendSelectionHorizontally(forward: Bool) {
+    /// Moves the caret to `target`, collapsing the selection unless `extend`.
+    private func setCaret(to target: Int, extend: Bool) {
+        if extend {
+            selection?.activeOffset = target
+        } else {
+            selection = TextSelection(anchorOffset: target, activeOffset: target)
+        }
+    }
+
+    private func moveCaretHorizontally(forward: Bool, extend: Bool) {
         guard let file else { return }
         ensureCaret()
-        let caret = selection?.activeOffset ?? 0
-        let target = forward ? nextCharOffset(after: caret, in: file)
+        let target: Int
+        if !extend, let range = selectionByteRange {
+            target = forward ? range.upperBound : range.lowerBound   // collapse to edge
+        } else {
+            let caret = selection?.activeOffset ?? 0
+            target = forward ? nextCharOffset(after: caret, in: file)
                              : prevCharOffset(before: caret, in: file)
+        }
         desiredCaretX = nil
-        selection?.activeOffset = target
+        setCaret(to: target, extend: extend)
         scrollByteIntoView(target, in: file)
         needsDisplay = true
     }
 
-    private func extendSelectionVertically(by rowDelta: Int) {
+    private func moveCaretVertically(by rowDelta: Int, extend: Bool) {
         guard let file, let index else { return }
         ensureCaret()
         let caret = selection?.activeOffset ?? 0
@@ -351,7 +370,7 @@ final class ViewportView: NSView {
             target = byteOffset(inRow: line, atX: x, file: file)
         }
         desiredCaretX = x
-        selection?.activeOffset = target
+        setCaret(to: target, extend: extend)
         scrollToRow(targetRow)
         needsDisplay = true
     }

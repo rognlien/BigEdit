@@ -151,12 +151,11 @@ final class DocumentView: NSView, FindBarDelegate {
             let line = index.visualLines(forRows: row..<(row + 1), file: file).first
             let lineNumber = (line?.documentLine ?? 0) + 1
             let lineText = numberFormatter.string(from: NSNumber(value: lineNumber)) ?? "\(lineNumber)"
+            let offset = numberFormatter.string(from: NSNumber(value: caret)) ?? "\(caret)"
+            left = "Ln \(lineText)  ·  Offset \(offset)"
             if let range = viewport.selectionByteRange {
                 let count = numberFormatter.string(from: NSNumber(value: range.count)) ?? "\(range.count)"
-                left = "Ln \(lineText)  ·  \(count) bytes selected"
-            } else {
-                let offset = numberFormatter.string(from: NSNumber(value: caret)) ?? "\(caret)"
-                left = "Ln \(lineText)  ·  Offset \(offset)"
+                left += "  ·  \(count) bytes selected"
             }
         }
         statusBar.setLeft(left)
