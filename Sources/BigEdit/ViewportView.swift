@@ -51,7 +51,12 @@ final class ViewportView: NSView {
     private var syntaxMode: SyntaxMode = .plain
 
     /// The user's current selection, as byte offsets into the original file.
+    /// Its `activeOffset` doubles as the keyboard caret (the end being moved).
     private var selection: TextSelection?
+
+    /// Target x for vertical caret moves, so up/down keep a column. Reset on a
+    /// horizontal move or a click.
+    private var desiredCaretX: CGFloat?
 
     /// What kind of unit the active mouse interaction is selecting in.
     private var selectionGranularity: SelectionGranularity = .character
@@ -225,16 +230,117 @@ final class ViewportView: NSView {
 
     override func keyDown(with event: NSEvent) {
         let command = event.modifierFlags.contains(.command)
+        let shift = event.modifierFlags.contains(.shift)
         switch event.keyCode {
-        case 126: command ? setScrollRow(0) : scrollByRows(-1)             // (⌘)up
-        case 125: command ? setScrollRow(maxScrollRow) : scrollByRows(1)   // (⌘)down
+        case 126:                                          // up
+            shift ? extendSelectionVertically(by: -1)
+                  : (command ? setScrollRow(0) : scrollByRows(-1))
+        case 125:                                          // down
+            shift ? extendSelectionVertically(by: 1)
+                  : (command ? setScrollRow(maxScrollRow) : scrollByRows(1))
+        case 123:                                          // left
+            shift ? extendSelectionHorizontally(forward: false)
+                  : shiftHorizontally(by: -characterWidth * 8)
+        case 124:                                          // right
+            shift ? extendSelectionHorizontally(forward: true)
+                  : shiftHorizontally(by: characterWidth * 8)
         case 116: scrollByPages(-1)                        // page up
         case 121: scrollByPages(1)                         // page down
         case 115: setScrollRow(0)                          // home
         case 119: setScrollRow(maxScrollRow)               // end
-        case 123: shiftHorizontally(by: -characterWidth * 8)  // left arrow
-        case 124: shiftHorizontally(by: characterWidth * 8)   // right arrow
         default: super.keyDown(with: event)
+        }
+    }
+
+    // MARK: - Keyboard selection
+
+    /// Ensures there is a caret to extend from — anchored at the start of the
+    /// first visible row when nothing is selected yet.
+    private func ensureCaret() {
+        if selection == nil {
+            let origin = firstVisibleRowStartByte()
+            selection = TextSelection(anchorOffset: origin, activeOffset: origin)
+        }
+    }
+
+    private func extendSelectionHorizontally(forward: Bool) {
+        guard let file else { return }
+        ensureCaret()
+        let caret = selection?.activeOffset ?? 0
+        let target = forward ? nextCharOffset(after: caret, in: file)
+                             : prevCharOffset(before: caret, in: file)
+        desiredCaretX = nil
+        selection?.activeOffset = target
+        scrollByteIntoView(target, in: file)
+        needsDisplay = true
+    }
+
+    private func extendSelectionVertically(by rowDelta: Int) {
+        guard let file, let index else { return }
+        ensureCaret()
+        let caret = selection?.activeOffset ?? 0
+        let currentRow = index.visualRow(forByteOffset: caret, file: file)
+        let x = desiredCaretX ?? caretX(forOffset: caret, row: currentRow, file: file)
+        let targetRow = max(0, min(currentRow + rowDelta, index.visualRowCount - 1))
+        var target = caret
+        if let line = index.visualLines(forRows: targetRow..<(targetRow + 1), file: file).first {
+            target = byteOffset(inRow: line, atX: x, file: file)
+        }
+        desiredCaretX = x
+        selection?.activeOffset = target
+        scrollToRow(targetRow)
+        needsDisplay = true
+    }
+
+    /// The byte offset of the next UTF-8 character boundary after `offset`.
+    func nextCharOffset(after offset: Int, in file: MappedFile) -> Int {
+        let size = file.size
+        if offset >= size { return size }
+        let buffer = file.buffer
+        var i = offset + 1
+        while i < size && (buffer[i] & 0xC0) == 0x80 {
+            i += 1
+        }
+        return i
+    }
+
+    /// The byte offset of the previous UTF-8 character boundary before `offset`.
+    func prevCharOffset(before offset: Int, in file: MappedFile) -> Int {
+        if offset <= 0 { return 0 }
+        let buffer = file.buffer
+        var i = offset - 1
+        while i > 0 && (buffer[i] & 0xC0) == 0x80 {
+            i -= 1
+        }
+        return i
+    }
+
+    /// The drawn x of the caret at `offset` within the row at `row`.
+    private func caretX(forOffset offset: Int, row: Int, file: MappedFile) -> CGFloat {
+        guard let index,
+              let line = index.visualLines(forRows: row..<(row + 1), file: file).first else {
+            return 0
+        }
+        let start = chunkStartByte(line, buffer: file.buffer)
+        let clamped = max(start, min(offset, line.byteRange.upperBound))
+        if clamped <= start {
+            return 0
+        }
+        return textWidth(ofBytes: start..<clamped, in: file.buffer)
+    }
+
+    private func firstVisibleRowStartByte() -> Int {
+        guard let file, let index else { return 0 }
+        let rowIndex = max(0, min(Int(scrollRow.rounded(.down)), index.visualRowCount - 1))
+        if let line = index.visualLines(forRows: rowIndex..<(rowIndex + 1), file: file).first {
+            return chunkStartByte(line, buffer: file.buffer)
+        }
+        return 0
+    }
+
+    private func scrollByteIntoView(_ offset: Int, in file: MappedFile) {
+        if let index {
+            scrollToRow(index.visualRow(forByteOffset: offset, file: file))
         }
     }
 
@@ -268,6 +374,7 @@ final class ViewportView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
+        desiredCaretX = nil
         let point = convert(event.locationInWindow, from: nil)
         let offset = byteOffset(at: point)
         selectionGranularity = granularity(forClickCount: event.clickCount)
