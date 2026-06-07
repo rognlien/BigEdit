@@ -14,6 +14,7 @@ final class DocumentView: NSView, FindBarDelegate {
     private let scroller = NSScroller(frame: NSRect(x: 0, y: 0, width: 16, height: 100))
     private let findBar = FindBar(frame: .zero)
     private let infoPane = InfoPane(frame: .zero)
+    private let infoDivider = InfoPaneDivider(frame: .zero)
     private let statusBar = StatusBar(frame: .zero)
 
     private let editModel = EditModel()
@@ -21,6 +22,16 @@ final class DocumentView: NSView, FindBarDelegate {
 
     private var findBarVisible = false
     private var infoPaneVisible = false
+
+    /// Width of the info pane; resizable via its divider. Coordinated app-wide
+    /// (see `onInfoPaneWidthChange`) so all documents match.
+    private var infoPaneWidth = InfoPane.preferredWidth
+    private static let minInfoPaneWidth: CGFloat = 180
+    private static let minContentWidth: CGFloat = 300
+
+    /// Called when the user drags the info-pane divider, so the new width can be
+    /// applied to other open documents and persisted.
+    var onInfoPaneWidthChange: ((CGFloat) -> Void)?
     private var searchScan: SearchScan?
     private var statisticsScan: StatisticsScan?
     private var currentQuery = ""
@@ -49,6 +60,12 @@ final class DocumentView: NSView, FindBarDelegate {
 
         infoPane.isHidden = true
         addSubview(infoPane)
+
+        infoDivider.isHidden = true
+        infoDivider.onDrag = { [weak self] locationInWindow in
+            self?.dragInfoDivider(to: locationInWindow)
+        }
+        addSubview(infoDivider)
 
         addSubview(statusBar)
 
@@ -119,7 +136,7 @@ final class DocumentView: NSView, FindBarDelegate {
     private func layoutComponents() {
         let scrollerWidth = NSScroller.scrollerWidth(for: .regular, scrollerStyle: .legacy)
         let findHeight = findBarVisible ? findBar.preferredHeight : 0
-        let infoWidth = infoPaneVisible ? InfoPane.preferredWidth : 0
+        let infoWidth = infoPaneVisible ? clampedInfoWidth() : 0
         let statusHeight = StatusBar.preferredHeight
         let documentWidth = max(0, bounds.width - infoWidth)
         let contentHeight = max(0, bounds.height - findHeight - statusHeight)
@@ -132,7 +149,29 @@ final class DocumentView: NSView, FindBarDelegate {
         findBar.frame = NSRect(x: 0, y: statusHeight + contentHeight, width: documentWidth, height: findHeight)
         infoPane.isHidden = !infoPaneVisible
         infoPane.frame = NSRect(x: documentWidth, y: 0, width: infoWidth, height: bounds.height)
+        infoDivider.isHidden = !infoPaneVisible
+        infoDivider.frame = NSRect(x: documentWidth, y: 0, width: 6, height: bounds.height)
         syncScroller()
+    }
+
+    /// The info-pane width, clamped so neither pane gets too narrow.
+    private func clampedInfoWidth() -> CGFloat {
+        let maxWidth = max(DocumentView.minInfoPaneWidth, bounds.width - DocumentView.minContentWidth)
+        return min(max(infoPaneWidth, DocumentView.minInfoPaneWidth), maxWidth)
+    }
+
+    /// Sets the info-pane width (e.g. applied app-wide) and re-lays out.
+    func setInfoPaneWidth(_ width: CGFloat) {
+        infoPaneWidth = width
+        layoutComponents()
+    }
+
+    private func dragInfoDivider(to locationInWindow: NSPoint) {
+        let point = convert(locationInWindow, from: nil)
+        infoPaneWidth = bounds.width - point.x
+        infoPaneWidth = clampedInfoWidth()
+        layoutComponents()
+        onInfoPaneWidthChange?(infoPaneWidth)
     }
 
     // MARK: - Status bar
@@ -576,5 +615,25 @@ final class DocumentView: NSView, FindBarDelegate {
             }
         }
         findBar.updateStatus(text)
+    }
+}
+
+/// A thin draggable strip on the info pane's leading edge, used to resize it.
+/// It draws nothing (the info pane draws its own separator line) and shows the
+/// horizontal-resize cursor; drags are reported via `onDrag`.
+final class InfoPaneDivider: NSView {
+
+    var onDrag: ((NSPoint) -> Void)?
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .resizeLeftRight)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        onDrag?(event.locationInWindow)
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        onDrag?(event.locationInWindow)
     }
 }

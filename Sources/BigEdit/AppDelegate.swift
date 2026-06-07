@@ -30,6 +30,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         return stored > 0 ? CGFloat(stored) : ViewportView.defaultFontSize
     }()
 
+    private static let infoPaneWidthDefaultsKey = "BigEditInfoPaneWidth"
+
+    /// The info-pane width shared by all open documents, persisted across launches.
+    private lazy var infoPaneWidth: CGFloat = {
+        let stored = UserDefaults.standard.double(forKey: AppDelegate.infoPaneWidthDefaultsKey)
+        return stored > 0 ? CGFloat(stored) : InfoPane.preferredWidth
+    }()
+
     private static let minSidebarWidth: CGFloat = 190
     private static let minContentWidth: CGFloat = 360
 
@@ -478,6 +486,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         }
     }
 
+    /// Applies a new info-pane width to every open document and persists it.
+    private func setInfoPaneWidth(_ width: CGFloat) {
+        infoPaneWidth = width
+        UserDefaults.standard.set(Double(width), forKey: AppDelegate.infoPaneWidthDefaultsKey)
+        for document in documents {
+            document.view.setInfoPaneWidth(width)
+        }
+    }
+
     @objc private func performGoToLine() {
         activeView?.showGoToLineSheet()
     }
@@ -534,6 +551,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
 
         view.load(file: file, index: index)
         view.viewport.setFontSize(editorFontSize)
+        view.setInfoPaneWidth(infoPaneWidth)
+        view.onInfoPaneWidthChange = { [weak self] width in
+            self?.setInfoPaneWidth(width)
+        }
         view.setFileFormat(document.format)
         document.watcher = FileWatcher(path: url.path) { [weak self, weak document] in
             if let self, let document {
@@ -762,6 +783,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         document.hasDiskChanges = false
         document.view.load(file: file, index: index)
         document.view.viewport.setFontSize(editorFontSize)
+        document.view.setInfoPaneWidth(infoPaneWidth)
         document.view.setFileFormat(document.format)
         if preserveScroll {
             document.view.viewport.setScrollRow(previousRow)
