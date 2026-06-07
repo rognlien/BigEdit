@@ -310,6 +310,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         let appMenuItem = NSMenuItem()
         mainMenu.addItem(appMenuItem)
         let appMenu = NSMenu()
+        let aboutItem = NSMenuItem(
+            title: "About BigEdit",
+            action: #selector(showAbout),
+            keyEquivalent: ""
+        )
+        aboutItem.target = self
+        appMenu.addItem(aboutItem)
+        appMenu.addItem(NSMenuItem.separator())
         appMenu.addItem(
             withTitle: "Quit BigEdit",
             action: #selector(NSApplication.terminate(_:)),
@@ -499,6 +507,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         for document in documents {
             document.view.setInfoPaneWidth(width)
         }
+    }
+
+    /// Shows the standard About panel (icon, name, version, copyright from the
+    /// Info.plist) with a clickable link to the website in its credits.
+    @objc private func showAbout() {
+        let credits = NSAttributedString(
+            string: "maendeleo.io/bigedit",
+            attributes: [
+                .link: URL(string: "https://maendeleo.io/bigedit/") as Any,
+                .foregroundColor: NSColor.linkColor,
+                .font: NSFont.systemFont(ofSize: 11)
+            ]
+        )
+        NSApp.activate(ignoringOtherApps: true)
+        NSApp.orderFrontStandardAboutPanel(options: [.credits: credits])
     }
 
     @objc private func performGoToLine() {
