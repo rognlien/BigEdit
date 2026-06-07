@@ -382,9 +382,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         let infoItem = NSMenuItem(
             title: "Info Inspector",
             action: #selector(toggleInfoPane),
-            keyEquivalent: "i"
+            keyEquivalent: "i"            // ⌘I, the standard "Get Info" shortcut
         )
-        infoItem.keyEquivalentModifierMask = [.command, .option]
         infoItem.target = self
         viewMenu.addItem(infoItem)
 
