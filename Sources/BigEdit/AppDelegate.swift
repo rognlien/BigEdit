@@ -1,4 +1,5 @@
 import AppKit
+import Sparkle
 
 /// Owns the window, the menu, and the set of open documents. Several documents
 /// can be open at once; a left-side sidebar switches between them, and the
@@ -7,6 +8,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
                          NSMenuDelegate, NSSplitViewDelegate {
 
     private var window: NSWindow!
+
+    /// Drives Sparkle auto-updates (Check for Updates… + scheduled checks).
+    private let updaterController = SPUStandardUpdaterController(
+        startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
     private let splitView = NSSplitView()
     private let sidebar = DocumentListView(frame: NSRect(x: 0, y: 0, width: 220, height: 640))
     private let contentContainer = ContentContainerView(frame: NSRect(x: 0, y: 0, width: 680, height: 640))
@@ -317,6 +322,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         )
         aboutItem.target = self
         appMenu.addItem(aboutItem)
+
+        appMenu.addItem(NSMenuItem.separator())
+        let updatesItem = NSMenuItem(
+            title: "Check for Updates…",
+            action: #selector(SPUStandardUpdaterController.checkForUpdates(_:)),
+            keyEquivalent: ""
+        )
+        updatesItem.target = updaterController
+        appMenu.addItem(updatesItem)
+
         appMenu.addItem(NSMenuItem.separator())
         appMenu.addItem(
             withTitle: "Quit BigEdit",

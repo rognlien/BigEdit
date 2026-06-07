@@ -1,7 +1,7 @@
 # Swift / SwiftPM
 .build/
 .swiftpm/
-Package.resolved
+# Package.resolved is committed (this is an app) to pin dependency versions.
 
 # Xcode userdata (if anyone opens the package in Xcode)
 *.xcodeproj/xcuserdata/
