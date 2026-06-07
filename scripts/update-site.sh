@@ -59,6 +59,9 @@ if [ -z "$GENERATE_APPCAST" ]; then
     echo "error: generate_appcast not found — run 'swift build' in $BIGEDIT_DIR first" >&2
     exit 1
 fi
+# Regenerate from scratch so the appcast lists only the hosted DMG (we keep one
+# versioned DMG; stale entries would point at deleted files).
+rm -f bigedit/appcast.xml
 "$GENERATE_APPCAST" bigedit --download-url-prefix "https://maendeleo.io/bigedit/"
 
 # Point the download link at the new file and bump the version text.
