@@ -378,6 +378,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         reloadItem.target = self
         fileMenu.addItem(reloadItem)
 
+        let revealItem = NSMenuItem(
+            title: "Reveal in Finder",
+            action: #selector(revealInFinder),
+            keyEquivalent: ""
+        )
+        revealItem.target = self
+        fileMenu.addItem(revealItem)
+
         let closeItem = NSMenuItem(
             title: "Close",
             action: #selector(closeActiveDocument),
@@ -806,6 +814,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
 
     /// Reloads the active document from its file on disk (the ⌘R command),
     /// keeping the scroll position so log tailing isn't jarring.
+    @objc private func revealInFinder() {
+        if let url = activeDocument?.url {
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+        }
+    }
+
     @objc private func reloadActiveFromDisk() {
         if let document = activeDocument {
             reload(document, from: document.url, preserveScroll: true)
@@ -859,7 +873,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         switch menuItem.action {
         case #selector(save), #selector(saveAs):
             enabled = activeView?.currentRule != nil
-        case #selector(closeActiveDocument), #selector(reloadActiveFromDisk):
+        case #selector(closeActiveDocument), #selector(reloadActiveFromDisk),
+             #selector(revealInFinder):
             enabled = activeDocument != nil
         case #selector(toggleInfoPane):
             menuItem.state = (activeView?.isInfoPaneVisible ?? false) ? .on : .off
