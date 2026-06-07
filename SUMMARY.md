@@ -52,7 +52,7 @@ viewport, not the file.
 - `⌘F` find · `⌥⌘F` find & replace · `⌘G` / `⇧⌘G` next / previous. **Aa** toggles case sensitivity. Status shows `Searching… 23%` so long scans don't look frozen.
 - `⌘S` save (atomic) · `⇧⌘S` save as. Progress sheet during save.
 - `⌘C` copy · `⌘A` select all. Right-click → Copy. Select All is deliberately absent from the right-click menu (selecting many GB onto the pasteboard would try to materialise it).
-- `⌥⌘I` toggle Info Inspector.
+- `⌘I` toggle Info Inspector.
 - Click + drag to select (with auto-scroll past the viewport edges). Double-click selects a word, triple-click selects the visual line.
 - I-beam cursor over the text area.
 - Window frame remembered across launches. The full set of open documents (and which one was active) is restored on launch, unless the user launched with a different file from Finder or Open Recent.

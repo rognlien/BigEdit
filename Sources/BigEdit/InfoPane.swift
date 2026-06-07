@@ -10,6 +10,7 @@ final class InfoPane: NSView {
     private let titleLabel = NSTextField(labelWithString: "Info")
 
     private let nameRow = InfoRow(title: "Name")
+    private let pathRow = InfoRow(title: "Path")
     private let typeRow = InfoRow(title: "Type")
     private let sizeRow = InfoRow(title: "Size")
     private let linesRow = InfoRow(title: "Lines")
@@ -17,7 +18,7 @@ final class InfoPane: NSView {
     private let charactersRow = InfoRow(title: "Characters")
 
     private var rows: [InfoRow] {
-        [nameRow, typeRow, sizeRow, linesRow, wordsRow, charactersRow]
+        [nameRow, pathRow, typeRow, sizeRow, linesRow, wordsRow, charactersRow]
     }
 
     override init(frame frameRect: NSRect) {
@@ -38,6 +39,7 @@ final class InfoPane: NSView {
     // MARK: - Setters
 
     func setName(_ value: String) { nameRow.set(value) }
+    func setPath(_ value: String) { pathRow.set(value) }
     func setType(_ value: String) { typeRow.set(value) }
     func setSize(_ value: String) { sizeRow.set(value) }
     func setLines(_ value: String) { linesRow.set(value) }

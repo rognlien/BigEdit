@@ -30,6 +30,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         return stored > 0 ? CGFloat(stored) : ViewportView.defaultFontSize
     }()
 
+    private static let infoPaneWidthDefaultsKey = "BigEditInfoPaneWidth"
+
+    /// The info-pane width shared by all open documents, persisted across launches.
+    private lazy var infoPaneWidth: CGFloat = {
+        let stored = UserDefaults.standard.double(forKey: AppDelegate.infoPaneWidthDefaultsKey)
+        return stored > 0 ? CGFloat(stored) : InfoPane.preferredWidth
+    }()
+
     private static let minSidebarWidth: CGFloat = 190
     private static let minContentWidth: CGFloat = 360
 
@@ -114,12 +122,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         titleLabel.font = NSFont.titleBarFont(ofSize: NSFont.systemFontSize)
         titleLabel.textColor = .secondaryLabelColor
         titleLabel.lineBreakMode = .byTruncatingMiddle
+        // ⌘-click the title to see the file's path, like a native proxy title.
+        titleLabel.toolTip = "⌘-click to show the file path"
+        let click = NSClickGestureRecognizer(target: self, action: #selector(titleClicked(_:)))
+        titleLabel.addGestureRecognizer(click)
         titlebar.addSubview(titleLabel)
         NSLayoutConstraint.activate([
             titleLabel.centerXAnchor.constraint(equalTo: titlebar.centerXAnchor),
             titleLabel.centerYAnchor.constraint(equalTo: titlebar.centerYAnchor),
             titleLabel.widthAnchor.constraint(lessThanOrEqualTo: titlebar.widthAnchor, multiplier: 0.6)
         ])
+    }
+
+    /// On ⌘-click, shows the file's path as a menu of folders (file at top down
+    /// to the volume); choosing one reveals it in Finder — mirroring the native
+    /// title-bar path popup.
+    @objc private func titleClicked(_ sender: NSClickGestureRecognizer) {
+        guard NSApp.currentEvent?.modifierFlags.contains(.command) == true,
+              let url = activeDocument?.url else {
+            return
+        }
+        let menu = NSMenu()
+        var current = url
+        while true {
+            let name = current.lastPathComponent.isEmpty ? "/" : current.lastPathComponent
+            let item = NSMenuItem(title: name, action: #selector(revealPathComponent(_:)),
+                                  keyEquivalent: "")
+            let icon = NSWorkspace.shared.icon(forFile: current.path)
+            icon.size = NSSize(width: 16, height: 16)
+            item.image = icon
+            item.representedObject = current
+            item.target = self
+            menu.addItem(item)
+            let parent = current.deletingLastPathComponent()
+            if parent.path == current.path { break }
+            current = parent
+        }
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: titleLabel.bounds.minY), in: titleLabel)
+    }
+
+    @objc private func revealPathComponent(_ sender: NSMenuItem) {
+        if let url = sender.representedObject as? URL {
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -345,9 +390,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         let infoItem = NSMenuItem(
             title: "Info Inspector",
             action: #selector(toggleInfoPane),
-            keyEquivalent: "i"
+            keyEquivalent: "i"            // ⌘I, the standard "Get Info" shortcut
         )
-        infoItem.keyEquivalentModifierMask = [.command, .option]
         infoItem.target = self
         viewMenu.addItem(infoItem)
 
@@ -442,6 +486,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         }
     }
 
+    /// Applies a new info-pane width to every open document and persists it.
+    private func setInfoPaneWidth(_ width: CGFloat) {
+        infoPaneWidth = width
+        UserDefaults.standard.set(Double(width), forKey: AppDelegate.infoPaneWidthDefaultsKey)
+        for document in documents {
+            document.view.setInfoPaneWidth(width)
+        }
+    }
+
     @objc private func performGoToLine() {
         activeView?.showGoToLineSheet()
     }
@@ -498,6 +551,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
 
         view.load(file: file, index: index)
         view.viewport.setFontSize(editorFontSize)
+        view.setInfoPaneWidth(infoPaneWidth)
+        view.onInfoPaneWidthChange = { [weak self] width in
+            self?.setInfoPaneWidth(width)
+        }
         view.setFileFormat(document.format)
         document.watcher = FileWatcher(path: url.path) { [weak self, weak document] in
             if let self, let document {
@@ -726,6 +783,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         document.hasDiskChanges = false
         document.view.load(file: file, index: index)
         document.view.viewport.setFontSize(editorFontSize)
+        document.view.setInfoPaneWidth(infoPaneWidth)
         document.view.setFileFormat(document.format)
         if preserveScroll {
             document.view.viewport.setScrollRow(previousRow)
