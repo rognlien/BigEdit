@@ -54,12 +54,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         activeDocument?.view
     }
 
-    func applicationDidFinishLaunching(_ notification: Notification) {
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        // Build the menu and window here, not in didFinishLaunching: a launch
+        // that opens a document (e.g. dropping a file on the Dock icon) delivers
+        // application(_:open:) before didFinishLaunching, and that path touches
+        // the window — which must already exist.
         buildMenu()
         buildWindow()
+    }
 
+    func applicationDidFinishLaunching(_ notification: Notification) {
         // If the launch didn't come with a file (via `application(_:open:)`),
-        // restore the last one viewed. Scheduled on the next run loop tick so
+        // restore the previous session. Scheduled on the next run loop tick so
         // any pending open-URL event has a chance to fire first.
         DispatchQueue.main.async { [weak self] in
             self?.restoreSessionIfNeeded()
@@ -589,8 +595,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         activeIndex = index
         let document = documents[index]
         contentContainer.setActiveView(document.view)
-        window.makeFirstResponder(document.view.viewport)
-        window.isDocumentEdited = document.isEdited
+        window?.makeFirstResponder(document.view.viewport)
+        window?.isDocumentEdited = document.isEdited
         sidebar.applySelection(index)
         updateTitle()
         persistSession()
@@ -654,7 +660,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         // count, encoding, and disk-change state live in the info pane / status
         // bar / sidebar instead.
         let name = activeDocument?.fileName ?? "BigEdit"
-        window.title = name           // keeps the Window menu / app switcher correct
+        window?.title = name          // keeps the Window menu / app switcher correct
         titleLabel.stringValue = name
     }
 
