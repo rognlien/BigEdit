@@ -114,12 +114,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         titleLabel.font = NSFont.titleBarFont(ofSize: NSFont.systemFontSize)
         titleLabel.textColor = .secondaryLabelColor
         titleLabel.lineBreakMode = .byTruncatingMiddle
+        // ⌘-click the title to see the file's path, like a native proxy title.
+        titleLabel.toolTip = "⌘-click to show the file path"
+        let click = NSClickGestureRecognizer(target: self, action: #selector(titleClicked(_:)))
+        titleLabel.addGestureRecognizer(click)
         titlebar.addSubview(titleLabel)
         NSLayoutConstraint.activate([
             titleLabel.centerXAnchor.constraint(equalTo: titlebar.centerXAnchor),
             titleLabel.centerYAnchor.constraint(equalTo: titlebar.centerYAnchor),
             titleLabel.widthAnchor.constraint(lessThanOrEqualTo: titlebar.widthAnchor, multiplier: 0.6)
         ])
+    }
+
+    /// On ⌘-click, shows the file's path as a menu of folders (file at top down
+    /// to the volume); choosing one reveals it in Finder — mirroring the native
+    /// title-bar path popup.
+    @objc private func titleClicked(_ sender: NSClickGestureRecognizer) {
+        guard NSApp.currentEvent?.modifierFlags.contains(.command) == true,
+              let url = activeDocument?.url else {
+            return
+        }
+        let menu = NSMenu()
+        var current = url
+        while true {
+            let name = current.lastPathComponent.isEmpty ? "/" : current.lastPathComponent
+            let item = NSMenuItem(title: name, action: #selector(revealPathComponent(_:)),
+                                  keyEquivalent: "")
+            let icon = NSWorkspace.shared.icon(forFile: current.path)
+            icon.size = NSSize(width: 16, height: 16)
+            item.image = icon
+            item.representedObject = current
+            item.target = self
+            menu.addItem(item)
+            let parent = current.deletingLastPathComponent()
+            if parent.path == current.path { break }
+            current = parent
+        }
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: titleLabel.bounds.minY), in: titleLabel)
+    }
+
+    @objc private func revealPathComponent(_ sender: NSMenuItem) {
+        if let url = sender.representedObject as? URL {
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

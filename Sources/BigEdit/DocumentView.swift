@@ -400,6 +400,7 @@ final class DocumentView: NSView, FindBarDelegate {
         if let file = viewport.file {
             let url = URL(fileURLWithPath: file.path)
             infoPane.setName(url.lastPathComponent)
+            infoPane.setPath(file.path)
             infoPane.setType(DocumentView.fileTypeDescription(for: file))
             infoPane.setSize(formatSize(file.size))
 
