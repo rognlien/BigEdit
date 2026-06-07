@@ -10,13 +10,22 @@ BUNDLE_ID="${BUNDLE_ID:-io.maendeleo.BigEdit}"
 MARKETING_VERSION="${MARKETING_VERSION:-0.7}"
 BUILD_NUMBER="${BUILD_NUMBER:-7}"
 COPYRIGHT="${COPYRIGHT:-© 2026 Bendik Johansen}"
+SU_FEED_URL="${SU_FEED_URL:-https://maendeleo.io/bigedit/appcast.xml}"
+SU_PUBLIC_ED_KEY="${SU_PUBLIC_ED_KEY:-cBwIeAvJj5h55dQEnOqFvfm9wE8ZkFb5VFI/wgiKTSs=}"
 
 swift build -c release
 
 APP="BigEdit.app"
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Frameworks"
 cp .build/release/BigEdit "$APP/Contents/MacOS/BigEdit"
+
+# --- Embed Sparkle.framework --------------------------------------------------
+# SwiftPM builds against Sparkle but doesn't bundle it; copy it in and add the
+# rpath so the embedded copy is found at runtime.
+ditto .build/release/Sparkle.framework "$APP/Contents/Frameworks/Sparkle.framework"
+install_name_tool -add_rpath @executable_path/../Frameworks \
+    "$APP/Contents/MacOS/BigEdit" 2>/dev/null || true
 
 # --- App icon -----------------------------------------------------------------
 # Slices the 1024² master Resources/AppIcon.png into a full multi-resolution
@@ -58,6 +67,10 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleShortVersionString</key><string>${MARKETING_VERSION}</string>
     <key>CFBundleVersion</key><string>${BUILD_NUMBER}</string>
     <key>NSHumanReadableCopyright</key><string>${COPYRIGHT}</string>
+    <key>SUFeedURL</key><string>${SU_FEED_URL}</string>
+    <key>SUPublicEDKey</key><string>${SU_PUBLIC_ED_KEY}</string>
+    <key>SUEnableAutomaticChecks</key><true/>
+    <key>SUScheduledCheckInterval</key><integer>86400</integer>
     <key>LSMinimumSystemVersion</key><string>13.0</string>
     <key>NSHighResolutionCapable</key><true/>
     <key>NSPrincipalClass</key><string>NSApplication</string>
@@ -92,6 +105,23 @@ PLIST
 # builds leave SIGN_IDENTITY unset and ship unsigned.
 if [ -n "${SIGN_IDENTITY:-}" ]; then
     ENTITLEMENTS="${ENTITLEMENTS:-BigEdit.entitlements}"
+
+    # Sign Sparkle inside-out (no --deep): XPC services, helper tools, then the
+    # framework — all with the hardened runtime so the bundle can be notarized.
+    FW="$APP/Contents/Frameworks/Sparkle.framework"
+    SPARKLE_V="$FW/Versions/Current"
+    for xpc in "$SPARKLE_V"/XPCServices/*.xpc; do
+        [ -e "$xpc" ] || continue
+        codesign --force --options runtime --timestamp \
+            --preserve-metadata=entitlements --sign "$SIGN_IDENTITY" "$xpc"
+    done
+    codesign --force --options runtime --timestamp \
+        --sign "$SIGN_IDENTITY" "$SPARKLE_V/Updater.app"
+    codesign --force --options runtime --timestamp \
+        --sign "$SIGN_IDENTITY" "$SPARKLE_V/Autoupdate"
+    codesign --force --options runtime --timestamp \
+        --sign "$SIGN_IDENTITY" "$FW"
+
     codesign --force --options runtime --timestamp \
         --entitlements "$ENTITLEMENTS" \
         --sign "$SIGN_IDENTITY" "$APP/Contents/MacOS/BigEdit"

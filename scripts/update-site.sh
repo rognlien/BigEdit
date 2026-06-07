@@ -52,11 +52,20 @@ for dmg in bigedit/BigEdit-*.dmg; do
     fi
 done
 
+# Regenerate the Sparkle appcast: signs the DMG with the EdDSA private key from
+# the login Keychain and writes bigedit/appcast.xml referencing the hosted URL.
+GENERATE_APPCAST="$(find "$BIGEDIT_DIR/.build" -name generate_appcast -type f 2>/dev/null | head -1)"
+if [ -z "$GENERATE_APPCAST" ]; then
+    echo "error: generate_appcast not found — run 'swift build' in $BIGEDIT_DIR first" >&2
+    exit 1
+fi
+"$GENERATE_APPCAST" bigedit --download-url-prefix "https://maendeleo.io/bigedit/"
+
 # Point the download link at the new file and bump the version text.
 sed -i '' -E "s#href=\"BigEdit-[^\"]*\.dmg\"#href=\"BigEdit-${VERSION}.dmg\"#" "$INDEX"
 sed -i '' -E "s#Version [0-9]+\.[0-9]+\.[0-9]+[^ <]*#Version ${VERSION}#" "$INDEX"
 
-git add "$DEST" "$INDEX"
+git add "$DEST" "$INDEX" bigedit/appcast.xml
 if git diff --cached --quiet; then
     echo "No changes — site already on ${VERSION}."
     exit 0
