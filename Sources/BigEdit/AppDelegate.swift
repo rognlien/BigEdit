@@ -5,13 +5,15 @@ import Sparkle
 /// can be open at once; a left-side sidebar switches between them, and the
 /// active document is mounted in the content area on the right.
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
-                         NSMenuDelegate, NSSplitViewDelegate {
+                         NSMenuDelegate, NSSplitViewDelegate, SPUUpdaterDelegate {
 
     private var window: NSWindow!
 
     /// Drives Sparkle auto-updates (Check for Updates… + scheduled checks).
-    private let updaterController = SPUStandardUpdaterController(
-        startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
+    /// Lazy so `self` can be the updater delegate (to flush state before a
+    /// relaunch). Started on first access (menu build / launch check).
+    private lazy var updaterController = SPUStandardUpdaterController(
+        startingUpdater: true, updaterDelegate: self, userDriverDelegate: nil)
     private let splitView = NSSplitView()
     private let sidebar = DocumentListView(frame: NSRect(x: 0, y: 0, width: 220, height: 640))
     private let contentContainer = ContentContainerView(frame: NSRect(x: 0, y: 0, width: 680, height: 640))
@@ -27,6 +29,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
     private static let openDocumentsDefaultsKey = "BigEditOpenDocuments"
     private static let scrollRowsDefaultsKey = "BigEditScrollRows"
     private static let activeIndexDefaultsKey = "BigEditActiveIndex"
+    private static let recentDocumentsDefaultsKey = "BigEditRecentDocuments"
+    private static let maxRecentDocuments = 15
     private static let fontSizeDefaultsKey = "BigEditFontSize"
 
     /// The editor font size shared by all open documents, persisted across launches.
@@ -200,6 +204,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         persistSession()
     }
 
+    /// Sparkle relaunches the app after installing an update without a normal
+    /// quit, so persist (and flush) the open-document session here — otherwise
+    /// it's lost across the upgrade.
+    func updaterWillRelaunchApplication(_ updater: SPUUpdater) {
+        persistSession()
+    }
+
     func applicationShouldHandleReopen(
         _ sender: NSApplication,
         hasVisibleWindows: Bool
@@ -267,6 +278,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
                      forKey: AppDelegate.scrollRowsDefaultsKey)
         defaults.set(activeIndex ?? 0, forKey: AppDelegate.activeIndexDefaultsKey)
         defaults.set(documents.last?.url.path, forKey: AppDelegate.lastFilePathDefaultsKey)
+        // Flush so an abrupt termination (e.g. Sparkle's update relaunch) keeps it.
+        defaults.synchronize()
+    }
+
+    // MARK: - Recent documents (own list — noteNewRecentDocumentURL doesn't
+    // persist for a non-document app)
+
+    private func addRecentDocument(_ url: URL) {
+        let defaults = UserDefaults.standard
+        var paths = defaults.stringArray(forKey: AppDelegate.recentDocumentsDefaultsKey) ?? []
+        paths.removeAll { $0 == url.path }
+        paths.insert(url.path, at: 0)
+        if paths.count > AppDelegate.maxRecentDocuments {
+            paths = Array(paths.prefix(AppDelegate.maxRecentDocuments))
+        }
+        defaults.set(paths, forKey: AppDelegate.recentDocumentsDefaultsKey)
+        defaults.synchronize()
+        // Also feed the system list (Dock menu / Recent Items), best-effort.
+        NSDocumentController.shared.noteNewRecentDocumentURL(url)
+    }
+
+    private func recentDocumentURLs() -> [URL] {
+        let paths = UserDefaults.standard.stringArray(forKey: AppDelegate.recentDocumentsDefaultsKey) ?? []
+        return paths.map { URL(fileURLWithPath: $0) }
     }
 
     // MARK: - Open Recent menu
@@ -279,7 +314,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
 
     private func populateOpenRecentMenu() {
         openRecentMenu.removeAllItems()
-        let urls = NSDocumentController.shared.recentDocumentURLs
+        let urls = recentDocumentURLs()
         if urls.isEmpty {
             let empty = NSMenuItem(title: "No Recent Files", action: nil, keyEquivalent: "")
             empty.isEnabled = false
@@ -315,6 +350,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
     }
 
     @objc private func clearRecentDocuments(_ sender: Any?) {
+        UserDefaults.standard.removeObject(forKey: AppDelegate.recentDocumentsDefaultsKey)
         NSDocumentController.shared.clearRecentDocuments(sender)
     }
 
@@ -591,7 +627,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
             if let document = makeDocument(at: url) {
                 documents.append(document)
                 lastOpened = documents.count - 1
-                NSDocumentController.shared.noteNewRecentDocumentURL(url)
+                addRecentDocument(url)
             } else {
                 presentError("Could not open \(url.lastPathComponent).")
             }
@@ -820,7 +856,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
     /// Re-points a document at the freshly written file and restarts indexing.
     private func reloadDocument(_ document: Document, from destination: URL) {
         reload(document, from: destination, preserveScroll: false)
-        NSDocumentController.shared.noteNewRecentDocumentURL(destination)
+        addRecentDocument(destination)
     }
 
     /// Reloads the active document from its file on disk (the ⌘R command),
