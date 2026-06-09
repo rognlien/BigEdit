@@ -193,8 +193,12 @@ final class DocumentView: NSView, FindBarDelegate {
             let offset = numberFormatter.string(from: NSNumber(value: caret)) ?? "\(caret)"
             left = "Ln \(lineText)  ·  Offset \(offset)"
             if let range = viewport.selectionByteRange {
-                let count = numberFormatter.string(from: NSNumber(value: range.count)) ?? "\(range.count)"
-                left += "  ·  \(count) bytes selected"
+                let bytes = numberFormatter.string(from: NSNumber(value: range.count)) ?? "\(range.count)"
+                let lineCount = selectedLineCount(range, file: file, index: index)
+                let lines = numberFormatter.string(from: NSNumber(value: lineCount)) ?? "\(lineCount)"
+                let bytesUnit = range.count == 1 ? "byte" : "bytes"
+                let linesUnit = lineCount == 1 ? "line" : "lines"
+                left += "  ·  \(bytes) \(bytesUnit), \(lines) \(linesUnit) selected"
             }
         }
         statusBar.setLeft(left)
@@ -204,6 +208,20 @@ final class DocumentView: NSView, FindBarDelegate {
             right = format.lineEnding == "—" ? format.encoding : "\(format.lineEnding)  ·  \(format.encoding)"
         }
         statusBar.setRight(right)
+    }
+
+    /// The number of document lines the selection touches — derived from the
+    /// line index (O(log n) per end), so it's cheap even for a huge selection.
+    private func selectedLineCount(_ range: Range<Int>, file: MappedFile, index: LineIndex) -> Int {
+        let startLine = documentLine(forByteOffset: range.lowerBound, file: file, index: index)
+        let endLine = documentLine(forByteOffset: max(range.lowerBound, range.upperBound - 1),
+                                   file: file, index: index)
+        return endLine - startLine + 1
+    }
+
+    private func documentLine(forByteOffset offset: Int, file: MappedFile, index: LineIndex) -> Int {
+        let row = index.visualRow(forByteOffset: offset, file: file)
+        return index.visualLines(forRows: row..<(row + 1), file: file).first?.documentLine ?? 0
     }
 
     // MARK: - Scroller
