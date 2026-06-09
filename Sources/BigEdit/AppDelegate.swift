@@ -75,6 +75,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         DispatchQueue.main.async { [weak self] in
             self?.restoreSessionIfNeeded()
         }
+
+        // Check for updates on every launch (silent — only surfaces UI if an
+        // update is available), in addition to Sparkle's scheduled checks.
+        updaterController.updater.checkForUpdatesInBackground()
     }
 
     private func buildWindow() {
