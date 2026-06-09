@@ -159,7 +159,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         }
         let menu = NSMenu()
         var current = url
-        while true {
+        var safety = 0
+        while safety < 256 {
+            safety += 1
             let name = current.lastPathComponent.isEmpty ? "/" : current.lastPathComponent
             let item = NSMenuItem(title: name, action: #selector(revealPathComponent(_:)),
                                   keyEquivalent: "")
@@ -173,7 +175,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
             if parent.path == current.path { break }
             current = parent
         }
-        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: titleLabel.bounds.minY), in: titleLabel)
+        // Show the menu after this event finishes: popping a modal menu
+        // synchronously from inside the title bar's click handling deadlocks.
+        let label = titleLabel
+        DispatchQueue.main.async {
+            menu.popUp(positioning: nil, at: NSPoint(x: 0, y: label.bounds.maxY), in: label)
+        }
     }
 
     @objc private func revealPathComponent(_ sender: NSMenuItem) {
