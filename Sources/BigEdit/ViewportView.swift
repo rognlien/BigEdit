@@ -27,11 +27,13 @@ private enum ByteClass {
 final class ViewportView: NSView {
 
     private(set) var document: EditedDocument?
-    private(set) var index: LineIndex?
 
-    /// The mapped file behind the document — passed to `LineIndex` queries,
-    /// which speak original byte offsets.
+    /// The mapped file behind the document — for components that speak
+    /// original byte offsets (search, statistics, format detection).
     var file: MappedFile? { document?.file }
+
+    /// The line/row layout of the logical document.
+    var layout: EditedLayout? { document?.layout }
 
     /// The first visible visual row, as a fractional value (e.g. 1234.5).
     private(set) var scrollRow: Double = 0
@@ -200,10 +202,9 @@ final class ViewportView: NSView {
 
     // MARK: - Document
 
-    /// Attaches a document and its (possibly still-building) line index.
-    func load(document: EditedDocument, index: LineIndex) {
+    /// Attaches a document (whose line index may still be building).
+    func load(document: EditedDocument) {
         self.document = document
-        self.index = index
         scrollRow = 0
         horizontalOffset = 0
         searchScan = nil
@@ -216,19 +217,19 @@ final class ViewportView: NSView {
     /// Returns the wrap width (in bytes) implied by the current viewport size
     /// and the current line count's gutter requirement.
     private func currentWrapBytes() -> Int {
-        guard let index, characterWidth > 0 else {
+        guard let layout, characterWidth > 0 else {
             return LineIndex.defaultWrapBytes
         }
-        let gutterW = gutterWidth(for: index.count)
+        let gutterW = gutterWidth(for: layout.documentLineCount)
         let textAreaWidth = max(0, bounds.width - gutterW - gutterPadding)
         let columns = Int(textAreaWidth / characterWidth)
         return max(LineIndex.minimumWrapBytes, columns)
     }
 
-    /// Pushes the current wrap width down into `LineIndex` so long lines
+    /// Pushes the current wrap width down into the layout so long lines
     /// re-wrap on resize. Cheap when there are no long lines.
     private func updateWrapBytes() {
-        index?.setWrapBytes(currentWrapBytes())
+        layout?.setWrapBytes(currentWrapBytes())
     }
 
     deinit {
@@ -245,8 +246,8 @@ final class ViewportView: NSView {
     /// The largest valid `scrollRow`, leaving the last page in view.
     var maxScrollRow: Double {
         var result = 0.0
-        if let index {
-            result = max(0, Double(index.visualRowCount) - Double(rowsPerPage))
+        if let layout {
+            result = max(0, Double(layout.visualRowCount) - Double(rowsPerPage))
         }
         return result
     }
@@ -360,14 +361,14 @@ final class ViewportView: NSView {
     }
 
     private func moveCaretVertically(by rowDelta: Int, extend: Bool) {
-        guard let file, let index else { return }
+        guard let layout else { return }
         ensureCaret()
         let caret = selection?.activeOffset ?? 0
-        let currentRow = index.visualRow(forByteOffset: caret, file: file)
+        let currentRow = layout.visualRow(forLogicalByteOffset: caret)
         let x = desiredCaretX ?? caretX(forOffset: caret, row: currentRow)
-        let targetRow = max(0, min(currentRow + rowDelta, index.visualRowCount - 1))
+        let targetRow = max(0, min(currentRow + rowDelta, layout.visualRowCount - 1))
         var target = caret
-        if let line = index.visualLines(forRows: targetRow..<(targetRow + 1), file: file).first {
+        if let line = layout.visualLines(forRows: targetRow..<(targetRow + 1)).first {
             target = byteOffset(inRow: line, atX: x)
         }
         desiredCaretX = x
@@ -379,8 +380,8 @@ final class ViewportView: NSView {
     /// The drawn x of the caret at `offset` within the row at `row`.
     private func caretX(forOffset offset: Int, row: Int) -> CGFloat {
         var result: CGFloat = 0
-        if let file, let index,
-           let line = index.visualLines(forRows: row..<(row + 1), file: file).first {
+        if let layout,
+           let line = layout.visualLines(forRows: row..<(row + 1)).first {
             let start = chunkStartByte(line)
             let clamped = max(start, min(offset, line.byteRange.upperBound))
             if clamped > start {
@@ -391,17 +392,17 @@ final class ViewportView: NSView {
     }
 
     private func firstVisibleRowStartByte() -> Int {
-        guard let file, let index else { return 0 }
-        let rowIndex = max(0, min(Int(scrollRow.rounded(.down)), index.visualRowCount - 1))
-        if let line = index.visualLines(forRows: rowIndex..<(rowIndex + 1), file: file).first {
+        guard let layout else { return 0 }
+        let rowIndex = max(0, min(Int(scrollRow.rounded(.down)), layout.visualRowCount - 1))
+        if let line = layout.visualLines(forRows: rowIndex..<(rowIndex + 1)).first {
             return chunkStartByte(line)
         }
         return 0
     }
 
     private func scrollByteIntoView(_ offset: Int) {
-        if let file, let index {
-            scrollToRow(index.visualRow(forByteOffset: offset, file: file))
+        if let layout {
+            scrollToRow(layout.visualRow(forLogicalByteOffset: offset))
         }
     }
 
@@ -414,7 +415,7 @@ final class ViewportView: NSView {
 
     override func resetCursorRects() {
         // I-beam over the text area only; the gutter keeps the default arrow.
-        let gutterW = index.map { gutterWidth(for: $0.count) } ?? 0
+        let gutterW = layout.map { gutterWidth(for: $0.documentLineCount) } ?? 0
         let textRect = NSRect(x: gutterW, y: 0,
                               width: max(0, bounds.width - gutterW), height: bounds.height)
         addCursorRect(textRect, cursor: .iBeam)
@@ -529,9 +530,9 @@ final class ViewportView: NSView {
     /// its trailing newline if this row is the last chunk of its line.
     private func lineRange(at byteOffset: Int) -> Range<Int> {
         var result = byteOffset..<byteOffset
-        if let document, let file, let index {
-            let row = index.visualRow(forByteOffset: byteOffset, file: file)
-            let rows = index.visualLines(forRows: row..<(row + 1), file: file)
+        if let document, let layout {
+            let row = layout.visualRow(forLogicalByteOffset: byteOffset)
+            let rows = layout.visualLines(forRows: row..<(row + 1))
             if let visualLine = rows.first {
                 var upper = visualLine.byteRange.upperBound
                 let isLastChunk = visualLine.chunkIndex == visualLine.chunkCount - 1
@@ -598,16 +599,16 @@ final class ViewportView: NSView {
     /// mapping near a replacement is approximate.
     private func byteOffset(at point: NSPoint) -> Int {
         var result = 0
-        if let document, let file, let index, index.visualRowCount > 0 {
+        if let document, let layout, layout.visualRowCount > 0 {
             let firstRow = Int(scrollRow)
             let fraction = scrollRow - Double(firstRow)
             let rowsFromTop = (Double(point.y) + fraction * Double(lineHeight)) / Double(lineHeight)
             var rowIndex = firstRow + Int(rowsFromTop.rounded(.down))
-            rowIndex = max(0, min(rowIndex, index.visualRowCount - 1))
+            rowIndex = max(0, min(rowIndex, layout.visualRowCount - 1))
 
-            let rows = index.visualLines(forRows: rowIndex..<(rowIndex + 1), file: file)
+            let rows = layout.visualLines(forRows: rowIndex..<(rowIndex + 1))
             if let visualLine = rows.first {
-                let gutterW = gutterWidth(for: index.count)
+                let gutterW = gutterWidth(for: layout.documentLineCount)
                 let textOriginX = gutterW + gutterPadding
                 let relativeX = point.x - textOriginX + horizontalOffset
                 result = byteOffset(inRow: visualLine, atX: relativeX)
@@ -765,40 +766,40 @@ final class ViewportView: NSView {
         NSColor.textBackgroundColor.setFill()
         bounds.fill()
 
-        if let file, let index, index.visualRowCount > 0 {
-            drawContent(file: file, index: index)
+        if let layout, layout.visualRowCount > 0 {
+            drawContent(layout: layout)
         } else {
             drawPlaceholder()
         }
     }
 
-    private func drawContent(file: MappedFile, index: LineIndex) {
-        let totalRows = index.visualRowCount
+    private func drawContent(layout: EditedLayout) {
+        let totalRows = layout.visualRowCount
         let firstRow = Int(scrollRow)
         let fraction = CGFloat(scrollRow - Double(firstRow))
         let lastRow = min(totalRows, firstRow + rowsPerPage + 2)
-        let rows = index.visualLines(forRows: firstRow..<lastRow, file: file)
+        let rows = layout.visualLines(forRows: firstRow..<lastRow)
 
-        let gutterWidth = self.gutterWidth(for: index.count)
-        let startState = seedState(forFirstRow: firstRow, file: file, index: index)
+        let gutterWidth = self.gutterWidth(for: layout.documentLineCount)
+        let startState = seedState(forFirstRow: firstRow, layout: layout)
         drawText(rows: rows, gutterWidth: gutterWidth, fraction: fraction,
                  startState: startState)
         drawGutter(rows: rows, width: gutterWidth, fraction: fraction)
-        drawInsertionCaret(file: file, index: index, firstRow: firstRow, fraction: fraction,
+        drawInsertionCaret(layout: layout, firstRow: firstRow, fraction: fraction,
                            gutterWidth: gutterWidth)
     }
 
     /// Draws the blinking insertion caret at the empty selection's active end.
-    private func drawInsertionCaret(file: MappedFile, index: LineIndex, firstRow: Int,
+    private func drawInsertionCaret(layout: EditedLayout, firstRow: Int,
                                     fraction: CGFloat, gutterWidth: CGFloat) {
         guard isViewportFocused, caretVisible, selectionByteRange == nil,
               let caret = selection?.activeOffset else {
             return
         }
-        let caretRow = index.visualRow(forByteOffset: caret, file: file)
-        let lastRow = min(index.visualRowCount, firstRow + rowsPerPage + 2)
+        let caretRow = layout.visualRow(forLogicalByteOffset: caret)
+        let lastRow = min(layout.visualRowCount, firstRow + rowsPerPage + 2)
         guard caretRow >= firstRow, caretRow < lastRow,
-              let visualLine = index.visualLines(forRows: caretRow..<(caretRow + 1), file: file).first else {
+              let visualLine = layout.visualLines(forRows: caretRow..<(caretRow + 1)).first else {
             return
         }
         let start = chunkStartByte(visualLine)
@@ -853,11 +854,11 @@ final class ViewportView: NSView {
     /// a bounded window of preceding rows. Constructs that open further above
     /// than the window won't be detected until scrolled nearer — a deliberate
     /// bound so cost stays tied to the viewport, not the file.
-    private func seedState(forFirstRow firstRow: Int, file: MappedFile, index: LineIndex) -> HighlightState {
+    private func seedState(forFirstRow firstRow: Int, layout: EditedLayout) -> HighlightState {
         guard syntaxMode != .plain, firstRow > 0 else { return .normal }
         let lookback = 400
         let start = max(0, firstRow - lookback)
-        let rows = index.visualLines(forRows: start..<firstRow, file: file)
+        let rows = layout.visualLines(forRows: start..<firstRow)
         var state = HighlightState.normal
         for visualLine in rows {
             state = rowEndState(decodeChunk(visualLine), startState: state)
