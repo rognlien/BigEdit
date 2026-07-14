@@ -30,6 +30,10 @@ final class EditedDocument {
     /// Line / visual-row layout of the logical document.
     let layout: EditedLayout
 
+    /// Piece-level edit history. Cleared implicitly when the document
+    /// re-maps after a save (a fresh `EditedDocument` is built).
+    let undoStack = UndoStack()
+
     init(file: MappedFile, editModel: EditModel, lineIndex: LineIndex) {
         self.file = file
         self.editModel = editModel
@@ -52,16 +56,49 @@ final class EditedDocument {
     }
 
     /// Replaces `logicalRange` with `bytes` — the single mutation entry
-    /// point. Keeps the piece table and the layout in step, and returns the
-    /// removed pieces so the undo stack can re-splice them later.
+    /// point. Keeps the piece table, the layout, and the undo history in
+    /// step, and returns the removed pieces.
     @discardableResult
-    func replace(_ logicalRange: Range<Int>, with bytes: [UInt8]) -> [PieceTable.Piece] {
+    func replace(_ logicalRange: Range<Int>, with bytes: [UInt8],
+                 selectionBefore: TextSelection? = nil) -> [PieceTable.Piece] {
+        let removedContainsNewline = rangeContainsNewline(logicalRange)
         let addedRange = addBuffer.append(bytes)
         let removed = pieceTable.replace(logicalRange, withAddedRange: addedRange)
         layout.applyReplacement(logicalRange, insertedLength: bytes.count) { range in
             self.bytes(in: range)
         }
+        undoStack.recordEdit(
+            position: logicalRange.lowerBound,
+            insertedLength: bytes.count,
+            removedPieces: removed,
+            insertedContainsNewline: bytes.contains(0x0A),
+            removedContainsNewline: removedContainsNewline,
+            selectionBefore: selectionBefore
+        )
         return removed
+    }
+
+    /// Re-splices pieces without touching the undo history — the undo
+    /// stack's replay primitive.
+    @discardableResult
+    func replaceForHistory(_ logicalRange: Range<Int>,
+                           withPieces pieces: [PieceTable.Piece]) -> [PieceTable.Piece] {
+        let removed = pieceTable.replace(logicalRange, withPieces: pieces)
+        let insertedLength = pieces.reduce(0) { $0 + $1.length }
+        layout.applyReplacement(logicalRange, insertedLength: insertedLength) { range in
+            self.bytes(in: range)
+        }
+        return removed
+    }
+
+    /// Whether `range` covers a newline. Small ranges are checked exactly;
+    /// large ones are assumed to — this only steers undo coalescing.
+    private func rangeContainsNewline(_ range: Range<Int>) -> Bool {
+        var result = !range.isEmpty
+        if range.count <= 64 {
+            result = bytes(in: range).contains(0x0A)
+        }
+        return result
     }
 
     /// True once any positional edit has been applied.

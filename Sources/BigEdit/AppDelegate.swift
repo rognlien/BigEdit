@@ -466,6 +466,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         mainMenu.addItem(editMenuItem)
         let editMenu = NSMenu(title: "Edit")
         editMenu.addItem(NSMenuItem(
+            title: "Undo",
+            action: #selector(ViewportView.undo(_:)),
+            keyEquivalent: "z"
+        ))
+        editMenu.addItem(NSMenuItem(
+            title: "Redo",
+            action: #selector(ViewportView.redo(_:)),
+            keyEquivalent: "Z"
+        ))
+        editMenu.addItem(NSMenuItem.separator())
+        editMenu.addItem(NSMenuItem(
             title: "Cut",
             action: #selector(NSText.cut(_:)),
             keyEquivalent: "x"
