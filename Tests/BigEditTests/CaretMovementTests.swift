@@ -11,7 +11,9 @@ final class CaretMovementTests: XCTestCase {
         guard let file = MappedFile(path: url.path) else {
             return XCTFail("could not map temp file")
         }
-        body(EditedDocument(file: file, editModel: EditModel()))
+        let index = LineIndex()
+        index.buildSynchronously(from: file)
+        body(EditedDocument(file: file, editModel: EditModel(), lineIndex: index))
     }
 
     func testForwardStepsOverMultiByteCharacters() {
