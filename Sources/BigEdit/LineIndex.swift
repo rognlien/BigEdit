@@ -584,4 +584,61 @@ final class LineIndex {
         }
         return result
     }
+
+    // MARK: - Line lookup for the edited layout
+
+    /// The line containing byte `target` (clamped to the file): its start
+    /// offset, 0-based line number, and first visual row. One checkpoint walk
+    /// answers all three — the edited layout uses this to align edit spans to
+    /// line boundaries and translate gap coordinates.
+    func lineLocation(containingByteOffset target: Int, file: MappedFile)
+        -> (lineStart: Int, lineNumber: Int, visualRow: Int) {
+        var result = (lineStart: 0, lineNumber: 0, visualRow: 0)
+        let snap = snapshot()
+        let buffer = file.buffer
+
+        if let base = buffer.baseAddress, snap.lineCount > 0 {
+            let clamped = min(max(0, target), max(0, buffer.count - 1))
+            let startCheckpoint = checkpointIndex(forByteOffset: clamped, in: snap.checkpoints)
+            var offset = snap.checkpoints[startCheckpoint].byteOffset
+            var currentRow = snap.checkpoints[startCheckpoint].visualRowOffset
+            var currentLine = startCheckpoint * LineIndex.checkpointStride
+            var found = false
+
+            while currentLine < snap.lineCount && !found {
+                let lineStart = offset
+                let lineEnd: Int
+                if let newline = memchr(base + offset, 0x0A, buffer.count - offset) {
+                    lineEnd = base.distance(to: UnsafeRawPointer(newline))
+                    offset = lineEnd + 1
+                } else {
+                    lineEnd = buffer.count
+                    offset = buffer.count
+                }
+
+                if clamped < offset || currentLine == snap.lineCount - 1 {
+                    result = (lineStart, currentLine, currentRow)
+                    found = true
+                } else {
+                    currentRow += LineIndex.chunkCount(forByteLength: lineEnd - lineStart,
+                                                       wrap: snap.wrap)
+                    currentLine += 1
+                }
+            }
+        }
+        return result
+    }
+
+    /// The byte offset just past the newline that ends the line containing
+    /// `target`, or the file size when the file ends without one.
+    func nextLineStart(afterByteOffset target: Int, file: MappedFile) -> Int {
+        let buffer = file.buffer
+        var result = buffer.count
+        if target < buffer.count, target >= 0, let base = buffer.baseAddress {
+            if let newline = memchr(base + target, 0x0A, buffer.count - target) {
+                result = base.distance(to: UnsafeRawPointer(newline)) + 1
+            }
+        }
+        return result
+    }
 }
