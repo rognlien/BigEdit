@@ -1,10 +1,13 @@
 # BigEdit
 
-A native macOS viewer for very large text / JSON / XML files (many GB).
-Read-only. Built with Swift and AppKit.
+A native macOS editor for very large text / JSON / XML files (many GB).
+Built with Swift and AppKit.
 
-The guiding principle: **memory and CPU scale with the viewport, never with the
-file.** A 50 GB file and a 50 KB file cost the same to display.
+The guiding principle: **memory and CPU scale with the viewport and the
+edits, never with the file.** A 50 GB file and a 50 KB file cost the same to
+display, and editing either costs only what the edits themselves weigh: the
+file stays memory-mapped read-only while edits live in a piece table, and the
+full file is only written out — streaming, atomically — when you save.
 
 ## Build & run
 
@@ -27,6 +30,9 @@ The package opens directly in Xcode (`File ▸ Open…` the `BigEdit` folder).
 ## Usage
 
 - **⌘O** — open a file.
+- **Click and type** — edit in place (UTF-8 files). **⌘Z** / **⇧⌘Z** undo and
+  redo; **⌘X/⌘C/⌘V** cut, copy, paste. **⌘S** saves atomically via a streaming
+  temp-file write.
 - **⌘F** — find. Type a query and press Enter to search.
 - **⌘G** / **⇧⌘G** — next / previous match. **Esc** closes the find bar.
 

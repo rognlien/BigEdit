@@ -591,7 +591,11 @@ final class DocumentView: NSView, FindBarDelegate {
             infoPane.setName(url.lastPathComponent)
             infoPane.setPath(file.path)
             infoPane.setType(DocumentView.fileTypeDescription(for: file))
-            infoPane.setSize(formatSize(file.size))
+            if let document = viewport.document, document.hasEdits {
+                infoPane.setSize("\(formatSize(document.length)) (edited)")
+            } else {
+                infoPane.setSize(formatSize(file.size))
+            }
 
             if let document = viewport.document {
                 let lineCount = document.layout.documentLineCount
