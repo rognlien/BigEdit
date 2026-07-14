@@ -36,6 +36,8 @@ final class DocumentView: NSView, FindBarDelegate {
     private var statisticsScan: StatisticsScan?
     private var currentQuery = ""
     private var currentMatchIndex = -1
+    private var jumpToFirstMatch = true
+    private var searchRefreshTimer: Timer?
 
     private let numberFormatter: NumberFormatter = {
         let formatter = NumberFormatter()
@@ -126,22 +128,34 @@ final class DocumentView: NSView, FindBarDelegate {
     }
 
     /// Called after every positional edit: dirty state, scroller, status bar,
-    /// and the info pane all depend on the content; live search results are
-    /// stale and cleared (searching an edited document arrives in a later
-    /// stage).
+    /// and the info pane all depend on the content. Live search results go
+    /// stale — highlights clear immediately and the search re-runs once the
+    /// typing pauses.
     private func documentWasEdited() {
         window?.isDocumentEdited = isEdited
-        if searchScan != nil {
+        if !currentQuery.isEmpty {
             searchScan?.cancel()
-            searchScan = nil
             currentMatchIndex = -1
-            currentQuery = ""
             viewport.setSearch(scan: nil, currentMatchOffset: nil)
-            findBar.updateStatus("Edited — search again to refresh")
+            findBar.updateStatus("…")
+            searchRefreshTimer?.invalidate()
+            searchRefreshTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: false) {
+                [weak self] _ in
+                self?.refreshSearchAfterEdit()
+            }
         }
         syncScroller()
         updateStatusBar()
         updateInfoPane()
+    }
+
+    /// Re-runs the current query over the edited document, without jumping
+    /// the viewport to the first match.
+    private func refreshSearchAfterEdit() {
+        if !currentQuery.isEmpty {
+            startSearch(currentQuery, caseSensitive: findBar.isCaseSensitive,
+                        jumpToFirstMatch: false)
+        }
     }
 
     /// Cancels all background work for this document. Call before dropping the
@@ -598,6 +612,8 @@ final class DocumentView: NSView, FindBarDelegate {
 
     /// Cancels any running search and clears match state.
     private func resetSearch() {
+        searchRefreshTimer?.invalidate()
+        searchRefreshTimer = nil
         searchScan?.cancel()
         searchScan = nil
         currentQuery = ""
@@ -606,25 +622,21 @@ final class DocumentView: NSView, FindBarDelegate {
         findBar.updateStatus("")
     }
 
-    /// Starts a fresh background search for `query`.
-    private func startSearch(_ query: String, caseSensitive: Bool) {
-        if viewport.document?.hasEdits == true {
-            // The scan runs over the original file; its offsets would be
-            // wrong in the edited document. A later stage searches through
-            // the piece table.
-            findBar.updateStatus("Search unavailable with unsaved edits")
-            return
-        }
+    /// Starts a fresh background search for `query` over the logical
+    /// document (through the piece table when there are unsaved edits).
+    private func startSearch(_ query: String, caseSensitive: Bool,
+                             jumpToFirstMatch: Bool = true) {
         searchScan?.cancel()
         currentQuery = query
         currentMatchIndex = -1
+        self.jumpToFirstMatch = jumpToFirstMatch
 
-        if let file = viewport.file,
+        if let document = viewport.document,
            let scan = SearchScan(query: query, caseSensitive: caseSensitive) {
             searchScan = scan
             viewport.setSearch(scan: scan, currentMatchOffset: nil)
             findBar.updateStatus("Searching…")
-            scan.start(in: file) { [weak self, weak scan] in
+            scan.start(in: document) { [weak self, weak scan] in
                 if let self, let scan, self.searchScan === scan {
                     self.searchDidProgress(scan)
                 }
@@ -636,7 +648,7 @@ final class DocumentView: NSView, FindBarDelegate {
 
     /// Called on the main queue as matches accumulate.
     private func searchDidProgress(_ scan: SearchScan) {
-        if currentMatchIndex == -1 && scan.matchCount > 0 {
+        if currentMatchIndex == -1 && scan.matchCount > 0 && jumpToFirstMatch {
             moveToMatch(index: 0)  // Jump to the first match once results appear.
         } else {
             viewport.needsDisplay = true
