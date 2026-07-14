@@ -369,6 +369,20 @@ final class ViewportView: NSView {
         needsDisplay = true
     }
 
+    /// Call after the document was edited outside the keyboard path (Replace
+    /// All): clamps the selection to the new length and re-clamps the scroll.
+    func documentDidChangeProgrammatically() {
+        if let selection, let document {
+            let length = document.length
+            self.selection = TextSelection(
+                anchorOffset: min(selection.anchorOffset, length),
+                activeOffset: min(selection.activeOffset, length)
+            )
+        }
+        setScrollRow(scrollRow)
+        needsDisplay = true
+    }
+
     @objc func undo(_ sender: Any?) {
         replayHistory { document in document.undoStack.undo(in: document) }
     }

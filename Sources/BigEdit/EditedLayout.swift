@@ -371,13 +371,16 @@ final class EditedLayout {
         var alignedLower = logicalLineStart(containingPosition: replacedRange.lowerBound)
         var alignedUpper = logicalLineEnd(afterPosition: replacedRange.upperBound)
 
-        // Absorb every span the aligned region overlaps or touches.
+        // Absorb every span the aligned region strictly overlaps. Touching
+        // spans deliberately stay separate — merging on mere adjacency would
+        // snowball per-line edits (Replace All) into one ever-growing span
+        // that is rescanned on every splice.
         var firstSpan = spans.count
         var lastSpan = -1
         for spanIndex in spans.indices {
             let start = segmentStartOffsets[2 * spanIndex + 1]
             let end = start + spans[spanIndex].contentLength
-            if start <= alignedUpper && end >= alignedLower {
+            if start < alignedUpper && end > alignedLower {
                 firstSpan = min(firstSpan, spanIndex)
                 lastSpan = max(lastSpan, spanIndex)
             }
@@ -408,13 +411,16 @@ final class EditedLayout {
         let content = contentReader(alignedLower..<(alignedUpper + delta))
         let newSpan = makeSpan(content: content, originalRange: originalLower..<originalUpper)
 
-        // Splice the span list and re-derive the gaps between spans.
+        // Splice the span list — dropping a span that covers nothing at all —
+        // and re-derive the gaps between spans. Insertion order follows the
+        // original ranges, which stay monotone along the logical document.
+        let coversNothing = newSpan.contentLength == 0 && newSpan.originalRange.isEmpty
         if firstSpan <= lastSpan {
-            spans.replaceSubrange(firstSpan...lastSpan, with: [newSpan])
-        } else {
+            spans.replaceSubrange(firstSpan...lastSpan, with: coversNothing ? [] : [newSpan])
+        } else if !coversNothing {
             var insertAt = 0
             while insertAt < spans.count
-                && segmentStartOffsets[2 * insertAt + 1] < alignedLower {
+                && spans[insertAt].originalRange.lowerBound < newSpan.originalRange.upperBound {
                 insertAt += 1
             }
             spans.insert(newSpan, at: insertAt)

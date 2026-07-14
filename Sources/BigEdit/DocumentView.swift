@@ -38,6 +38,7 @@ final class DocumentView: NSView, FindBarDelegate {
     private var currentMatchIndex = -1
     private var jumpToFirstMatch = true
     private var searchRefreshTimer: Timer?
+    private var replaceAllScan: SearchScan?
 
     private let numberFormatter: NumberFormatter = {
         let formatter = NumberFormatter()
@@ -91,6 +92,8 @@ final class DocumentView: NSView, FindBarDelegate {
     func load(file: MappedFile, index: LineIndex) {
         resetSearch()
         editModel.clear()
+        replaceAllScan?.cancel()
+        replaceAllScan = nil
         statisticsScan?.cancel()
         statisticsScan = nil
         window?.isDocumentEdited = false
@@ -162,6 +165,8 @@ final class DocumentView: NSView, FindBarDelegate {
     /// document so its `MappedFile` can be unmapped cleanly.
     func close() {
         resetSearch()
+        replaceAllScan?.cancel()
+        replaceAllScan = nil
         statisticsScan?.cancel()
         statisticsScan = nil
         editModel.clear()
@@ -380,8 +385,15 @@ final class DocumentView: NSView, FindBarDelegate {
         hideFindBar()
     }
 
+    /// Matches at or below this count are applied as real (undoable) edits;
+    /// above it, Replace All falls back to the deferred rule. The bound keeps
+    /// the per-edit layout bookkeeping comfortably interactive.
+    private static let replaceAllMaterializeLimit = 2_000
+
     func findBar(_ bar: FindBar, didRequestReplaceAll pattern: String, with replacement: String) {
-        if viewport.document?.hasEdits == true {
+        if let document = viewport.document, document.isEditable, editModel.rule == nil {
+            startMaterializedReplaceAll(in: document, pattern: pattern, replacement: replacement)
+        } else if viewport.document?.hasEdits == true {
             // The deferred rule and positional edits are mutually exclusive.
             findBar.updateReplaceStatus("Save your edits first")
         } else if let rule = ReplacementRule(pattern: pattern, replacement: replacement),
@@ -394,6 +406,74 @@ final class DocumentView: NSView, FindBarDelegate {
         } else {
             findBar.updateReplaceStatus("Invalid pattern")
         }
+    }
+
+    /// Scans for `pattern` over the logical document, then applies the
+    /// replacements as one undoable step — or falls back to the deferred
+    /// rule when there are too many.
+    private func startMaterializedReplaceAll(
+        in document: EditedDocument, pattern: String, replacement: String
+    ) {
+        replaceAllScan?.cancel()
+        guard let scan = SearchScan(query: pattern) else {
+            findBar.updateReplaceStatus("Invalid pattern")
+            return
+        }
+        replaceAllScan = scan
+        findBar.updateReplaceStatus("Scanning…")
+        scan.start(in: document) { [weak self, weak scan] in
+            if let self, let scan, self.replaceAllScan === scan {
+                if scan.isComplete {
+                    self.replaceAllScan = nil
+                    self.finishReplaceAll(scan: scan, pattern: pattern,
+                                          replacement: replacement, in: document)
+                } else {
+                    self.findBar.updateReplaceStatus(
+                        "Scanning… \(Int(scan.scanProgress * 100))%")
+                }
+            }
+        }
+    }
+
+    private func finishReplaceAll(
+        scan: SearchScan, pattern: String, replacement: String, in document: EditedDocument
+    ) {
+        let count = scan.matchCount
+        if count == 0 {
+            findBar.updateReplaceStatus("Not found")
+        } else if count <= DocumentView.replaceAllMaterializeLimit && !scan.isTruncated {
+            materializeReplaceAll(scan: scan, replacement: replacement, in: document)
+            let formatted = numberFormatter.string(from: NSNumber(value: count)) ?? "\(count)"
+            findBar.updateReplaceStatus("\(formatted) replaced")
+        } else if !document.hasEdits,
+                  let rule = ReplacementRule(pattern: pattern, replacement: replacement) {
+            // Too many occurrences to hold as positional edits — fall back to
+            // the deferred rule, applied streaming at save time.
+            editModel.setRule(rule, file: document.file) { [weak self] in
+                self?.editScanDidProgress()
+            }
+            viewport.needsDisplay = true
+            updateEditStatus()
+        } else {
+            findBar.updateReplaceStatus("Too many matches to replace with unsaved edits")
+        }
+    }
+
+    /// Applies every match back-to-front (so earlier offsets stay valid) as
+    /// one grouped undo step.
+    private func materializeReplaceAll(
+        scan: SearchScan, replacement: String, in document: EditedDocument
+    ) {
+        let offsets = scan.matchOffsets(beginningIn: 0..<Int.max)
+        let patternLength = scan.queryByteLength
+        let replacementBytes = Array(replacement.utf8)
+        document.undoStack.beginGrouping()
+        for offset in offsets.reversed() {
+            document.replace(offset..<(offset + patternLength), with: replacementBytes)
+        }
+        document.undoStack.endGrouping()
+        viewport.documentDidChangeProgrammatically()
+        documentWasEdited()
     }
 
     func findBarRequestedRevert(_ bar: FindBar) {
