@@ -1,9 +1,9 @@
 # BigEdit — what we built
 
-A native macOS viewer (with deferred-edit support) for very large text /
-JSON / XML / YAML / Markdown files — many GB. Swift + AppKit. The guiding
-principle throughout: **memory and CPU scale with the viewport, never with the
-file.** A 50 GB file and a 50 KB file cost the same to display.
+A native macOS editor for very large text / JSON / XML / YAML / Markdown
+files — many GB. Swift + AppKit. The guiding principle throughout: **memory
+and CPU scale with the viewport and the edits, never with the file.** A 50 GB
+file and a 50 KB file cost the same to display and to edit.
 
 ## Architecture, top to bottom
 
@@ -15,9 +15,13 @@ file.** A 50 GB file and a 50 KB file cost the same to display.
 | `LineIndex` | Sparse line index, built on a background queue. One checkpoint per 4096 lines (byte offset + visual-row offset). Now also tracks "long lines" (≥ 1024 bytes) so they can soft-wrap to the viewport width without recomputing the whole index on resize. |
 | `SearchScan` | Background `memmem` search with byte-progress reporting. Case-sensitive uses the fast path; case-insensitive is byte-by-byte with ASCII case folding. Match offsets collected (cap 1,000,000) for display. |
 | `StatisticsScan` | Background per-byte pass counting words and characters; matches `wc -lwm`. |
-| `ReplacementRule` + `EditModel` | The "lazy editor": one deferred find-and-replace rule, never written to disk until the user saves. The viewport renders the transformed result live. |
-| `FileWriter` | Streaming save: `memmem` over the mmap'd input → write to temp file in the same directory → atomic `rename()`. Independent of the display match cap; preserves the destination's permission bits. Cancellable. |
-| `TextSelection` | Selection range in original byte offsets. |
+| `ReplacementRule` + `EditModel` | The "lazy editor" Stage 1: one deferred find-and-replace rule, never written to disk until the user saves. The viewport renders the transformed result live. Still used when Replace All has too many matches to materialise, and by the CLI. |
+| `PieceTable` + `AddBuffer` | The "lazy editor" Stage 2 storage: logical bytes map onto pieces of the read-only mmap and an append-only add buffer. Edits are O(log pieces) splices in a balanced tree (treap, flat node pool); typed bytes are never copied out of the add buffer again. `AddedByteStore` is the seam for a future on-disk edit journal. |
+| `EditedDocument` | The single read/write funnel between the UI and the bytes. Logical offsets everywhere; zero-edit reads pass straight through to the mmap. `replace(_:with:)` keeps the piece table, layout, and undo history in step. |
+| `EditedLayout` | Line/row layout of the edited document. The original `LineIndex` is never rebuilt; line-aligned edit *spans* (with their own local line layout, re-derived by scanning just the edit) overlay it, composed through prefix sums — O(log #spans) queries, O(#spans) update per edit. |
+| `UndoStack` | Edit history as piece splices — never copied bytes, so undoing a 10 GB deletion is O(pieces). Typing/deletion runs coalesce; Replace All applies as one grouped step. |
+| `FileWriter` | Streaming save, two paths: the rule save (`memmem` splice over the mmap) and the piece save (walk the piece table in logical order). Both write to a temp file in the destination directory then atomic `rename()`; both preserve permission bits, report progress, and cancel cleanly. |
+| `TextSelection` | Selection range in logical byte offsets. |
 
 ### UI layer
 
@@ -64,14 +68,41 @@ viewport, not the file.
 - **Close-window-keeps-app-alive**: closing the window leaves BigEdit in the Dock; clicking the icon brings the same document back. `⌘Q` quits.
 - **Iceberg icon** sliced from the `Resources/AppIcon.png` master into a full multi-resolution `.icns` at build time (via `sips` + `iconutil`; regenerate the master from new artwork with `tools/make-icon.swift`).
 
-## The deferred-edit feature (Stage 1 of the "lazy editor")
+## The lazy editor
+
+### Stage 2 — positional editing (typing, delete, paste, undo)
+
+- Click to place a caret and type: insertions, deletions, newlines, cut/paste
+  — all real edits on the logical document. The file on disk stays untouched
+  and memory-mapped read-only; edits are piece-table splices whose cost is
+  the edit itself, never the file.
+- `NSTextInputClient` conformance: IME composition (with underline), dead
+  keys, press-and-hold accents. Composition bytes commit live to the piece
+  table; ranges are reported in a synthetic space anchored at the marked text.
+- Editing is enabled for UTF-8 / ASCII files; Return inserts the detected
+  line ending (CRLF files get `\r\n`), pasted text is normalised to it, and a
+  CRLF pair deletes as one unit.
+- **Undo/redo** (⌘Z / ⇧⌘Z): piece-splice history with typing/deletion-run
+  coalescing; Replace All reverts as one step. History clears on save (the
+  document re-maps from disk).
+- **Save** streams the piece table through the same atomic temp-file +
+  rename path as the rule save. Constant memory; transiently needs ~file-size
+  free disk — that is the price of never corrupting the original.
+- **Search over edits** re-runs through the piece table (logical windows
+  assembled from a piece snapshot) 300 ms after typing pauses.
+- **Replace All** materialises up to 2,000 matches as one undoable grouped
+  edit (newlines allowed); above that it falls back to the Stage 1 rule.
+- Lifecycle: dirty dot, prompt on close/quit, ⌘R confirms before discarding
+  edits, and a file that changed on disk under unsaved edits blocks saving
+  over it (Save As or reload instead).
+
+### Stage 1 — the deferred replacement rule
 
 - One active rule at a time: `pattern → replacement`, both newline-free.
-- Setting a rule via Replace All starts a background `SearchScan` for the pattern. Matches stream into the viewport's transformed render (with progress %).
-- The document edit indicator dot appears in the close button (`isDocumentEdited`).
+- Setting a rule starts a background `SearchScan` for the pattern. Matches stream into the viewport's transformed render (with progress %).
 - **Revert** discards the rule. **Save** writes the result to disk via a fresh streaming pass that is independent of the 1M display match cap.
 - After save the document re-loads from disk — the rule is cleared automatically.
-- Stage 2 (positional / hand-typed edits, undo stack) is planned, not built.
+- The rule and positional edits are mutually exclusive; the rule remains the path for over-cap Replace All, non-UTF-8 files, and the `--replace` CLI.
 
 ## Verification
 
@@ -81,11 +112,18 @@ viewport, not the file.
 - `--preview <pattern> <replacement> <path>` — first rows after a deferred edit
 - `--replace <pattern> <replacement> <in> <out>` — full deferred-edit save (vs `sed 's/pattern/replacement/g'`)
 - `--stats <path>` — words / characters (vs `wc -lwm`)
+- `--edit-smoke <in> <out>` — deterministic edits through the piece table +
+  full undo/redo walk + piece save; `scripts/verify-editing.sh` generates a
+  large input, replays the sequence in Python, and compares byte-for-byte.
 
 ### Unit tests
-`Tests/BigEditTests/` — 16 XCTests covering `LineIndex`, `SearchScan` (both
-case modes), `ReplacementRule`, `EditModel`, `FileWriter`, `StatisticsScan`,
-and the four highlighters. Run with `swift test`.
+`Tests/BigEditTests/` — ~90 XCTests. Beyond the viewer suites (`LineIndex`,
+`SearchScan`, `ReplacementRule`, `EditModel`, `FileWriter`, `StatisticsScan`,
+the four highlighters), the editing stack is fuzz-tested against naive
+models with seeded generators: `PieceTable` splices vs a plain array,
+`EditedLayout` vs a from-scratch line layout (including long lines and wrap
+changes), `EditedDocument` end-to-end, `UndoStack` history walks, and the
+piece-table search vs naive search. Run with `swift test`.
 
 ### Measured performance
 - 562 MB / 50M-line file: indexed in **~1.4 s**, searched (`999`) in **~1.3 s** (139,731 matches, identical to `grep`), replaced (`999` → `ZZ`) in **~2.2 s** byte-identical to `sed`.
@@ -103,8 +141,10 @@ and the four highlighters. Run with `swift test`.
 - 64 MB cap on a single copy to the pasteboard.
 - 1,000,000-match cap on the display match list (the save path bypasses this).
 - Multi-row highlighting only looks back a bounded window (~400 rows) above the viewport, so a comment/fence/block-scalar opened further up isn't coloured until scrolled nearer.
-- UTF-8 only for *display*; other encodings (UTF-16 BOM, binary, invalid UTF-8) are detected and labelled in the status bar but not decoded.
+- UTF-8 only for *display and editing*; other encodings (UTF-16 BOM, binary, invalid UTF-8) are detected and labelled in the status bar but not decoded, and stay read-only.
 - No VoiceOver / accessibility yet — the custom-drawn viewport exposes nothing to assistive tech.
-- Keyboard selection is Shift+Arrow (extends from a caret); there's no blinking insertion caret drawn when the selection is empty.
 - Word boundaries for double-click are ASCII-only.
-- Stage 2 of the lazy editor (positional edits + undo) not implemented.
+- Unsaved edits live in memory only: they are lost on crash or quit-without-saving (the edit-storage API is shaped so an on-disk journal can add recovery later).
+- Editing inside a single multi-GB line re-scans that line's span per splice — no worse than the viewer's own cost profile in a megaline file, but noticeable.
+- Word/character counts in the info pane are computed from the file on disk, not the unsaved edits.
+- Undo history clears on save (the document re-maps from disk).
