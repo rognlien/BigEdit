@@ -26,8 +26,12 @@ private enum ByteClass {
 /// `LineIndex.bytesPerChunk`.
 final class ViewportView: NSView {
 
-    private(set) var file: MappedFile?
+    private(set) var document: EditedDocument?
     private(set) var index: LineIndex?
+
+    /// The mapped file behind the document — passed to `LineIndex` queries,
+    /// which speak original byte offsets.
+    var file: MappedFile? { document?.file }
 
     /// The first visible visual row, as a fractional value (e.g. 1234.5).
     private(set) var scrollRow: Double = 0
@@ -43,9 +47,6 @@ final class ViewportView: NSView {
 
     /// The byte offset of the currently selected match, drawn emphasised.
     private var currentMatchOffset: Int?
-
-    /// The deferred-edit model; when it holds a rule, rows render transformed.
-    private var editModel: EditModel?
 
     /// The syntax-highlighting mode applied when drawing each row.
     private var syntaxMode: SyntaxMode = .plain
@@ -199,9 +200,9 @@ final class ViewportView: NSView {
 
     // MARK: - Document
 
-    /// Attaches a file and its (possibly still-building) line index.
-    func load(file: MappedFile, index: LineIndex) {
-        self.file = file
+    /// Attaches a document and its (possibly still-building) line index.
+    func load(document: EditedDocument, index: LineIndex) {
+        self.document = document
         self.index = index
         scrollRow = 0
         horizontalOffset = 0
@@ -342,19 +343,19 @@ final class ViewportView: NSView {
     }
 
     private func moveCaretHorizontally(forward: Bool, extend: Bool) {
-        guard let file else { return }
+        guard let document else { return }
         ensureCaret()
         let target: Int
         if !extend, let range = selectionByteRange {
             target = forward ? range.upperBound : range.lowerBound   // collapse to edge
         } else {
             let caret = selection?.activeOffset ?? 0
-            target = forward ? nextCharOffset(after: caret, in: file)
-                             : prevCharOffset(before: caret, in: file)
+            target = forward ? document.nextCharacterOffset(after: caret)
+                             : document.previousCharacterOffset(before: caret)
         }
         desiredCaretX = nil
         setCaret(to: target, extend: extend)
-        scrollByteIntoView(target, in: file)
+        scrollByteIntoView(target)
         needsDisplay = true
     }
 
@@ -363,11 +364,11 @@ final class ViewportView: NSView {
         ensureCaret()
         let caret = selection?.activeOffset ?? 0
         let currentRow = index.visualRow(forByteOffset: caret, file: file)
-        let x = desiredCaretX ?? caretX(forOffset: caret, row: currentRow, file: file)
+        let x = desiredCaretX ?? caretX(forOffset: caret, row: currentRow)
         let targetRow = max(0, min(currentRow + rowDelta, index.visualRowCount - 1))
         var target = caret
         if let line = index.visualLines(forRows: targetRow..<(targetRow + 1), file: file).first {
-            target = byteOffset(inRow: line, atX: x, file: file)
+            target = byteOffset(inRow: line, atX: x)
         }
         desiredCaretX = x
         setCaret(to: target, extend: extend)
@@ -375,54 +376,31 @@ final class ViewportView: NSView {
         needsDisplay = true
     }
 
-    /// The byte offset of the next UTF-8 character boundary after `offset`.
-    func nextCharOffset(after offset: Int, in file: MappedFile) -> Int {
-        let size = file.size
-        if offset >= size { return size }
-        let buffer = file.buffer
-        var i = offset + 1
-        while i < size && (buffer[i] & 0xC0) == 0x80 {
-            i += 1
-        }
-        return i
-    }
-
-    /// The byte offset of the previous UTF-8 character boundary before `offset`.
-    func prevCharOffset(before offset: Int, in file: MappedFile) -> Int {
-        if offset <= 0 { return 0 }
-        let buffer = file.buffer
-        var i = offset - 1
-        while i > 0 && (buffer[i] & 0xC0) == 0x80 {
-            i -= 1
-        }
-        return i
-    }
-
     /// The drawn x of the caret at `offset` within the row at `row`.
-    private func caretX(forOffset offset: Int, row: Int, file: MappedFile) -> CGFloat {
-        guard let index,
-              let line = index.visualLines(forRows: row..<(row + 1), file: file).first else {
-            return 0
+    private func caretX(forOffset offset: Int, row: Int) -> CGFloat {
+        var result: CGFloat = 0
+        if let file, let index,
+           let line = index.visualLines(forRows: row..<(row + 1), file: file).first {
+            let start = chunkStartByte(line)
+            let clamped = max(start, min(offset, line.byteRange.upperBound))
+            if clamped > start {
+                result = textWidth(ofBytes: start..<clamped)
+            }
         }
-        let start = chunkStartByte(line, buffer: file.buffer)
-        let clamped = max(start, min(offset, line.byteRange.upperBound))
-        if clamped <= start {
-            return 0
-        }
-        return textWidth(ofBytes: start..<clamped, in: file.buffer)
+        return result
     }
 
     private func firstVisibleRowStartByte() -> Int {
         guard let file, let index else { return 0 }
         let rowIndex = max(0, min(Int(scrollRow.rounded(.down)), index.visualRowCount - 1))
         if let line = index.visualLines(forRows: rowIndex..<(rowIndex + 1), file: file).first {
-            return chunkStartByte(line, buffer: file.buffer)
+            return chunkStartByte(line)
         }
         return 0
     }
 
-    private func scrollByteIntoView(_ offset: Int, in file: MappedFile) {
-        if let index {
+    private func scrollByteIntoView(_ offset: Int) {
+        if let file, let index {
             scrollToRow(index.visualRow(forByteOffset: offset, file: file))
         }
     }
@@ -515,10 +493,7 @@ final class ViewportView: NSView {
         case .character:
             return byteOffset..<byteOffset
         case .word:
-            if let file {
-                return wordRange(at: byteOffset, in: file)
-            }
-            return byteOffset..<byteOffset
+            return wordRange(at: byteOffset)
         case .line:
             return lineRange(at: byteOffset)
         }
@@ -527,51 +502,46 @@ final class ViewportView: NSView {
     /// The byte range of the word-like token at `byteOffset`. Three classes —
     /// word, whitespace, other — and the run of the same class is selected.
     /// Newlines always break a run, so the selection never crosses lines.
-    private func wordRange(at byteOffset: Int, in file: MappedFile) -> Range<Int> {
-        let buffer = file.buffer
-        let total = buffer.count
-        if byteOffset < 0 || byteOffset >= total {
-            return byteOffset..<byteOffset
-        }
-        let cap = 10_000
-        let clickedClass = byteClass(of: buffer[byteOffset])
-        var start = byteOffset
-        var end = byteOffset + 1
-        while start > 0 && byteOffset - start < cap {
-            let candidate = buffer[start - 1]
-            if candidate == 0x0A || byteClass(of: candidate) != clickedClass {
-                break
+    private func wordRange(at byteOffset: Int) -> Range<Int> {
+        var result = byteOffset..<byteOffset
+        if let document, let clickedByte = document.byte(at: byteOffset) {
+            let total = document.length
+            let cap = 10_000
+            let clickedClass = byteClass(of: clickedByte)
+            var start = byteOffset
+            var end = byteOffset + 1
+            while start > 0 && byteOffset - start < cap,
+                  let candidate = document.byte(at: start - 1),
+                  candidate != 0x0A, byteClass(of: candidate) == clickedClass {
+                start -= 1
             }
-            start -= 1
-        }
-        while end < total && end - byteOffset < cap {
-            let candidate = buffer[end]
-            if candidate == 0x0A || byteClass(of: candidate) != clickedClass {
-                break
+            while end < total && end - byteOffset < cap,
+                  let candidate = document.byte(at: end),
+                  candidate != 0x0A, byteClass(of: candidate) == clickedClass {
+                end += 1
             }
-            end += 1
+            result = start..<end
         }
-        return start..<end
+        return result
     }
 
     /// The byte range of the visual line containing `byteOffset`, including
     /// its trailing newline if this row is the last chunk of its line.
     private func lineRange(at byteOffset: Int) -> Range<Int> {
-        guard let file, let index else {
-            return byteOffset..<byteOffset
+        var result = byteOffset..<byteOffset
+        if let document, let file, let index {
+            let row = index.visualRow(forByteOffset: byteOffset, file: file)
+            let rows = index.visualLines(forRows: row..<(row + 1), file: file)
+            if let visualLine = rows.first {
+                var upper = visualLine.byteRange.upperBound
+                let isLastChunk = visualLine.chunkIndex == visualLine.chunkCount - 1
+                if isLastChunk && upper < document.length && document.byte(at: upper) == 0x0A {
+                    upper += 1
+                }
+                result = visualLine.byteRange.lowerBound..<upper
+            }
         }
-        let buffer = file.buffer
-        let row = index.visualRow(forByteOffset: byteOffset, file: file)
-        let rows = index.visualLines(forRows: row..<(row + 1), file: file)
-        guard let visualLine = rows.first else {
-            return byteOffset..<byteOffset
-        }
-        var upper = visualLine.byteRange.upperBound
-        let isLastChunk = visualLine.chunkIndex == visualLine.chunkCount - 1
-        if isLastChunk && upper < buffer.count && buffer[upper] == 0x0A {
-            upper += 1
-        }
-        return visualLine.byteRange.lowerBound..<upper
+        return result
     }
 
     /// Categorises a byte for word-break purposes: ASCII alphanumerics +
@@ -628,7 +598,7 @@ final class ViewportView: NSView {
     /// mapping near a replacement is approximate.
     private func byteOffset(at point: NSPoint) -> Int {
         var result = 0
-        if let file, let index, index.visualRowCount > 0 {
+        if let document, let file, let index, index.visualRowCount > 0 {
             let firstRow = Int(scrollRow)
             let fraction = scrollRow - Double(firstRow)
             let rowsFromTop = (Double(point.y) + fraction * Double(lineHeight)) / Double(lineHeight)
@@ -640,9 +610,9 @@ final class ViewportView: NSView {
                 let gutterW = gutterWidth(for: index.count)
                 let textOriginX = gutterW + gutterPadding
                 let relativeX = point.x - textOriginX + horizontalOffset
-                result = byteOffset(inRow: visualLine, atX: relativeX, file: file)
+                result = byteOffset(inRow: visualLine, atX: relativeX)
             } else {
-                result = file.size
+                result = document.length
             }
         }
         return result
@@ -654,18 +624,17 @@ final class ViewportView: NSView {
     /// While a replacement rule is active the drawn text differs from the
     /// underlying bytes, so it falls back to a monospaced column estimate.
     private func byteOffset(inRow visualLine: LineIndex.VisualLine,
-                            atX relativeX: CGFloat, file: MappedFile) -> Int {
+                            atX relativeX: CGFloat) -> Int {
         let rs = visualLine.byteRange.lowerBound
         let re = visualLine.byteRange.upperBound
 
-        if editModel?.rule != nil {
+        if document?.hasDisplayTransform == true {
             let approxChars = Int((max(0, relativeX) / characterWidth).rounded())
             return max(rs, min(rs + approxChars, re))
         }
 
-        let buffer = file.buffer
-        let startByte = chunkStartByte(visualLine, buffer: buffer)
-        let text = decodeChunk(visualLine, buffer: buffer)
+        let startByte = chunkStartByte(visualLine)
+        let text = decodeChunk(visualLine)
         if text.isEmpty {
             return startByte
         }
@@ -693,13 +662,12 @@ final class ViewportView: NSView {
     /// The first fully-decodable byte of a chunk. A continuation chunk can begin
     /// mid-UTF-8 sequence, so skip leading continuation bytes — mirroring how
     /// `decodeChunk` builds the displayed text.
-    private func chunkStartByte(_ visualLine: LineIndex.VisualLine,
-                                buffer: UnsafeRawBufferPointer) -> Int {
+    private func chunkStartByte(_ visualLine: LineIndex.VisualLine) -> Int {
         var start = visualLine.byteRange.lowerBound
-        if visualLine.chunkIndex > 0 {
+        if visualLine.chunkIndex > 0, let document {
             var skipped = 0
-            while start < visualLine.byteRange.upperBound && skipped < 3
-                && (buffer[start] & 0xC0) == 0x80 {
+            while start < visualLine.byteRange.upperBound && skipped < 3,
+                  let byte = document.byte(at: start), (byte & 0xC0) == 0x80 {
                 start += 1
                 skipped += 1
             }
@@ -711,12 +679,12 @@ final class ViewportView: NSView {
 
     @objc func copy(_ sender: Any?) {
         let cap = 64 * 1024 * 1024
-        if let selection, !selection.isEmpty, let file, let editModel {
+        if let selection, !selection.isEmpty, let document {
             let range = selection.range
             if range.count > cap {
                 presentSelectionTooLarge()
             } else {
-                let bytes = editModel.transformedBytes(forOriginalRange: range, in: file.buffer)
+                let bytes = document.displayBytes(in: range)
                 let text = ViewportView.pasteboardText(fromUTF8: bytes)
                 let pasteboard = NSPasteboard.general
                 pasteboard.clearContents()
@@ -755,8 +723,8 @@ final class ViewportView: NSView {
     }
 
     @objc override func selectAll(_ sender: Any?) {
-        if let file {
-            selection = TextSelection(anchorOffset: 0, activeOffset: file.size)
+        if let document {
+            selection = TextSelection(anchorOffset: 0, activeOffset: document.length)
             needsDisplay = true
         }
     }
@@ -782,12 +750,6 @@ final class ViewportView: NSView {
     func setSearch(scan: SearchScan?, currentMatchOffset: Int?) {
         self.searchScan = scan
         self.currentMatchOffset = currentMatchOffset
-        needsDisplay = true
-    }
-
-    /// Attaches the deferred-edit model whose rule the viewport renders.
-    func setEditModel(_ model: EditModel?) {
-        self.editModel = model
         needsDisplay = true
     }
 
@@ -819,7 +781,7 @@ final class ViewportView: NSView {
 
         let gutterWidth = self.gutterWidth(for: index.count)
         let startState = seedState(forFirstRow: firstRow, file: file, index: index)
-        drawText(rows: rows, file: file, gutterWidth: gutterWidth, fraction: fraction,
+        drawText(rows: rows, gutterWidth: gutterWidth, fraction: fraction,
                  startState: startState)
         drawGutter(rows: rows, width: gutterWidth, fraction: fraction)
         drawInsertionCaret(file: file, index: index, firstRow: firstRow, fraction: fraction,
@@ -839,9 +801,9 @@ final class ViewportView: NSView {
               let visualLine = index.visualLines(forRows: caretRow..<(caretRow + 1), file: file).first else {
             return
         }
-        let start = chunkStartByte(visualLine, buffer: file.buffer)
+        let start = chunkStartByte(visualLine)
         let clamped = max(start, min(caret, visualLine.byteRange.upperBound))
-        let widthToCaret = clamped > start ? textWidth(ofBytes: start..<clamped, in: file.buffer) : 0
+        let widthToCaret = clamped > start ? textWidth(ofBytes: start..<clamped) : 0
         let textOriginX = gutterWidth + gutterPadding
         let x = textOriginX - horizontalOffset + widthToCaret
         let y = CGFloat(caretRow - firstRow) * lineHeight - fraction * lineHeight
@@ -856,7 +818,6 @@ final class ViewportView: NSView {
 
     private func drawText(
         rows: [LineIndex.VisualLine],
-        file: MappedFile,
         gutterWidth: CGFloat,
         fraction: CGFloat,
         startState: HighlightState
@@ -872,15 +833,14 @@ final class ViewportView: NSView {
         )
         NSBezierPath(rect: textArea).addClip()
 
-        let buffer = file.buffer
         var state = startState
         for (row, visualLine) in rows.enumerated() {
             let y = CGFloat(row) * lineHeight - fraction * lineHeight
             // Search highlights, then selection, then text — each layer above
             // the previous so the rendered text is always on top.
-            drawMatchHighlights(for: visualLine, rowY: y, textOriginX: textOriginX, buffer: buffer)
-            drawSelectionForRow(visualLine: visualLine, rowY: y, textOriginX: textOriginX, buffer: buffer)
-            let text = decodeChunk(visualLine, buffer: buffer)
+            drawMatchHighlights(for: visualLine, rowY: y, textOriginX: textOriginX)
+            drawSelectionForRow(visualLine: visualLine, rowY: y, textOriginX: textOriginX)
+            let text = decodeChunk(visualLine)
             let (attributed, nextState) = highlightedRow(text, startState: state)
             attributed.draw(at: NSPoint(x: textOriginX - horizontalOffset, y: y))
             state = nextState
@@ -900,7 +860,7 @@ final class ViewportView: NSView {
         let rows = index.visualLines(forRows: start..<firstRow, file: file)
         var state = HighlightState.normal
         for visualLine in rows {
-            state = rowEndState(decodeChunk(visualLine, buffer: file.buffer), startState: state)
+            state = rowEndState(decodeChunk(visualLine), startState: state)
         }
         return state
     }
@@ -936,8 +896,7 @@ final class ViewportView: NSView {
     private func drawMatchHighlights(
         for visualLine: LineIndex.VisualLine,
         rowY: CGFloat,
-        textOriginX: CGFloat,
-        buffer: UnsafeRawBufferPointer
+        textOriginX: CGFloat
     ) {
         let rowStart = visualLine.byteRange.lowerBound
         let rowEnd = visualLine.byteRange.upperBound
@@ -953,8 +912,7 @@ final class ViewportView: NSView {
                 rowStart: rowStart,
                 rowEnd: rowEnd,
                 rowY: rowY,
-                textOriginX: textOriginX,
-                buffer: buffer
+                textOriginX: textOriginX
             )
         }
     }
@@ -965,8 +923,7 @@ final class ViewportView: NSView {
         rowStart: Int,
         rowEnd: Int,
         rowY: CGFloat,
-        textOriginX: CGFloat,
-        buffer: UnsafeRawBufferPointer
+        textOriginX: CGFloat
     ) {
         let matchColor = NSColor.systemYellow.withAlphaComponent(0.5)
         let currentColor = NSColor.systemOrange.withAlphaComponent(0.85)
@@ -979,8 +936,8 @@ final class ViewportView: NSView {
             let visibleStart = max(matchOffset, rowStart)
             let visibleEnd = min(matchOffset + needleLength, rowEnd)
             if visibleStart < visibleEnd {
-                let prefixWidth = textWidth(ofBytes: rowStart..<visibleStart, in: buffer)
-                let matchWidth = textWidth(ofBytes: visibleStart..<visibleEnd, in: buffer)
+                let prefixWidth = textWidth(ofBytes: rowStart..<visibleStart)
+                let matchWidth = textWidth(ofBytes: visibleStart..<visibleEnd)
                 let rect = NSRect(
                     x: textOriginX - horizontalOffset + prefixWidth,
                     y: rowY,
@@ -1001,8 +958,7 @@ final class ViewportView: NSView {
     private func drawSelectionForRow(
         visualLine: LineIndex.VisualLine,
         rowY: CGFloat,
-        textOriginX: CGFloat,
-        buffer: UnsafeRawBufferPointer
+        textOriginX: CGFloat
     ) {
         guard let selection, !selection.isEmpty else {
             return
@@ -1018,7 +974,7 @@ final class ViewportView: NSView {
         if selectedRange.lowerBound <= rowStart {
             leftX = 0
         } else {
-            leftX = textWidth(ofBytes: rowStart..<selectedRange.lowerBound, in: buffer)
+            leftX = textWidth(ofBytes: rowStart..<selectedRange.lowerBound)
         }
 
         let rightX: CGFloat
@@ -1026,7 +982,7 @@ final class ViewportView: NSView {
             // Selection continues onto the next row — fill to the viewport edge.
             rightX = max(0, bounds.width - textOriginX + horizontalOffset)
         } else {
-            rightX = textWidth(ofBytes: rowStart..<selectedRange.upperBound, in: buffer)
+            rightX = textWidth(ofBytes: rowStart..<selectedRange.upperBound)
         }
 
         let rect = NSRect(
@@ -1101,51 +1057,31 @@ final class ViewportView: NSView {
     /// Decodes one chunk's bytes to a `String`. A chunk is at most
     /// `LineIndex.bytesPerChunk` bytes, so this is always cheap — even when the
     /// chunk belongs to a multi-gigabyte minified line.
-    private func decodeChunk(
-        _ visualLine: LineIndex.VisualLine,
-        buffer: UnsafeRawBufferPointer
-    ) -> String {
-        var range = visualLine.byteRange
-
-        // A continuation chunk may begin in the middle of a UTF-8 sequence;
-        // drop any leading continuation bytes so decoding starts cleanly.
-        if visualLine.chunkIndex > 0 {
-            var start = range.lowerBound
-            var skipped = 0
-            while start < range.upperBound && skipped < 3 && (buffer[start] & 0xC0) == 0x80 {
-                start += 1
-                skipped += 1
-            }
-            range = start..<range.upperBound
-        }
-
+    private func decodeChunk(_ visualLine: LineIndex.VisualLine) -> String {
         var text = ""
-        if !range.isEmpty {
-            if let editModel, editModel.rule != nil {
-                // Show the edited result of the active replacement rule.
-                let edited = editModel.transformedBytes(forOriginalRange: range, in: buffer)
-                text = String(decoding: edited, as: UTF8.self)
-            } else {
-                let bytes = UnsafeRawBufferPointer(rebasing: buffer[range])
-                text = String(decoding: bytes, as: UTF8.self)
+        if let document {
+            // A continuation chunk may begin in the middle of a UTF-8 sequence;
+            // drop any leading continuation bytes so decoding starts cleanly.
+            let range = chunkStartByte(visualLine)..<visualLine.byteRange.upperBound
+            if !range.isEmpty {
+                text = String(decoding: document.displayBytes(in: range), as: UTF8.self)
             }
-        }
 
-        // Strip the CR of a CRLF ending, but only on the line's final chunk.
-        let isLastChunk = visualLine.chunkIndex == visualLine.chunkCount - 1
-        if isLastChunk && text.hasSuffix("\r") {
-            text.removeLast()
+            // Strip the CR of a CRLF ending, but only on the line's final chunk.
+            let isLastChunk = visualLine.chunkIndex == visualLine.chunkCount - 1
+            if isLastChunk && text.hasSuffix("\r") {
+                text.removeLast()
+            }
         }
         return text
     }
 
     /// The drawn width of a byte range, measured with the editor font so it
     /// lines up with the rendered text (handles tabs and non-ASCII correctly).
-    private func textWidth(ofBytes range: Range<Int>, in buffer: UnsafeRawBufferPointer) -> CGFloat {
+    private func textWidth(ofBytes range: Range<Int>) -> CGFloat {
         var width: CGFloat = 0
-        if !range.isEmpty {
-            let bytes = UnsafeRawBufferPointer(rebasing: buffer[range])
-            let text = String(decoding: bytes, as: UTF8.self) as NSString
+        if let document, !range.isEmpty {
+            let text = String(decoding: document.bytes(in: range), as: UTF8.self) as NSString
             width = text.size(withAttributes: [.font: font]).width
         }
         return width
@@ -1165,7 +1101,7 @@ extension ViewportView: NSMenuItemValidation {
         case #selector(copy(_:)):
             enabled = !(selection?.isEmpty ?? true)
         case #selector(selectAll(_:)):
-            enabled = file != nil
+            enabled = document != nil
         default:
             enabled = true
         }
