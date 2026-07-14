@@ -89,7 +89,7 @@ final class DocumentView: NSView, FindBarDelegate {
         statisticsScan?.cancel()
         statisticsScan = nil
         window?.isDocumentEdited = false
-        viewport.load(document: EditedDocument(file: file, editModel: editModel), index: index)
+        viewport.load(document: EditedDocument(file: file, editModel: editModel, lineIndex: index))
         viewport.setSyntaxMode(DocumentView.syntaxMode(for: file))
         syncScroller()
         if infoPaneVisible {
@@ -100,6 +100,7 @@ final class DocumentView: NSView, FindBarDelegate {
 
     /// Redraws and re-syncs the scroller, e.g. as indexing reports progress.
     func refresh() {
+        viewport.layout?.indexDidProgress()
         viewport.needsDisplay = true
         syncScroller()
         updateInfoPane()
@@ -183,17 +184,17 @@ final class DocumentView: NSView, FindBarDelegate {
 
     private func updateStatusBar() {
         var left = ""
-        if let file = viewport.file, let index = viewport.index, file.size > 0,
+        if let document = viewport.document, let layout = viewport.layout, document.length > 0,
            let caret = viewport.caretByteOffset {
-            let row = index.visualRow(forByteOffset: caret, file: file)
-            let line = index.visualLines(forRows: row..<(row + 1), file: file).first
+            let row = layout.visualRow(forLogicalByteOffset: caret)
+            let line = layout.visualLines(forRows: row..<(row + 1)).first
             let lineNumber = (line?.documentLine ?? 0) + 1
             let lineText = numberFormatter.string(from: NSNumber(value: lineNumber)) ?? "\(lineNumber)"
             let offset = numberFormatter.string(from: NSNumber(value: caret)) ?? "\(caret)"
             left = "Ln \(lineText)  ·  Offset \(offset)"
             if let range = viewport.selectionByteRange {
                 let bytes = numberFormatter.string(from: NSNumber(value: range.count)) ?? "\(range.count)"
-                let lineCount = selectedLineCount(range, file: file, index: index)
+                let lineCount = selectedLineCount(range, layout: layout)
                 let lines = numberFormatter.string(from: NSNumber(value: lineCount)) ?? "\(lineCount)"
                 let bytesUnit = range.count == 1 ? "byte" : "bytes"
                 let linesUnit = lineCount == 1 ? "line" : "lines"
@@ -210,24 +211,24 @@ final class DocumentView: NSView, FindBarDelegate {
     }
 
     /// The number of document lines the selection touches — derived from the
-    /// line index (O(log n) per end), so it's cheap even for a huge selection.
-    private func selectedLineCount(_ range: Range<Int>, file: MappedFile, index: LineIndex) -> Int {
-        let startLine = documentLine(forByteOffset: range.lowerBound, file: file, index: index)
+    /// layout (O(log n) per end), so it's cheap even for a huge selection.
+    private func selectedLineCount(_ range: Range<Int>, layout: EditedLayout) -> Int {
+        let startLine = documentLine(forByteOffset: range.lowerBound, layout: layout)
         let endLine = documentLine(forByteOffset: max(range.lowerBound, range.upperBound - 1),
-                                   file: file, index: index)
+                                   layout: layout)
         return endLine - startLine + 1
     }
 
-    private func documentLine(forByteOffset offset: Int, file: MappedFile, index: LineIndex) -> Int {
-        let row = index.visualRow(forByteOffset: offset, file: file)
-        return index.visualLines(forRows: row..<(row + 1), file: file).first?.documentLine ?? 0
+    private func documentLine(forByteOffset offset: Int, layout: EditedLayout) -> Int {
+        let row = layout.visualRow(forLogicalByteOffset: offset)
+        return layout.visualLines(forRows: row..<(row + 1)).first?.documentLine ?? 0
     }
 
     // MARK: - Scroller
 
     /// Updates the scroller's knob size and position from the viewport state.
     private func syncScroller() {
-        let totalRows = viewport.index?.visualRowCount ?? 0
+        let totalRows = viewport.layout?.visualRowCount ?? 0
         let perPage = viewport.rowsPerPage
 
         if totalRows > perPage {
@@ -376,13 +377,14 @@ final class DocumentView: NSView, FindBarDelegate {
 
     /// Asks the user for a line number and scrolls the viewport to it.
     func showGoToLineSheet() {
-        guard let index = viewport.index, let file = viewport.file, index.count > 0,
+        guard let layout = viewport.layout, layout.documentLineCount > 0,
               let parentWindow = window else {
             return
         }
 
-        let formattedCount = numberFormatter.string(from: NSNumber(value: index.count))
-            ?? "\(index.count)"
+        let lineCount = layout.documentLineCount
+        let formattedCount = numberFormatter.string(from: NSNumber(value: lineCount))
+            ?? "\(lineCount)"
         let alert = NSAlert()
         alert.messageText = "Go to Line"
         alert.informativeText = "Line number (1 – \(formattedCount))"
@@ -394,16 +396,16 @@ final class DocumentView: NSView, FindBarDelegate {
 
         alert.beginSheetModal(for: parentWindow) { [weak self] response in
             if response == .alertFirstButtonReturn {
-                self?.scrollToEnteredLine(field.stringValue, in: file, index: index)
+                self?.scrollToEnteredLine(field.stringValue, layout: layout)
             }
         }
     }
 
-    private func scrollToEnteredLine(_ text: String, in file: MappedFile, index: LineIndex) {
+    private func scrollToEnteredLine(_ text: String, layout: EditedLayout) {
         let trimmed = text.trimmingCharacters(in: .whitespaces)
         if let entered = Int(trimmed), entered > 0 {
-            let targetLine = min(entered - 1, index.count - 1)
-            let row = index.visualRow(forDocumentLine: targetLine, file: file)
+            let targetLine = min(entered - 1, layout.documentLineCount - 1)
+            let row = layout.visualRow(forDocumentLine: targetLine)
             viewport.scrollToRow(row)
         }
     }
@@ -460,9 +462,10 @@ final class DocumentView: NSView, FindBarDelegate {
             infoPane.setType(DocumentView.fileTypeDescription(for: file))
             infoPane.setSize(formatSize(file.size))
 
-            if let index = viewport.index {
-                let count = numberFormatter.string(from: NSNumber(value: index.count)) ?? "\(index.count)"
-                let suffix = index.isComplete ? "" : " (indexing…)"
+            if let document = viewport.document {
+                let lineCount = document.layout.documentLineCount
+                let count = numberFormatter.string(from: NSNumber(value: lineCount)) ?? "\(lineCount)"
+                let suffix = document.lineIndex.isComplete ? "" : " (indexing…)"
                 infoPane.setLines("\(count)\(suffix)")
             } else {
                 infoPane.setLines("—")
@@ -601,10 +604,9 @@ final class DocumentView: NSView, FindBarDelegate {
     private func moveToMatch(index: Int) {
         if let scan = searchScan,
            let offset = scan.matchOffset(at: index),
-           let file = viewport.file,
-           let lineIndex = viewport.index {
+           let layout = viewport.layout {
             currentMatchIndex = index
-            let row = lineIndex.visualRow(forByteOffset: offset, file: file)
+            let row = layout.visualRow(forLogicalByteOffset: offset)
             viewport.setSearch(scan: scan, currentMatchOffset: offset)
             viewport.scrollToRow(row)
             updateMatchStatus()
