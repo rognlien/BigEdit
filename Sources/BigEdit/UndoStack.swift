@@ -32,20 +32,47 @@ final class UndoStack {
         }
     }
 
-    private var undoOperations: [Operation] = []
-    private var redoOperations: [Operation] = []
+    /// One undoable step: a single operation, or a group of operations that
+    /// applied together (Replace All) and revert together.
+    private enum HistoryEntry {
+        case single(Operation)
+        case group([Operation])
+    }
+
+    private var undoEntries: [HistoryEntry] = []
+    private var redoEntries: [HistoryEntry] = []
+
+    /// Operations collected while a group is open, in application order.
+    private var openGroup: [Operation]?
 
     var canUndo: Bool {
-        !undoOperations.isEmpty
+        !undoEntries.isEmpty
     }
 
     var canRedo: Bool {
-        !redoOperations.isEmpty
+        !redoEntries.isEmpty
     }
 
-    /// The number of undoable operations — exposed for tests.
+    /// The number of undoable steps — exposed for tests.
     var depth: Int {
-        undoOperations.count
+        undoEntries.count
+    }
+
+    /// Starts collecting subsequent edits into one undoable step.
+    func beginGrouping() {
+        openGroup = []
+    }
+
+    /// Closes the open group, pushing it as a single undoable step.
+    func endGrouping() {
+        if let group = openGroup {
+            openGroup = nil
+            if group.count == 1 {
+                undoEntries.append(.single(group[0]))
+            } else if !group.isEmpty {
+                undoEntries.append(.group(group))
+            }
+        }
     }
 
     /// Records an edit that has just been applied, coalescing it into the
@@ -58,7 +85,7 @@ final class UndoStack {
         removedContainsNewline: Bool,
         selectionBefore: TextSelection?
     ) {
-        redoOperations.removeAll()
+        redoEntries.removeAll()
         let caretAfter = position + insertedLength
         let operation = Operation(
             position: position,
@@ -68,11 +95,13 @@ final class UndoStack {
             selectionAfter: TextSelection(anchorOffset: caretAfter, activeOffset: caretAfter),
             canCoalesce: !insertedContainsNewline && !removedContainsNewline
         )
-        if operation.canCoalesce, let last = undoOperations.last, last.canCoalesce,
-           let merged = merged(last, absorbing: operation) {
-            undoOperations[undoOperations.count - 1] = merged
+        if openGroup != nil {
+            openGroup?.append(operation)
+        } else if operation.canCoalesce, case .single(let last)? = undoEntries.last,
+                  last.canCoalesce, let merged = merged(last, absorbing: operation) {
+            undoEntries[undoEntries.count - 1] = .single(merged)
         } else {
-            undoOperations.append(operation)
+            undoEntries.append(.single(operation))
         }
     }
 
@@ -112,35 +141,67 @@ final class UndoStack {
     /// Ends the current typing/deletion run — called when the caret moves by
     /// mouse or keyboard, so the next edit starts a fresh undo step.
     func breakCoalescing() {
-        if !undoOperations.isEmpty {
-            undoOperations[undoOperations.count - 1].canCoalesce = false
+        if case .single(var last)? = undoEntries.last {
+            last.canCoalesce = false
+            undoEntries[undoEntries.count - 1] = .single(last)
         }
     }
 
-    /// Reverts the most recent operation in `document` and returns the
-    /// selection to restore, or nil when there is nothing to undo.
+    /// Reverts the most recent step in `document` and returns the selection
+    /// to restore, or nil when there is nothing to undo.
     func undo(in document: EditedDocument) -> TextSelection? {
         var result: TextSelection?
-        if let operation = undoOperations.popLast() {
-            redoOperations.append(replay(operation, in: document))
-            let caret = operation.position + operation.removedLength
-            result = operation.selectionBefore
-                ?? TextSelection(anchorOffset: caret, activeOffset: caret)
+        if let entry = undoEntries.popLast() {
+            switch entry {
+            case .single(let operation):
+                redoEntries.append(.single(replay(operation, in: document)))
+                let caret = operation.position + operation.removedLength
+                result = operation.selectionBefore
+                    ?? TextSelection(anchorOffset: caret, activeOffset: caret)
+            case .group(let operations):
+                redoEntries.append(.group(replayGroup(operations, in: document)))
+                if let first = operations.first {
+                    let caret = first.position + first.removedLength
+                    result = TextSelection(anchorOffset: caret, activeOffset: caret)
+                }
+            }
         }
         return result
     }
 
-    /// Re-applies the most recently undone operation and returns the
-    /// selection to restore, or nil when there is nothing to redo.
+    /// Re-applies the most recently undone step and returns the selection to
+    /// restore, or nil when there is nothing to redo.
     func redo(in document: EditedDocument) -> TextSelection? {
         var result: TextSelection?
-        if let operation = redoOperations.popLast() {
-            undoOperations.append(replay(operation, in: document))
-            let caret = operation.position + operation.removedLength
-            result = operation.selectionAfter
-                ?? TextSelection(anchorOffset: caret, activeOffset: caret)
+        if let entry = redoEntries.popLast() {
+            switch entry {
+            case .single(let operation):
+                undoEntries.append(.single(replay(operation, in: document)))
+                let caret = operation.position + operation.removedLength
+                result = operation.selectionAfter
+                    ?? TextSelection(anchorOffset: caret, activeOffset: caret)
+            case .group(let operations):
+                undoEntries.append(.group(replayGroup(operations, in: document)))
+                if let last = operations.last {
+                    let caret = last.position + last.removedLength
+                    result = TextSelection(anchorOffset: caret, activeOffset: caret)
+                }
+            }
         }
         return result
+    }
+
+    /// Replays a group's operations newest-first (exact LIFO of how they were
+    /// applied) and returns the mirrors in traversal order — so replaying the
+    /// result the same way applies them oldest-first again.
+    private func replayGroup(_ operations: [Operation],
+                             in document: EditedDocument) -> [Operation] {
+        var mirrors: [Operation] = []
+        mirrors.reserveCapacity(operations.count)
+        for operation in operations.reversed() {
+            mirrors.append(replay(operation, in: document))
+        }
+        return mirrors
     }
 
     /// Applies `operation` to the document and returns its mirror — the
