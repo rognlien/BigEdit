@@ -64,9 +64,11 @@ enum FileWriter {
         completion: @escaping (Result<Void, WriteError>) -> Void
     ) {
         DispatchQueue.global(qos: .userInitiated).async {
-            let result = performWrite(file: file, rule: rule, destination: destination,
-                                      cancelToken: cancelToken) { fraction in
-                DispatchQueue.main.async { onProgress(fraction) }
+            let result = performWrite(destination: destination) { descriptor in
+                streamToDescriptor(fd: descriptor, file: file, rule: rule,
+                                   cancelToken: cancelToken) { fraction in
+                    DispatchQueue.main.async { onProgress(fraction) }
+                }
             }
             DispatchQueue.main.async { completion(result) }
         }
@@ -79,18 +81,55 @@ enum FileWriter {
         to destination: URL,
         cancelToken: CancelToken = CancelToken()
     ) -> Result<Void, WriteError> {
-        return performWrite(file: file, rule: rule, destination: destination,
-                            cancelToken: cancelToken, onProgress: { _ in })
+        return performWrite(destination: destination) { descriptor in
+            streamToDescriptor(fd: descriptor, file: file, rule: rule,
+                               cancelToken: cancelToken, onProgress: { _ in })
+        }
+    }
+
+    // MARK: - Piece-table save
+
+    /// Writes an edited `document` to `destination` by walking its piece
+    /// table in logical order — original pieces stream from the mmap, added
+    /// pieces from the add buffer. Constant memory regardless of file size.
+    /// Runs on a background queue; callbacks fire on the main queue.
+    static func save(
+        document: EditedDocument,
+        to destination: URL,
+        cancelToken: CancelToken,
+        onProgress: @escaping (Double) -> Void,
+        completion: @escaping (Result<Void, WriteError>) -> Void
+    ) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result = performWrite(destination: destination) { descriptor in
+                streamPieces(fd: descriptor, document: document,
+                             cancelToken: cancelToken) { fraction in
+                    DispatchQueue.main.async { onProgress(fraction) }
+                }
+            }
+            DispatchQueue.main.async { completion(result) }
+        }
+    }
+
+    /// Piece-table save, synchronously on the calling thread. Used by tests.
+    static func saveSynchronously(
+        document: EditedDocument,
+        to destination: URL,
+        cancelToken: CancelToken = CancelToken()
+    ) -> Result<Void, WriteError> {
+        return performWrite(destination: destination) { descriptor in
+            streamPieces(fd: descriptor, document: document,
+                         cancelToken: cancelToken, onProgress: { _ in })
+        }
     }
 
     // MARK: - Core
 
+    /// Opens the temp file, runs `stream` into it, and atomically renames it
+    /// over the destination on success.
     private static func performWrite(
-        file: MappedFile,
-        rule: ReplacementRule,
         destination: URL,
-        cancelToken: CancelToken,
-        onProgress: @escaping (Double) -> Void
+        stream: (Int32) -> Result<Void, WriteError>
     ) -> Result<Void, WriteError> {
         let tempPath = destination.path + ".bigedit-tmp"
         let permissions = preservedMode(for: destination)
@@ -100,9 +139,7 @@ enum FileWriter {
             return .failure(.cannotOpenTempFile(errno: errno))
         }
 
-        let streamResult = streamToDescriptor(fd: descriptor, file: file, rule: rule,
-                                              cancelToken: cancelToken,
-                                              onProgress: onProgress)
+        let streamResult = stream(descriptor)
         close(descriptor)
 
         let result: Result<Void, WriteError>
@@ -118,6 +155,78 @@ enum FileWriter {
         case .failure(let error):
             unlink(tempPath)
             result = .failure(error)
+        }
+        return result
+    }
+
+    /// The piece-walking loop: every piece streams zero-copy from its backing
+    /// store in `writeChunkSize` slices.
+    private static func streamPieces(
+        fd: Int32,
+        document: EditedDocument,
+        cancelToken: CancelToken,
+        onProgress: @escaping (Double) -> Void
+    ) -> Result<Void, WriteError> {
+        let total = document.length
+        var result: Result<Void, WriteError> = .success(())
+
+        if total > 0 {
+            var written = 0
+            var lastReportedBytes = 0
+            let progress = { (bytes: Int) in
+                if bytes - lastReportedBytes >= progressEveryBytes || bytes == total {
+                    lastReportedBytes = bytes
+                    onProgress(Double(bytes) / Double(total))
+                }
+            }
+
+            for piece in document.pieceTable.pieces(in: 0..<total) where result.isSuccess {
+                if cancelToken.isCancelled {
+                    result = .failure(.cancelled)
+                } else {
+                    result = writePiece(piece, fd: fd, document: document,
+                                        cancelToken: cancelToken,
+                                        writtenBefore: written, progress: progress)
+                    written += piece.length
+                }
+            }
+        }
+        if case .success = result {
+            onProgress(1.0)
+        }
+        return result
+    }
+
+    private static func writePiece(
+        _ piece: PieceTable.Piece,
+        fd: Int32,
+        document: EditedDocument,
+        cancelToken: CancelToken,
+        writtenBefore: Int,
+        progress: (Int) -> Void
+    ) -> Result<Void, WriteError> {
+        var result: Result<Void, WriteError> = .success(())
+        // Translate a within-piece offset into overall logical progress.
+        let pieceProgress = { (offset: Int) in
+            progress(writtenBefore + (offset - piece.start))
+        }
+        switch piece.source {
+        case .original:
+            if let base = document.file.buffer.baseAddress {
+                result = writeRange(fd: fd, base: base, range: piece.start..<piece.end,
+                                    cancelToken: cancelToken, progress: pieceProgress)
+            }
+        case .added:
+            result = document.addBuffer.withUnsafeBytes(in: piece.start..<piece.end) { raw in
+                var written: Result<Void, WriteError> = .success(())
+                if let base = raw.baseAddress {
+                    written = writeRange(fd: fd, base: base, range: 0..<raw.count,
+                                         cancelToken: cancelToken) { offset in
+                        progress(writtenBefore + offset)
+                    }
+                }
+                return written
+            }
         }
         return result
     }
