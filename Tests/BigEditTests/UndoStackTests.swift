@@ -125,6 +125,58 @@ final class UndoStackTests: XCTestCase {
         XCTAssertFalse(document.undoStack.canRedo)
     }
 
+    /// A Replace-All-style batch applied back-to-front inside a group must
+    /// undo and redo as one step.
+    func testGroupedEditsUndoAsOneStep() {
+        let document = makeDocument("foo bar foo baz foo\n")
+        let matches = [0, 8, 16]   // "foo" offsets
+
+        document.undoStack.beginGrouping()
+        for offset in matches.reversed() {
+            document.replace(offset..<(offset + 3), with: Array("QUUX".utf8))
+        }
+        document.undoStack.endGrouping()
+
+        XCTAssertEqual(text(of: document), "QUUX bar QUUX baz QUUX\n")
+        XCTAssertEqual(document.undoStack.depth, 1)
+
+        _ = document.undoStack.undo(in: document)
+        XCTAssertEqual(text(of: document), "foo bar foo baz foo\n")
+
+        _ = document.undoStack.redo(in: document)
+        XCTAssertEqual(text(of: document), "QUUX bar QUUX baz QUUX\n")
+
+        _ = document.undoStack.undo(in: document)
+        XCTAssertEqual(text(of: document), "foo bar foo baz foo\n")
+    }
+
+    /// A materialisation-sized batch (2,000 scattered replacements) must
+    /// stay interactive and keep the layout consistent.
+    func testLargeGroupedBatchIsFastAndConsistent() {
+        let occurrences = 2_000
+        let content = String(repeating: "match and some padding here\n", count: occurrences)
+        let document = makeDocument(content)
+        let lineLength = "match and some padding here\n".utf8.count
+
+        let started = Date()
+        document.undoStack.beginGrouping()
+        for line in stride(from: occurrences - 1, through: 0, by: -1) {
+            let offset = line * lineLength
+            document.replace(offset..<(offset + 5), with: Array("hit".utf8))
+        }
+        document.undoStack.endGrouping()
+        let elapsed = Date().timeIntervalSince(started)
+
+        XCTAssertLessThan(elapsed, 10, "materialisation must stay interactive")
+        XCTAssertEqual(document.undoStack.depth, 1)
+        XCTAssertEqual(document.length, content.utf8.count - occurrences * 2)
+        XCTAssertEqual(document.layout.documentLineCount, occurrences)
+        XCTAssertTrue(text(of: document).hasPrefix("hit and some padding here\n"))
+
+        _ = document.undoStack.undo(in: document)
+        XCTAssertEqual(text(of: document), content)
+    }
+
     /// Random edits with random coalescing breaks; a full undo walk must
     /// retrace every snapshot in reverse, and a full redo walk must retrace
     /// them forward again — with the layout agreeing at every step.
