@@ -29,6 +29,12 @@ if let flagIndex = arguments.firstIndex(of: "--replace"), flagIndex + 4 < argume
 if let flagIndex = arguments.firstIndex(of: "--stats"), flagIndex + 1 < arguments.count {
     exit(HeadlessIndexer.stats(path: arguments[flagIndex + 1]))
 }
+if let flagIndex = arguments.firstIndex(of: "--edit-smoke"), flagIndex + 2 < arguments.count {
+    exit(HeadlessIndexer.editSmoke(
+        inputPath: arguments[flagIndex + 1],
+        outputPath: arguments[flagIndex + 2]
+    ))
+}
 
 // GUI mode.
 let application = NSApplication.shared

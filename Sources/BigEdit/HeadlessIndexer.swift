@@ -157,4 +157,81 @@ enum HeadlessIndexer {
 
         return exitCode
     }
+
+    /// End-to-end smoke test of the editing stack, driven by
+    /// `scripts/verify-editing.sh`: applies a deterministic sequence of edits
+    /// through the piece table, walks the whole undo history back and forward
+    /// again, and streams the result to `outputPath`. The script compares the
+    /// output against an independently computed expected file and watches
+    /// peak memory. Invoked by `swift run BigEdit --edit-smoke <in> <out>`.
+    static func editSmoke(inputPath: String, outputPath: String) -> Int32 {
+        var exitCode: Int32 = 0
+
+        if let file = MappedFile(path: inputPath) {
+            let index = LineIndex()
+            index.buildSynchronously(from: file)
+            let document = EditedDocument(file: file, editModel: EditModel(),
+                                          lineIndex: index)
+            let start = Date()
+
+            // Sixteen scattered insertions, applied at descending offsets so
+            // each logical offset equals its original offset; then a deletion
+            // at the head and an appended tail. verify-editing.sh replays the
+            // identical sequence in Python to produce the expected file.
+            let step = file.size / 17
+            for marker in stride(from: 16, through: 1, by: -1) {
+                let offset = marker * step
+                document.replace(offset..<offset, with: Array("<<EDIT \(marker)>>\n".utf8))
+            }
+            if document.length >= 10 {
+                document.replace(0..<10, with: [])
+            }
+            document.replace(document.length..<document.length,
+                             with: Array("<<END>>\n".utf8))
+            let editedLength = document.length
+            let editedLines = document.layout.documentLineCount
+
+            // The full history must walk back to the original and forward
+            // to the edited state again.
+            while document.undoStack.canUndo {
+                _ = document.undoStack.undo(in: document)
+            }
+            if document.length != file.size {
+                FileHandle.standardError.write(
+                    Data("BigEdit: undo walk did not restore the original length\n".utf8))
+                exitCode = 1
+            }
+            while document.undoStack.canRedo {
+                _ = document.undoStack.redo(in: document)
+            }
+            if document.length != editedLength {
+                FileHandle.standardError.write(
+                    Data("BigEdit: redo walk did not restore the edits\n".utf8))
+                exitCode = 1
+            }
+
+            let editElapsed = Date().timeIntervalSince(start)
+            let saveStart = Date()
+            let result = FileWriter.saveSynchronously(
+                document: document, to: URL(fileURLWithPath: outputPath))
+            if case .failure(let error) = result {
+                FileHandle.standardError.write(
+                    Data("BigEdit: save failed: \(error.localizedDescription)\n".utf8))
+                exitCode = 1
+            }
+
+            print("file:    \(inputPath)")
+            print("size:    \(file.size) bytes → \(editedLength) bytes edited")
+            print("lines:   \(index.count) → \(editedLines) edited")
+            print(String(format: "edits:   %.3f s (including full undo/redo walk)", editElapsed))
+            print(String(format: "saved:   %.3f s", Date().timeIntervalSince(saveStart)))
+        } else {
+            FileHandle.standardError.write(
+                Data("BigEdit: cannot open \(inputPath)\n".utf8)
+            )
+            exitCode = 1
+        }
+
+        return exitCode
+    }
 }

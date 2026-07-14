@@ -104,9 +104,24 @@ These ripple into several tasks below — worth pinning down before starting.
 - [ ] **Better long-line handling.** Long lines wrap at a fixed 1024-byte
       column. Window-width soft-wrap would be nicer for minified JSON
       viewing but means recomputing chunk counts when the window resizes.
-- [ ] **Stage 2 of the lazy editor.** Positional / hand-typed edits via a
-      piece-table layer, undo stack, composition with the existing rule.
-      Separate effort, not a beta blocker.
+- [x] **Stage 2 of the lazy editor.** Positional / hand-typed edits via a
+      piece-table layer (`PieceTable` + `AddBuffer` + `EditedLayout` behind
+      `EditedDocument`), undo stack with typing coalescing, IME input,
+      piece-walking atomic save, search over edits, Replace All materialised
+      as undoable edits under a 2,000-match cap (the deferred rule remains
+      the over-cap and CLI path). Follow-ups spun out below.
+- [ ] **Editing follow-ups (from Stage 2).**
+      - On-disk edit journal behind `AddedByteStore`: crash/quit recovery for
+        unsaved edits, and disk-backed storage for huge pastes.
+      - Undo across save (retain the retired `MappedFile` in old records).
+      - Manual IME test pass (Japanese/Chinese input, dead keys,
+        press-and-hold) — the `NSTextInputClient` synthetic-range scheme
+        needs eyes on real input methods.
+      - Word/character statistics over the edited document (currently
+        computed from the file on disk).
+      - Raise the Replace All materialisation cap by moving the layout's
+        prefix sums into a balanced tree (same pattern as `PieceTable`).
+      - `⌘N` new empty document.
 - [ ] **Cursor refinement.** Today the I-beam covers the whole viewport
       including the gutter. Switch to default cursor over the gutter strip.
 - [ ] **Carry lexer state across rows.** Stateless highlighters miss
