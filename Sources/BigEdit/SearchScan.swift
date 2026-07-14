@@ -31,15 +31,21 @@ final class SearchScan {
     private var bytesScanned = 0
     private var totalBytes = 0
 
+    /// Window size for the piece-table scan — an init parameter so tests can
+    /// shrink it and exercise the window-boundary handling.
+    private let logicalScanWindow: Int
+
     /// Fails if `query` is empty (nothing to search for).
-    init?(query: String, caseSensitive: Bool = true) {
+    init?(query: String, caseSensitive: Bool = true,
+          logicalScanWindow: Int = 64 * 1024 * 1024) {
         let bytes = Array(query.utf8)
-        guard !bytes.isEmpty else {
+        guard !bytes.isEmpty, logicalScanWindow >= bytes.count else {
             return nil
         }
         self.queryBytes = bytes
         self.caseSensitive = caseSensitive
         self.foldedQueryBytes = bytes.map(SearchScan.foldByte)
+        self.logicalScanWindow = logicalScanWindow
     }
 
     /// ASCII case-folds a single byte (A–Z → a–z; everything else passes
@@ -138,6 +144,38 @@ final class SearchScan {
             self?.scan(file: file) {
                 DispatchQueue.main.async(execute: onProgress)
             }
+        }
+    }
+
+    /// Scans the logical (edited) document on a background queue. Without
+    /// edits this is the zero-copy mmap scan; with edits, logical windows
+    /// are assembled through a snapshot of the piece table, so the scan is
+    /// stable even while further edits arrive (the owner cancels and re-runs
+    /// on every edit). Match offsets are logical.
+    func start(in document: EditedDocument, onProgress: @escaping () -> Void) {
+        if document.hasEdits {
+            let pieces = document.pieceTable.pieces(in: 0..<document.length)
+            let length = document.length
+            let file = document.file
+            let added = document.addBuffer
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                self?.scanLogical(pieces: pieces, length: length, file: file, added: added) {
+                    DispatchQueue.main.async(execute: onProgress)
+                }
+            }
+        } else {
+            start(in: document.file, onProgress: onProgress)
+        }
+    }
+
+    /// Logical scan on the current thread — used by tests.
+    func runSynchronously(in document: EditedDocument) {
+        if document.hasEdits {
+            let pieces = document.pieceTable.pieces(in: 0..<document.length)
+            scanLogical(pieces: pieces, length: document.length,
+                        file: document.file, added: document.addBuffer, onProgress: {})
+        } else {
+            runSynchronously(in: document.file)
         }
     }
 
@@ -261,6 +299,156 @@ final class SearchScan {
         publish(pending: &pending, bytesScanned: searchOffset)
         markComplete()
         onProgress()
+    }
+
+    /// The piece-table scan: assemble fixed-size logical windows into a
+    /// reusable buffer and search within each. Windows overlap by
+    /// `needle - 1` bytes so straddling matches are found; the chain of
+    /// non-overlapping matches continues across windows.
+    private func scanLogical(
+        pieces: [PieceTable.Piece],
+        length: Int,
+        file: MappedFile,
+        added: AddedByteStore,
+        onProgress: () -> Void
+    ) {
+        let needleLength = queryBytes.count
+
+        lock.lock()
+        totalBytes = length
+        bytesScanned = 0
+        lock.unlock()
+
+        guard length >= needleLength else {
+            lock.lock(); bytesScanned = length; lock.unlock()
+            markComplete()
+            onProgress()
+            return
+        }
+
+        // Logical start offset of each piece, for window assembly.
+        var pieceStarts: [Int] = []
+        pieceStarts.reserveCapacity(pieces.count)
+        var runningStart = 0
+        for piece in pieces {
+            pieceStarts.append(runningStart)
+            runningStart += piece.length
+        }
+
+        var window: [UInt8] = []
+        var pending: [Int] = []
+        var totalFound = 0
+        var searchOffset = 0
+
+        while searchOffset + needleLength <= length && !isStopped()
+            && totalFound < SearchScan.matchLimit {
+            let windowEnd = min(length, searchOffset + logicalScanWindow)
+            assembleWindow(searchOffset..<windowEnd, pieces: pieces, starts: pieceStarts,
+                           file: file, added: added, into: &window)
+
+            var cursor = 0
+            while cursor + needleLength <= window.count && totalFound < SearchScan.matchLimit {
+                if let hit = matchIndex(in: window, from: cursor) {
+                    pending.append(searchOffset + hit)
+                    totalFound += 1
+                    cursor = hit + needleLength
+                } else {
+                    cursor = window.count
+                }
+            }
+
+            // Continue after the last full position this window covered (or
+            // after the last match, whichever is later).
+            let coveredTo = windowEnd - needleLength + 1
+            let lastMatchEnd = pending.last.map { $0 + needleLength } ?? 0
+            searchOffset = max(coveredTo, lastMatchEnd)
+
+            publish(pending: &pending, bytesScanned: min(windowEnd, length))
+            onProgress()
+
+            if windowEnd >= length {
+                break
+            }
+        }
+
+        publish(pending: &pending, bytesScanned: length)
+        markComplete()
+        onProgress()
+    }
+
+    /// Finds the next match at or after `from` within `buffer`, honouring the
+    /// scan's case sensitivity.
+    private func matchIndex(in buffer: [UInt8], from: Int) -> Int? {
+        var result: Int?
+        let needleLength = queryBytes.count
+        if caseSensitive {
+            buffer.withUnsafeBytes { raw in
+                if let base = raw.baseAddress,
+                   let hit = memmem(base + from, buffer.count - from,
+                                    queryBytes, needleLength) {
+                    result = base.distance(to: UnsafeRawPointer(hit))
+                }
+            }
+        } else {
+            var candidate = from
+            while candidate + needleLength <= buffer.count && result == nil {
+                var matched = true
+                for index in 0..<needleLength
+                    where SearchScan.foldByte(buffer[candidate + index]) != foldedQueryBytes[index] {
+                    matched = false
+                    break
+                }
+                if matched {
+                    result = candidate
+                } else {
+                    candidate += 1
+                }
+            }
+        }
+        return result
+    }
+
+    /// Copies the logical bytes in `range` out of the piece snapshot.
+    private func assembleWindow(
+        _ range: Range<Int>,
+        pieces: [PieceTable.Piece],
+        starts: [Int],
+        file: MappedFile,
+        added: AddedByteStore,
+        into buffer: inout [UInt8]
+    ) {
+        buffer.removeAll(keepingCapacity: true)
+        buffer.reserveCapacity(range.count)
+
+        // The last piece starting at or before the range.
+        var pieceIndex = 0
+        var low = 0
+        var high = starts.count - 1
+        while low <= high {
+            let mid = (low + high) / 2
+            if starts[mid] <= range.lowerBound {
+                pieceIndex = mid
+                low = mid + 1
+            } else {
+                high = mid - 1
+            }
+        }
+
+        var cursor = range.lowerBound
+        while cursor < range.upperBound && pieceIndex < pieces.count {
+            let piece = pieces[pieceIndex]
+            let within = cursor - starts[pieceIndex]
+            let take = min(piece.length - within, range.upperBound - cursor)
+            let sourceRange = (piece.start + within)..<(piece.start + within + take)
+            switch piece.source {
+            case .original:
+                buffer.append(contentsOf: file.buffer[sourceRange])
+            case .added:
+                buffer.append(contentsOf: added.bytes(in: sourceRange))
+            }
+            cursor += take
+            pieceIndex += 1
+        }
     }
 
     private func publish(pending: inout [Int], bytesScanned: Int) {

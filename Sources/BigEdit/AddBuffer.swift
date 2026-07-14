@@ -28,30 +28,43 @@ protocol AddedByteStore: AnyObject {
 }
 
 /// The in-memory added-byte store used while editing.
+///
+/// Reads may come from background scans (search, save) while the main thread
+/// keeps appending, so access is serialised — appends can reallocate the
+/// underlying storage, which would otherwise invalidate a concurrent reader.
 final class AddBuffer: AddedByteStore {
 
+    private let lock = NSLock()
     private var storage: ContiguousArray<UInt8> = []
 
     var count: Int {
-        storage.count
+        lock.lock()
+        defer { lock.unlock() }
+        return storage.count
     }
 
     @discardableResult
     func append(_ bytes: [UInt8]) -> Range<Int> {
+        lock.lock()
+        defer { lock.unlock() }
         let start = storage.count
         storage.append(contentsOf: bytes)
         return start..<storage.count
     }
 
     func bytes(in range: Range<Int>) -> [UInt8] {
-        Array(storage[range])
+        lock.lock()
+        defer { lock.unlock() }
+        return Array(storage[range])
     }
 
     func withUnsafeBytes<Result>(
         in range: Range<Int>,
         _ body: (UnsafeRawBufferPointer) throws -> Result
     ) rethrows -> Result {
-        try storage.withUnsafeBytes { buffer in
+        lock.lock()
+        defer { lock.unlock() }
+        return try storage.withUnsafeBytes { buffer in
             try body(UnsafeRawBufferPointer(rebasing: buffer[range]))
         }
     }
