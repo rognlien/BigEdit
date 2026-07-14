@@ -38,9 +38,30 @@ final class EditedDocument {
         self.layout = EditedLayout(file: file, index: lineIndex)
     }
 
+    /// Whether the document accepts positional edits. Set from the detected
+    /// file format at load: only UTF-8 / ASCII text is editable, since the
+    /// viewport decodes UTF-8 and edits are spliced as UTF-8 bytes.
+    var isEditable = false
+
+    /// The byte sequence Return inserts — the document's detected line ending.
+    var newlineBytes: [UInt8] = [0x0A]
+
     /// The logical document length in bytes.
     var length: Int {
         pieceTable.length
+    }
+
+    /// Replaces `logicalRange` with `bytes` — the single mutation entry
+    /// point. Keeps the piece table and the layout in step, and returns the
+    /// removed pieces so the undo stack can re-splice them later.
+    @discardableResult
+    func replace(_ logicalRange: Range<Int>, with bytes: [UInt8]) -> [PieceTable.Piece] {
+        let addedRange = addBuffer.append(bytes)
+        let removed = pieceTable.replace(logicalRange, withAddedRange: addedRange)
+        layout.applyReplacement(logicalRange, insertedLength: bytes.count) { range in
+            self.bytes(in: range)
+        }
+        return removed
     }
 
     /// True once any positional edit has been applied.

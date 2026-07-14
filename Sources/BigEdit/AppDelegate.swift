@@ -199,6 +199,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         false
     }
 
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        var reply = NSApplication.TerminateReply.terminateNow
+        let dirtyNames = documents.filter(\.isEdited).map(\.fileName)
+        if !dirtyNames.isEmpty {
+            let alert = NSAlert()
+            let description = dirtyNames.count == 1
+                ? dirtyNames[0]
+                : "\(dirtyNames.count) documents"
+            alert.messageText = "You have unsaved changes in \(description)."
+            alert.informativeText = "Quitting now will discard those changes."
+            alert.addButton(withTitle: "Quit Anyway")
+            alert.addButton(withTitle: "Cancel")
+            alert.alertStyle = .warning
+            if alert.runModal() != .alertFirstButtonReturn {
+                reply = .terminateCancel
+            }
+        }
+        return reply
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         // Capture final scroll positions for next launch.
         persistSession()
@@ -701,9 +721,55 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         }
     }
 
-    /// Tears down and removes the document at `index`, then selects a neighbour
-    /// (or shows the empty state when the last one closes).
+    /// Prompts about unsaved changes if needed, then tears down the document.
     private func closeDocument(at index: Int) {
+        guard documents.indices.contains(index) else {
+            return
+        }
+        let document = documents[index]
+        if document.isEdited {
+            presentClosePrompt(for: document) { [weak self] shouldClose in
+                if shouldClose, let self,
+                   let position = self.documents.firstIndex(where: { $0 === document }) {
+                    self.tearDownDocument(at: position)
+                }
+            }
+        } else {
+            tearDownDocument(at: index)
+        }
+    }
+
+    /// The standard Save / Don't Save / Cancel sheet for a dirty document.
+    private func presentClosePrompt(for document: Document,
+                                    completion: @escaping (Bool) -> Void) {
+        let alert = NSAlert()
+        alert.messageText = "Save changes to \(document.fileName)?"
+        alert.informativeText = "Your changes will be lost if you don't save them."
+        alert.addButton(withTitle: "Save…")
+        alert.addButton(withTitle: "Don't Save")
+        alert.addButton(withTitle: "Cancel")
+        alert.beginSheetModal(for: window) { [weak self] response in
+            switch response {
+            case .alertFirstButtonReturn:
+                if document.hasDiskChanges {
+                    self?.presentDiskChangeConflict(for: document)
+                    completion(false)
+                } else {
+                    self?.performSave(of: document, to: document.url) { saved in
+                        completion(saved)
+                    }
+                }
+            case .alertSecondButtonReturn:
+                completion(true)
+            default:
+                completion(false)
+            }
+        }
+    }
+
+    /// Removes the document at `index`, then selects a neighbour (or shows
+    /// the empty state when the last one closes).
+    private func tearDownDocument(at index: Int) {
         guard documents.indices.contains(index) else {
             return
         }
@@ -794,62 +860,112 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
     // MARK: - Saving
 
     @objc private func save() {
-        if let document = activeDocument, let rule = document.view.currentRule {
-            performSave(of: document, rule: rule, to: document.url)
+        if let document = activeDocument, document.isEdited {
+            if document.hasDiskChanges {
+                presentDiskChangeConflict(for: document)
+            } else {
+                performSave(of: document, to: document.url)
+            }
         }
     }
 
     @objc private func saveAs() {
-        if let document = activeDocument, let rule = document.view.currentRule {
+        if let document = activeDocument, document.isEdited {
             let panel = NSSavePanel()
             panel.nameFieldStringValue = document.fileName
             panel.directoryURL = document.url.deletingLastPathComponent()
             panel.beginSheetModal(for: window) { [weak self] response in
                 if response == .OK, let url = panel.url {
-                    self?.performSave(of: document, rule: rule, to: url)
+                    self?.performSave(of: document, to: url)
                 }
             }
         }
     }
 
-    /// Runs the streaming write under a progress sheet; on success re-loads the
-    /// saved document so it reflects what is now on disk (the rule clears).
-    private func performSave(of document: Document, rule: ReplacementRule, to destination: URL) {
+    /// The file changed on disk while it has unsaved edits: the mmap gives no
+    /// guarantee the edits are based on what is there now, so saving over it
+    /// is unsafe. Offer Save As or discarding the edits.
+    private func presentDiskChangeConflict(for document: Document) {
+        let alert = NSAlert()
+        alert.messageText = "\(document.fileName) changed on disk"
+        alert.informativeText = "The file was modified by another program while you had "
+            + "unsaved changes. Save to a different file, or reload the file and lose "
+            + "your changes."
+        alert.addButton(withTitle: "Save As…")
+        alert.addButton(withTitle: "Reload and Discard Changes")
+        alert.addButton(withTitle: "Cancel")
+        alert.alertStyle = .warning
+        alert.beginSheetModal(for: window) { [weak self] response in
+            switch response {
+            case .alertFirstButtonReturn:
+                self?.saveAs()
+            case .alertSecondButtonReturn:
+                self?.reload(document, from: document.url, preserveScroll: true)
+            default:
+                break
+            }
+        }
+    }
+
+    /// Runs the streaming write under a progress sheet, picking the piece
+    /// save for positional edits or the rule save for a deferred rule. On
+    /// success re-loads the document so it reflects what is now on disk.
+    private func performSave(of document: Document, to destination: URL,
+                             completion: ((Bool) -> Void)? = nil) {
         let sheet = SaveProgressSheet(fileName: destination.lastPathComponent)
         let cancelToken = CancelToken()
         sheet.onCancel = { cancelToken.cancel() }
         saveProgressSheet = sheet
         window.beginSheet(sheet.window) { _ in }
 
-        FileWriter.save(
-            file: document.file,
-            rule: rule,
-            to: destination,
-            cancelToken: cancelToken,
-            onProgress: { fraction in
-                sheet.setProgress(fraction)
-            },
-            completion: { [weak self] result in
-                self?.window.endSheet(sheet.window)
-                self?.saveProgressSheet = nil
-                self?.handleSaveResult(result, document: document, destination: destination)
-            }
-        )
+        let finish: (Result<Void, FileWriter.WriteError>) -> Void = { [weak self] result in
+            self?.window.endSheet(sheet.window)
+            self?.saveProgressSheet = nil
+            self?.handleSaveResult(result, document: document, destination: destination,
+                                   completion: completion)
+        }
+
+        if let rule = document.view.currentRule {
+            FileWriter.save(
+                file: document.file,
+                rule: rule,
+                to: destination,
+                cancelToken: cancelToken,
+                onProgress: { sheet.setProgress($0) },
+                completion: finish
+            )
+        } else if let editedDocument = document.view.editedDocument {
+            FileWriter.save(
+                document: editedDocument,
+                to: destination,
+                cancelToken: cancelToken,
+                onProgress: { sheet.setProgress($0) },
+                completion: finish
+            )
+        } else {
+            window.endSheet(sheet.window)
+            saveProgressSheet = nil
+            completion?(false)
+        }
     }
 
     private func handleSaveResult(
         _ result: Result<Void, FileWriter.WriteError>,
         document: Document,
-        destination: URL
+        destination: URL,
+        completion: ((Bool) -> Void)? = nil
     ) {
         switch result {
         case .success:
             reloadDocument(document, from: destination)
+            completion?(true)
         case .failure(let error):
             if case .cancelled = error {
+                completion?(false)
                 return  // Silent on cancel; original file untouched.
             }
             presentSaveError(error.localizedDescription)
+            completion?(false)
         }
     }
 
@@ -869,7 +985,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
 
     @objc private func reloadActiveFromDisk() {
         if let document = activeDocument {
-            reload(document, from: document.url, preserveScroll: true)
+            if document.isEdited {
+                let alert = NSAlert()
+                alert.messageText = "Reload \(document.fileName)?"
+                alert.informativeText = "Reloading from disk will discard your unsaved changes."
+                alert.addButton(withTitle: "Reload")
+                alert.addButton(withTitle: "Cancel")
+                alert.alertStyle = .warning
+                alert.beginSheetModal(for: window) { [weak self] response in
+                    if response == .alertFirstButtonReturn {
+                        self?.reload(document, from: document.url, preserveScroll: true)
+                    }
+                }
+            } else {
+                reload(document, from: document.url, preserveScroll: true)
+            }
         }
     }
 
@@ -919,7 +1049,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         var enabled = true
         switch menuItem.action {
         case #selector(save), #selector(saveAs):
-            enabled = activeView?.currentRule != nil
+            enabled = activeDocument?.isEdited == true
         case #selector(closeActiveDocument), #selector(reloadActiveFromDisk),
              #selector(revealInFinder):
             enabled = activeDocument != nil

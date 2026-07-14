@@ -79,6 +79,12 @@ final class ViewportView: NSView {
     /// horizontal move or a click.
     private var desiredCaretX: CGFloat?
 
+    /// The logical byte range of in-progress IME composition (marked text).
+    /// The bytes are committed to the document as they change — this range
+    /// only tracks where the composition underline is drawn and what the next
+    /// `setMarkedText` replaces.
+    private var markedByteRange: Range<Int>?
+
     /// Insertion-caret blink state (only shown when focused with an empty
     /// selection).
     private var isViewportFocused = false
@@ -295,6 +301,11 @@ final class ViewportView: NSView {
     }
 
     override func keyDown(with event: NSEvent) {
+        // Mid-composition every key belongs to the input method.
+        if hasMarkedText() {
+            interpretKeyEvents([event])
+            return
+        }
         let command = event.modifierFlags.contains(.command)
         let shift = event.modifierFlags.contains(.shift)
         // Once a caret/selection exists, the arrows navigate text (extending
@@ -319,8 +330,132 @@ final class ViewportView: NSView {
         case 121: scrollByPages(1)                         // page down
         case 115: setScrollRow(0)                          // home
         case 119: setScrollRow(maxScrollRow)               // end
-        default: super.keyDown(with: event)
+        default:
+            if isEditingAllowed {
+                // Routes through the input context: typing arrives via
+                // insertText, editing keys via the NSResponder actions below.
+                interpretKeyEvents([event])
+            } else {
+                super.keyDown(with: event)
+            }
         }
+    }
+
+    // MARK: - Editing
+
+    /// Invoked after every successful edit so the container can update dirty
+    /// state, the scroller, and content-dependent scans.
+    var onEdit: (() -> Void)?
+
+    /// Positional edits are possible when the format allows it and no
+    /// deferred replacement rule is active (the two are mutually exclusive).
+    var isEditingAllowed: Bool {
+        document?.isEditable == true && document?.hasDisplayTransform != true
+    }
+
+    /// Replaces `range` with `bytes`, collapses the caret to the end of the
+    /// insertion, and refreshes everything that depends on the content.
+    private func performEdit(replacing range: Range<Int>, with bytes: [UInt8]) {
+        guard let document, isEditingAllowed else {
+            NSSound.beep()
+            return
+        }
+        document.replace(range, with: bytes)
+        let caret = range.lowerBound + bytes.count
+        selection = TextSelection(anchorOffset: caret, activeOffset: caret)
+        desiredCaretX = nil
+        onEdit?()
+        scrollByteIntoView(caret)
+        needsDisplay = true
+    }
+
+    /// Inserts `bytes` at the selection. Typing without a caret does nothing
+    /// (click to place one first) — arrows keep their browse-first behaviour.
+    private func insertBytesAtSelection(_ bytes: [UInt8]) {
+        if let selection {
+            performEdit(replacing: selection.range, with: bytes)
+        } else {
+            NSSound.beep()
+        }
+    }
+
+    override func deleteBackward(_ sender: Any?) {
+        guard let document, let selection else {
+            NSSound.beep()
+            return
+        }
+        if !selection.isEmpty {
+            performEdit(replacing: selection.range, with: [])
+        } else if selection.activeOffset > 0 {
+            let caret = selection.activeOffset
+            var start = document.previousCharacterOffset(before: caret)
+            // A CRLF pair deletes as one unit.
+            if document.byte(at: start) == 0x0A, start > 0,
+               document.byte(at: start - 1) == 0x0D {
+                start -= 1
+            }
+            performEdit(replacing: start..<caret, with: [])
+        }
+    }
+
+    override func deleteForward(_ sender: Any?) {
+        guard let document, let selection else {
+            NSSound.beep()
+            return
+        }
+        if !selection.isEmpty {
+            performEdit(replacing: selection.range, with: [])
+        } else if selection.activeOffset < document.length {
+            let caret = selection.activeOffset
+            var end = document.nextCharacterOffset(after: caret)
+            // A CRLF pair deletes as one unit.
+            if document.byte(at: caret) == 0x0D, document.byte(at: end) == 0x0A {
+                end += 1
+            }
+            performEdit(replacing: caret..<end, with: [])
+        }
+    }
+
+    override func insertNewline(_ sender: Any?) {
+        insertBytesAtSelection(document?.newlineBytes ?? [0x0A])
+    }
+
+    override func insertTab(_ sender: Any?) {
+        insertBytesAtSelection([0x09])
+    }
+
+    @objc func cut(_ sender: Any?) {
+        let cap = 64 * 1024 * 1024
+        if let selection, !selection.isEmpty, isEditingAllowed {
+            if selection.range.count > cap {
+                presentSelectionTooLarge()
+            } else {
+                copy(sender)
+                performEdit(replacing: selection.range, with: [])
+            }
+        } else {
+            NSSound.beep()
+        }
+    }
+
+    @objc func paste(_ sender: Any?) {
+        if isEditingAllowed, selection != nil,
+           let text = NSPasteboard.general.string(forType: .string) {
+            insertBytesAtSelection(pasteBytes(from: text))
+        } else {
+            NSSound.beep()
+        }
+    }
+
+    /// Pasted text normalised to the document's detected line ending, as
+    /// UTF-8 bytes.
+    private func pasteBytes(from text: String) -> [UInt8] {
+        var normalized = text.replacingOccurrences(of: "\r\n", with: "\n")
+        normalized = normalized.replacingOccurrences(of: "\r", with: "\n")
+        if document?.newlineBytes == [0x0D, 0x0A] {
+            normalized = normalized.replacingOccurrences(of: "\n", with: "\r\n")
+        }
+        return Array(normalized.utf8)
     }
 
     // MARK: - Keyboard caret / selection
@@ -422,13 +557,23 @@ final class ViewportView: NSView {
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {
-        // Right-click context menu — just Copy. Select All is deliberately
-        // omitted because selecting and copying many GB would try to build a
-        // huge string on the pasteboard.
+        // Right-click context menu. Select All is deliberately omitted
+        // because selecting and copying many GB would try to build a huge
+        // string on the pasteboard.
         let menu = NSMenu()
+        menu.addItem(NSMenuItem(
+            title: "Cut",
+            action: #selector(NSText.cut(_:)),
+            keyEquivalent: ""
+        ))
         menu.addItem(NSMenuItem(
             title: "Copy",
             action: #selector(NSText.copy(_:)),
+            keyEquivalent: ""
+        ))
+        menu.addItem(NSMenuItem(
+            title: "Paste",
+            action: #selector(NSText.paste(_:)),
             keyEquivalent: ""
         ))
         return menu
@@ -436,6 +581,12 @@ final class ViewportView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
+        if hasMarkedText() {
+            // A click commits the composition (its bytes are already in the
+            // document) and lets the input method start fresh.
+            inputContext?.discardMarkedText()
+            unmarkText()
+        }
         desiredCaretX = nil
         let point = convert(event.locationInWindow, from: nil)
         let offset = byteOffset(at: point)
@@ -844,6 +995,7 @@ final class ViewportView: NSView {
             let text = decodeChunk(visualLine)
             let (attributed, nextState) = highlightedRow(text, startState: state)
             attributed.draw(at: NSPoint(x: textOriginX - horizontalOffset, y: y))
+            drawMarkedUnderline(for: visualLine, rowY: y, textOriginX: textOriginX)
             state = nextState
         }
 
@@ -996,6 +1148,32 @@ final class ViewportView: NSView {
         rect.fill()
     }
 
+    /// Underlines the portion of `visualLine` covered by in-progress IME
+    /// composition, matching the standard marked-text appearance.
+    private func drawMarkedUnderline(
+        for visualLine: LineIndex.VisualLine,
+        rowY: CGFloat,
+        textOriginX: CGFloat
+    ) {
+        guard let marked = markedByteRange else {
+            return
+        }
+        let rowStart = visualLine.byteRange.lowerBound
+        let rowEnd = visualLine.byteRange.upperBound
+        let visibleStart = max(marked.lowerBound, rowStart)
+        let visibleEnd = min(marked.upperBound, rowEnd)
+        guard visibleStart < visibleEnd else {
+            return
+        }
+        let leftX = textWidth(ofBytes: rowStart..<visibleStart)
+        let width = textWidth(ofBytes: visibleStart..<visibleEnd)
+        NSColor.textColor.setFill()
+        NSRect(x: textOriginX - horizontalOffset + leftX,
+               y: rowY + lineHeight - 2.5,
+               width: width,
+               height: 1.5).fill()
+    }
+
     private func drawGutter(rows: [LineIndex.VisualLine], width: CGFloat, fraction: CGFloat) {
         let gutterRect = NSRect(x: 0, y: 0, width: width, height: bounds.height)
         NSColor.windowBackgroundColor.setFill()
@@ -1101,11 +1279,151 @@ extension ViewportView: NSMenuItemValidation {
         switch menuItem.action {
         case #selector(copy(_:)):
             enabled = !(selection?.isEmpty ?? true)
+        case #selector(cut(_:)):
+            enabled = !(selection?.isEmpty ?? true) && isEditingAllowed
+        case #selector(paste(_:)):
+            enabled = isEditingAllowed && selection != nil
+                && NSPasteboard.general.string(forType: .string) != nil
         case #selector(selectAll(_:)):
             enabled = document != nil
         default:
             enabled = true
         }
         return enabled
+    }
+}
+
+// MARK: - NSTextInputClient
+
+/// The input-client conformance needed for IME composition, dead keys, and
+/// press-and-hold accents. The document is far too large for global UTF-16
+/// ranges, so ranges are reported in a synthetic space anchored at the start
+/// of the marked text; composition bytes live in the document itself.
+extension ViewportView: NSTextInputClient {
+
+    func insertText(_ string: Any, replacementRange: NSRange) {
+        let text = ViewportView.plainString(from: string)
+        let target = editTargetRange(for: replacementRange)
+        markedByteRange = nil
+        if let target {
+            performEdit(replacing: target, with: Array(text.utf8))
+        } else {
+            NSSound.beep()
+        }
+    }
+
+    func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
+        let text = ViewportView.plainString(from: string)
+        if isEditingAllowed, let target = editTargetRange(for: replacementRange) {
+            let bytes = Array(text.utf8)
+            performEdit(replacing: target, with: bytes)
+            markedByteRange = bytes.isEmpty
+                ? nil
+                : target.lowerBound..<(target.lowerBound + bytes.count)
+        }
+    }
+
+    func unmarkText() {
+        markedByteRange = nil
+        needsDisplay = true
+    }
+
+    func hasMarkedText() -> Bool {
+        markedByteRange != nil
+    }
+
+    func markedRange() -> NSRange {
+        var result = NSRange(location: NSNotFound, length: 0)
+        if let marked = markedByteRange, let document {
+            let text = String(decoding: document.bytes(in: marked), as: UTF8.self)
+            result = NSRange(location: 0, length: text.utf16.count)
+        }
+        return result
+    }
+
+    func selectedRange() -> NSRange {
+        // During composition the caret sits at the marked text's end; there
+        // is no meaningful global range to report otherwise.
+        var result = NSRange(location: NSNotFound, length: 0)
+        if hasMarkedText() {
+            result = NSRange(location: markedRange().length, length: 0)
+        }
+        return result
+    }
+
+    func attributedSubstring(forProposedRange range: NSRange,
+                             actualRange: NSRangePointer?) -> NSAttributedString? {
+        nil
+    }
+
+    func validAttributesForMarkedText() -> [NSAttributedString.Key] {
+        []
+    }
+
+    func characterIndex(for point: NSPoint) -> Int {
+        0
+    }
+
+    /// The caret rectangle in screen coordinates — anchors the input method's
+    /// candidate window.
+    func firstRect(forCharacterRange range: NSRange, actualRange: NSRangePointer?) -> NSRect {
+        var result = NSRect.zero
+        if let layout, let window, let caret = caretByteOffset {
+            let caretRow = layout.visualRow(forLogicalByteOffset: caret)
+            let x = caretX(forOffset: caret, row: caretRow)
+            let gutterW = gutterWidth(for: layout.documentLineCount)
+            let viewRect = NSRect(
+                x: gutterW + gutterPadding - horizontalOffset + x,
+                y: (CGFloat(caretRow) - CGFloat(scrollRow)) * lineHeight,
+                width: 1,
+                height: lineHeight
+            )
+            result = window.convertToScreen(convert(viewRect, to: nil))
+        }
+        return result
+    }
+
+    /// The logical byte range an input-method `replacementRange` addresses.
+    /// Its offsets are UTF-16 positions in the synthetic space anchored at the
+    /// marked text; without an explicit range, the marked range or selection.
+    private func editTargetRange(for replacementRange: NSRange) -> Range<Int>? {
+        var result: Range<Int>?
+        if let marked = markedByteRange, let document {
+            result = marked
+            if replacementRange.location != NSNotFound {
+                let text = String(decoding: document.bytes(in: marked), as: UTF8.self)
+                let start = ViewportView.byteOffset(forUTF16Index: replacementRange.location, in: text)
+                let end = ViewportView.byteOffset(
+                    forUTF16Index: replacementRange.location + replacementRange.length, in: text)
+                result = (marked.lowerBound + start)..<(marked.lowerBound + end)
+            }
+        } else if let selection {
+            result = selection.range
+        }
+        return result
+    }
+
+    /// Converts a UTF-16 index within `text` to a UTF-8 byte offset, clamped.
+    private static func byteOffset(forUTF16Index target: Int, in text: String) -> Int {
+        var consumedUTF16 = 0
+        var consumedBytes = 0
+        for scalar in text.unicodeScalars {
+            if consumedUTF16 >= target {
+                break
+            }
+            consumedUTF16 += scalar.value > 0xFFFF ? 2 : 1
+            consumedBytes += UTF8.width(scalar)
+        }
+        return consumedBytes
+    }
+
+    private static func plainString(from string: Any) -> String {
+        var result = ""
+        if let text = string as? String {
+            result = text
+        } else if let attributed = string as? NSAttributedString {
+            result = attributed.string
+        }
+        return result
     }
 }

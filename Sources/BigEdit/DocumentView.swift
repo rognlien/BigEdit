@@ -74,6 +74,9 @@ final class DocumentView: NSView, FindBarDelegate {
         viewport.onSelectionChange = { [weak self] in
             self?.updateStatusBar()
         }
+        viewport.onEdit = { [weak self] in
+            self?.documentWasEdited()
+        }
 
         layoutComponents()
     }
@@ -111,9 +114,34 @@ final class DocumentView: NSView, FindBarDelegate {
         return editModel.rule
     }
 
-    /// True while the document has an unsaved deferred-edit rule.
+    /// The logical document shown in the viewport — read by the save command.
+    var editedDocument: EditedDocument? {
+        return viewport.document
+    }
+
+    /// True while the document has unsaved changes — positional edits or a
+    /// deferred-edit rule.
     var isEdited: Bool {
-        return editModel.isDirty
+        return editModel.isDirty || (viewport.document?.hasEdits ?? false)
+    }
+
+    /// Called after every positional edit: dirty state, scroller, status bar,
+    /// and the info pane all depend on the content; live search results are
+    /// stale and cleared (searching an edited document arrives in a later
+    /// stage).
+    private func documentWasEdited() {
+        window?.isDocumentEdited = isEdited
+        if searchScan != nil {
+            searchScan?.cancel()
+            searchScan = nil
+            currentMatchIndex = -1
+            currentQuery = ""
+            viewport.setSearch(scan: nil, currentMatchOffset: nil)
+            findBar.updateStatus("Edited — search again to refresh")
+        }
+        syncScroller()
+        updateStatusBar()
+        updateInfoPane()
     }
 
     /// Cancels all background work for this document. Call before dropping the
@@ -176,9 +204,15 @@ final class DocumentView: NSView, FindBarDelegate {
 
     // MARK: - Status bar
 
-    /// Sets the detected format (encoding / line endings) shown on the right.
+    /// Sets the detected format (encoding / line endings) shown on the right,
+    /// and derives editability from it: only UTF-8 / ASCII text accepts
+    /// positional edits, and Return inserts the detected line ending.
     func setFileFormat(_ format: FileFormat?) {
         fileFormat = format
+        if let document = viewport.document {
+            document.isEditable = format?.isUTF8 ?? false
+            document.newlineBytes = format?.lineEnding == "CRLF" ? [0x0D, 0x0A] : [0x0A]
+        }
         updateStatusBar()
     }
 
@@ -333,8 +367,11 @@ final class DocumentView: NSView, FindBarDelegate {
     }
 
     func findBar(_ bar: FindBar, didRequestReplaceAll pattern: String, with replacement: String) {
-        if let rule = ReplacementRule(pattern: pattern, replacement: replacement),
-           let file = viewport.file {
+        if viewport.document?.hasEdits == true {
+            // The deferred rule and positional edits are mutually exclusive.
+            findBar.updateReplaceStatus("Save your edits first")
+        } else if let rule = ReplacementRule(pattern: pattern, replacement: replacement),
+                  let file = viewport.file {
             editModel.setRule(rule, file: file) { [weak self] in
                 self?.editScanDidProgress()
             }
@@ -361,7 +398,7 @@ final class DocumentView: NSView, FindBarDelegate {
 
     /// Reflects the rule's occurrence count and marks the window edited.
     private func updateEditStatus() {
-        window?.isDocumentEdited = editModel.isDirty
+        window?.isDocumentEdited = isEdited
 
         var text = ""
         if editModel.rule != nil, let matches = editModel.matches {
@@ -571,6 +608,13 @@ final class DocumentView: NSView, FindBarDelegate {
 
     /// Starts a fresh background search for `query`.
     private func startSearch(_ query: String, caseSensitive: Bool) {
+        if viewport.document?.hasEdits == true {
+            // The scan runs over the original file; its offsets would be
+            // wrong in the edited document. A later stage searches through
+            // the piece table.
+            findBar.updateStatus("Search unavailable with unsaved edits")
+            return
+        }
         searchScan?.cancel()
         currentQuery = query
         currentMatchIndex = -1
