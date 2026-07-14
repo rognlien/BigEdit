@@ -360,13 +360,41 @@ final class ViewportView: NSView {
             NSSound.beep()
             return
         }
-        document.replace(range, with: bytes)
+        document.replace(range, with: bytes, selectionBefore: selection)
         let caret = range.lowerBound + bytes.count
         selection = TextSelection(anchorOffset: caret, activeOffset: caret)
         desiredCaretX = nil
         onEdit?()
         scrollByteIntoView(caret)
         needsDisplay = true
+    }
+
+    @objc func undo(_ sender: Any?) {
+        replayHistory { document in document.undoStack.undo(in: document) }
+    }
+
+    @objc func redo(_ sender: Any?) {
+        replayHistory { document in document.undoStack.redo(in: document) }
+    }
+
+    private func replayHistory(_ action: (EditedDocument) -> TextSelection?) {
+        guard let document, isEditingAllowed else {
+            NSSound.beep()
+            return
+        }
+        if hasMarkedText() {
+            inputContext?.discardMarkedText()
+            unmarkText()
+        }
+        if let restored = action(document) {
+            selection = restored
+            desiredCaretX = nil
+            onEdit?()
+            scrollByteIntoView(restored.activeOffset)
+            needsDisplay = true
+        } else {
+            NSSound.beep()
+        }
     }
 
     /// Inserts `bytes` at the selection. Typing without a caret does nothing
@@ -470,7 +498,9 @@ final class ViewportView: NSView {
     }
 
     /// Moves the caret to `target`, collapsing the selection unless `extend`.
+    /// A deliberate caret move ends the current undo coalescing run.
     private func setCaret(to target: Int, extend: Bool) {
+        document?.undoStack.breakCoalescing()
         if extend {
             selection?.activeOffset = target
         } else {
@@ -587,6 +617,7 @@ final class ViewportView: NSView {
             inputContext?.discardMarkedText()
             unmarkText()
         }
+        document?.undoStack.breakCoalescing()
         desiredCaretX = nil
         let point = convert(event.locationInWindow, from: nil)
         let offset = byteOffset(at: point)
@@ -1286,6 +1317,10 @@ extension ViewportView: NSMenuItemValidation {
                 && NSPasteboard.general.string(forType: .string) != nil
         case #selector(selectAll(_:)):
             enabled = document != nil
+        case #selector(undo(_:)):
+            enabled = isEditingAllowed && document?.undoStack.canUndo == true
+        case #selector(redo(_:)):
+            enabled = isEditingAllowed && document?.undoStack.canRedo == true
         default:
             enabled = true
         }
