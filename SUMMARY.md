@@ -22,6 +22,7 @@ file and a 50 KB file cost the same to display and to edit.
 | `UndoStack` | Edit history as piece splices — never copied bytes, so undoing a 10 GB deletion is O(pieces). Typing/deletion runs coalesce; Replace All applies as one grouped step. |
 | `FileWriter` | Streaming save, two paths: the rule save (`memmem` splice over the mmap) and the piece save (walk the piece table in logical order). Both write to a temp file in the destination directory then atomic `rename()`; both preserve permission bits, report progress, and cancel cleanly. |
 | `TextSelection` | Selection range in logical byte offsets. |
+| `CSVDialect` + `CSVParser` + `CSVColumnLayout` | Delimited-data support. The dialect is sniffed from a bounded head sample (comma / semicolon / tab / pipe), the parser splits one row quote-aware, and the column layout measures widths from a bounded sample — so a table does not shift as you scroll and the cost stays tied to the sample, not the file. |
 
 ### UI layer
 
@@ -29,6 +30,7 @@ file and a 50 KB file cost the same to display and to edit.
 |---|---|
 | `ViewportView` | Custom `NSView`. Renders ~60 visible rows; never builds a view as tall as the document. Click+drag selection, auto-scroll past edges, double-click word / triple-click line, copy to pasteboard, I-beam cursor, right-click → Copy. Layers search highlights, selection rect, replacement-rule preview, and per-row syntax colouring. |
 | `DocumentView` | Container. Drives a custom `NSScroller` directly over `0…visualRowCount` rather than using `NSScrollView` — sidesteps the coordinate-precision breakdown a billion-point-tall document view would hit. Hosts the find bar and info pane. |
+| `FormatBar` | The thin strip across the top of the document. Two-segment Text / CSV radio selector at the right-hand end, with the CSV side disabled until detection finds delimited data; choosing CSV reveals the delimiter, quote, header, pin-header and trim options. |
 | `FindBar` | Find + find-&-replace UI. Replace mode adds a second row with replacement field, Replace All, Revert. **Aa** toggle for case sensitivity. |
 | `InfoPane` | Right-side inspector with name / type / size / lines / words / characters. Lines update live during indexing; words / characters update during the stats scan with a `(N%)` suffix. |
 | `SaveProgressSheet` | Window-modal sheet during streaming save. Cancellable. |
@@ -57,6 +59,7 @@ viewport, not the file.
 - `⌘S` save (atomic) · `⇧⌘S` save as. Progress sheet during save.
 - `⌘C` copy · `⌘A` select all. Right-click → Copy. Select All is deliberately absent from the right-click menu (selecting many GB onto the pasteboard would try to materialise it).
 - `⌘I` toggle Info Inspector.
+- **Text / CSV** selector, top right. In CSV mode rows are drawn as aligned columns, the header is set in bold and can stay pinned to the top while you scroll, and the status bar reads `CSV — read-only`.
 - Click + drag to select (with auto-scroll past the viewport edges). Double-click selects a word, triple-click selects the visual line.
 - I-beam cursor over the text area.
 - Window frame remembered across launches. The full set of open documents (and which one was active) is restored on launch, unless the user launched with a different file from Finder or Open Recent.
@@ -112,6 +115,9 @@ viewport, not the file.
 - `--preview <pattern> <replacement> <path>` — first rows after a deferred edit
 - `--replace <pattern> <replacement> <in> <out>` — full deferred-edit save (vs `sed 's/pattern/replacement/g'`)
 - `--stats <path>` — words / characters (vs `wc -lwm`)
+- `--csv <path> [rows]` — the detected dialect and the first rows as the
+  viewport draws them; `scripts/verify-csv.sh` diffs that against an
+  independent replay through Python's `csv` module.
 - `--edit-smoke <in> <out>` — deterministic edits through the piece table +
   full undo/redo walk + piece save; `scripts/verify-editing.sh` generates a
   large input, replays the sequence in Python, and compares byte-for-byte.
@@ -147,4 +153,5 @@ piece-table search vs naive search. Run with `swift test`.
 - Unsaved edits live in memory only: they are lost on crash or quit-without-saving (the edit-storage API is shaped so an on-disk journal can add recovery later).
 - Editing inside a single multi-GB line re-scans that line's span per splice — no worse than the viewer's own cost profile in a megaline file, but noticeable.
 - Word/character counts in the info pane are computed from the file on disk, not the unsaved edits.
+- CSV mode is display-only: padding means the drawn text no longer matches the file's bytes, so editing is off, search highlights sit at byte positions rather than padded ones, and column widths come from a bounded head sample (a much wider field further down is truncated). A quoted field containing a newline is not joined across rows.
 - Undo history clears on save (the document re-maps from disk).
