@@ -4,6 +4,7 @@ import AppKit
 //   swift run BigEdit --index <path>
 //   swift run BigEdit --search <pattern> <path>
 //   swift run BigEdit --preview <pattern> <replacement> <path>
+//   swift run BigEdit --csv <path> [rows]
 let arguments = CommandLine.arguments
 if let flagIndex = arguments.firstIndex(of: "--index"), flagIndex + 1 < arguments.count {
     exit(HeadlessIndexer.run(path: arguments[flagIndex + 1]))
@@ -34,6 +35,11 @@ if let flagIndex = arguments.firstIndex(of: "--edit-smoke"), flagIndex + 2 < arg
         inputPath: arguments[flagIndex + 1],
         outputPath: arguments[flagIndex + 2]
     ))
+}
+
+if let flagIndex = arguments.firstIndex(of: "--csv"), flagIndex + 1 < arguments.count {
+    let rowArgument = flagIndex + 2 < arguments.count ? Int(arguments[flagIndex + 2]) : nil
+    exit(HeadlessIndexer.csv(path: arguments[flagIndex + 1], rowLimit: rowArgument ?? 10))
 }
 
 // GUI mode.

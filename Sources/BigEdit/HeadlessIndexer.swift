@@ -164,6 +164,53 @@ enum HeadlessIndexer {
     /// again, and streams the result to `outputPath`. The script compares the
     /// output against an independently computed expected file and watches
     /// peak memory. Invoked by `swift run BigEdit --edit-smoke <in> <out>`.
+    /// Prints the detected CSV dialect and the first rows exactly as the
+    /// viewport would draw them in CSV mode, so the alignment can be checked
+    /// against an independent CSV reader without opening the GUI.
+    static func csv(path: String, rowLimit: Int) -> Int32 {
+        var status: Int32 = 1
+        if let file = MappedFile(path: path) {
+            if let dialect = CSVDialect.detect(in: file) {
+                let columnLayout = CSVColumnLayout.measure(file: file, dialect: dialect)
+                let delimiterName = dialect.delimiter == "\t" ? "\\t" : String(dialect.delimiter)
+                print("delimiter: \(delimiterName)")
+                print("quote: \(dialect.quote.map(String.init) ?? "none")")
+                print("header row: \(dialect.hasHeaderRow)")
+                print("columns: \(columnLayout.columnWidths)")
+                printAlignedRows(of: file, dialect: dialect,
+                                 columnLayout: columnLayout, rowLimit: rowLimit)
+                status = 0
+            } else {
+                print("not delimited data")
+            }
+        } else {
+            FileHandle.standardError.write(Data("error: cannot open \(path)\n".utf8))
+        }
+        return status
+    }
+
+    /// Writes the first `rowLimit` rows of `file`, padded into columns.
+    private static func printAlignedRows(of file: MappedFile, dialect: CSVDialect,
+                                         columnLayout: CSVColumnLayout, rowLimit: Int) {
+        let buffer = file.buffer
+        let sampleLimit = min(buffer.count, 1024 * 1024)
+        let bytes = Array(UnsafeRawBufferPointer(rebasing: buffer[0..<sampleLimit]))
+        let text = String(decoding: bytes, as: UTF8.self)
+        var printed = 0
+        for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
+            if printed >= rowLimit {
+                break
+            }
+            let withoutReturn = line.hasSuffix("\r") ? line.dropLast() : line
+            if withoutReturn.isEmpty {
+                continue
+            }
+            let fields = CSVParser.fields(in: String(withoutReturn), dialect: dialect)
+            print(columnLayout.alignedRow(fields))
+            printed += 1
+        }
+    }
+
     static func editSmoke(inputPath: String, outputPath: String) -> Int32 {
         var exitCode: Int32 = 0
 
