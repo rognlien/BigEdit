@@ -53,6 +53,13 @@ final class ViewportView: NSView {
     /// The syntax-highlighting mode applied when drawing each row.
     private var syntaxMode: SyntaxMode = .plain
 
+    /// Set while the document is drawn as aligned CSV columns. The padding this
+    /// inserts means the drawn text no longer matches the file's bytes, so the
+    /// mode is display-only: editing is off and hit-testing falls back to a
+    /// column estimate, exactly as under a deferred replacement rule.
+    private var csvDialect: CSVDialect?
+    private var csvColumnLayout: CSVColumnLayout?
+
     /// The user's current selection, as byte offsets into the original file.
     /// Its `activeOffset` doubles as the keyboard caret (the end being moved).
     private var selection: TextSelection? {
@@ -347,10 +354,13 @@ final class ViewportView: NSView {
     /// state, the scroller, and content-dependent scans.
     var onEdit: (() -> Void)?
 
-    /// Positional edits are possible when the format allows it and no
-    /// deferred replacement rule is active (the two are mutually exclusive).
+    /// Positional edits are possible when the format allows it and nothing is
+    /// transforming the drawn text — neither a deferred replacement rule nor
+    /// aligned CSV columns, since under either the caret's screen position no
+    /// longer identifies a byte.
     var isEditingAllowed: Bool {
         document?.isEditable == true && document?.hasDisplayTransform != true
+            && !isCSVRenderingActive
     }
 
     /// Replaces `range` with `bytes`, collapses the caret to the end of the
@@ -818,14 +828,15 @@ final class ViewportView: NSView {
     /// Maps an x position within a visual row to a byte offset. Uses CoreText so
     /// the result lands on a character boundary even with non-ASCII or otherwise
     /// variable-width glyphs, instead of assuming one column equals one byte.
-    /// While a replacement rule is active the drawn text differs from the
-    /// underlying bytes, so it falls back to a monospaced column estimate.
+    /// While a replacement rule is active, or CSV columns are being padded into
+    /// alignment, the drawn text differs from the underlying bytes, so it falls
+    /// back to a monospaced column estimate.
     private func byteOffset(inRow visualLine: LineIndex.VisualLine,
                             atX relativeX: CGFloat) -> Int {
         let rs = visualLine.byteRange.lowerBound
         let re = visualLine.byteRange.upperBound
 
-        if document?.hasDisplayTransform == true {
+        if document?.hasDisplayTransform == true || isCSVRenderingActive {
             let approxChars = Int((max(0, relativeX) / characterWidth).rounded())
             return max(rs, min(rs + approxChars, re))
         }
@@ -956,6 +967,19 @@ final class ViewportView: NSView {
         needsDisplay = true
     }
 
+    /// True while rows are drawn as aligned CSV columns.
+    var isCSVRenderingActive: Bool {
+        csvDialect != nil && csvColumnLayout != nil
+    }
+
+    /// Turns aligned-column rendering on with a measured layout, or off when
+    /// either argument is `nil`.
+    func setCSVRendering(dialect: CSVDialect?, columnLayout: CSVColumnLayout?) {
+        csvDialect = dialect
+        csvColumnLayout = columnLayout
+        needsDisplay = true
+    }
+
     // MARK: - Drawing
 
     override func draw(_ dirtyRect: NSRect) {
@@ -1037,8 +1061,7 @@ final class ViewportView: NSView {
             // the previous so the rendered text is always on top.
             drawMatchHighlights(for: visualLine, rowY: y, textOriginX: textOriginX)
             drawSelectionForRow(visualLine: visualLine, rowY: y, textOriginX: textOriginX)
-            let text = decodeChunk(visualLine)
-            let (attributed, nextState) = highlightedRow(text, startState: state)
+            let (attributed, nextState) = displayRow(for: visualLine, startState: state)
             attributed.draw(at: NSPoint(x: textOriginX - horizontalOffset, y: y))
             drawMarkedUnderline(for: visualLine, rowY: y, textOriginX: textOriginX)
             state = nextState
@@ -1061,6 +1084,45 @@ final class ViewportView: NSView {
             state = rowEndState(decodeChunk(visualLine), startState: state)
         }
         return state
+    }
+
+    /// The drawn form of a row: either the file's own text handed to the active
+    /// highlighter, or — in CSV mode — the row's fields padded into the measured
+    /// columns.
+    private func displayRow(for visualLine: LineIndex.VisualLine, startState: HighlightState)
+        -> (NSAttributedString, HighlightState) {
+        var result: (NSAttributedString, HighlightState)
+        let text = decodeChunk(visualLine)
+        if let aligned = alignedCSVText(text, visualLine: visualLine) {
+            result = (csvAttributedRow(aligned, documentLine: visualLine.documentLine), .normal)
+        } else {
+            result = highlightedRow(text, startState: startState)
+        }
+        return result
+    }
+
+    /// `text` split into fields and padded into columns, or `nil` when CSV mode
+    /// is off or the row cannot be aligned.
+    ///
+    /// A long line split across several chunks is left as it is: only a row
+    /// holding a whole logical line can be split into fields meaningfully.
+    private func alignedCSVText(_ text: String, visualLine: LineIndex.VisualLine) -> String? {
+        var result: String?
+        if let csvDialect, let csvColumnLayout, visualLine.chunkCount == 1 {
+            result = csvColumnLayout.alignedRow(CSVParser.fields(in: text, dialect: csvDialect))
+        }
+        return result
+    }
+
+    /// An aligned CSV row, with the header set in bold so the columns read as a
+    /// table rather than as padded text.
+    private func csvAttributedRow(_ text: String, documentLine: Int) -> NSAttributedString {
+        let isHeader = csvDialect?.hasHeaderRow == true && documentLine == 0
+        let rowFont = isHeader
+            ? NSFont.monospacedSystemFont(ofSize: fontSize, weight: .bold)
+            : font
+        return NSAttributedString(
+            string: text, attributes: [.font: rowFont, .foregroundColor: NSColor.textColor])
     }
 
     /// Dispatches a row to the active highlighter, returning its colouring and
