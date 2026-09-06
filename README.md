@@ -23,6 +23,7 @@ dies when the shell or `swift run` is interrupted — handy for quick tests only
 # Headless modes, for testing without the GUI:
 swift run -c release BigEdit --index /path/to/file
 swift run -c release BigEdit --search <pattern> /path/to/file
+swift run -c release BigEdit --csv /path/to/file [rows]
 ```
 
 The package opens directly in Xcode (`File ▸ Open…` the `BigEdit` folder).
@@ -35,6 +36,10 @@ The package opens directly in Xcode (`File ▸ Open…` the `BigEdit` folder).
   temp-file write.
 - **⌘F** — find. Type a query and press Enter to search.
 - **⌘G** / **⇧⌘G** — next / previous match. **Esc** closes the find bar.
+- **Text / CSV** — the selector at the top right of the editor. The CSV side
+  becomes available when the file is detected as delimited data, and turns it
+  into aligned columns with options for the delimiter, quote character,
+  header row, pinning the header while scrolling, and trimming field spaces.
 
 ## Status — steps 1–5 of the plan
 
@@ -94,3 +99,10 @@ App shell (window, menu, open panel) is in `AppDelegate.swift` / `main.swift`.
   1,000,000th are not collected (shown as `N+`).
 - No syntax highlighting yet (**step 6**).
 - Encoding is assumed UTF-8; CRLF line endings are handled.
+- **CSV mode is display-only.** Padding fields into columns means the drawn
+  text no longer matches the file's bytes, so editing is off and search
+  highlights sit at byte positions rather than at the padded ones. Column
+  widths are measured from a bounded head sample, so a much wider field far
+  down the file is truncated rather than widening its column. A quoted field
+  containing a newline is not joined across rows, since rows are physical
+  lines.

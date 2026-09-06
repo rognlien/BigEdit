@@ -122,6 +122,19 @@ These ripple into several tasks below — worth pinning down before starting.
       - Raise the Replace All materialisation cap by moving the layout's
         prefix sums into a balanced tree (same pattern as `PieceTable`).
       - `⌘N` new empty document.
+- [x] **CSV support.** Detection enables a Text / CSV selector at the top
+      right; CSV mode draws aligned columns with delimiter, quote, header,
+      pin-header and trim options. Follow-ups below.
+- [ ] **CSV follow-ups.**
+      - Make CSV mode editable: today padding breaks the byte↔pixel mapping,
+        so the mode is display-only. Mapping a click back through the padding
+        would restore editing and exact search highlights.
+      - Column widths come from a bounded head sample; a wider field further
+        down is truncated. Widening on demand as rows scroll into view would
+        need the same care that kept the layout viewport-bound.
+      - Join a quoted field that spans a newline across rows, which means a
+        CSV-aware line model rather than physical lines.
+      - Remember the chosen mode and dialect per document in the session.
 - [ ] **Cursor refinement.** Today the I-beam covers the whole viewport
       including the gutter. Switch to default cursor over the gutter strip.
 - [ ] **Carry lexer state across rows.** Stateless highlighters miss
