@@ -251,9 +251,24 @@ final class ViewportView: NSView {
 
     // MARK: - Geometry
 
-    /// The number of whole visual rows that fit in the viewport.
+    /// The number of whole visual rows that fit in the viewport, excluding any
+    /// strip held by the pinned CSV header.
     var rowsPerPage: Int {
-        max(1, Int(bounds.height / lineHeight))
+        max(1, Int((bounds.height - pinnedHeaderHeight) / lineHeight))
+    }
+
+    /// True when a CSV header row is being held at the top of the viewport.
+    ///
+    /// Only once scrolled past it: at the very top the header is simply the
+    /// first row, and pinning it there would draw it twice.
+    private var isPinnedHeaderVisible: Bool {
+        isCSVRenderingActive && csvDialect?.hasHeaderRow == true
+            && csvDialect?.pinsHeaderRow == true && scrollRow >= 1
+    }
+
+    /// Space reserved at the top for the pinned header, so it covers no data.
+    private var pinnedHeaderHeight: CGFloat {
+        isPinnedHeaderVisible ? lineHeight : 0
     }
 
     /// The largest valid `scrollRow`, leaving the last page in view.
@@ -808,7 +823,8 @@ final class ViewportView: NSView {
         if let document, let layout, layout.visualRowCount > 0 {
             let firstRow = Int(scrollRow)
             let fraction = scrollRow - Double(firstRow)
-            let rowsFromTop = (Double(point.y) + fraction * Double(lineHeight)) / Double(lineHeight)
+            let contentY = max(0, Double(point.y) - Double(pinnedHeaderHeight))
+            let rowsFromTop = (contentY + fraction * Double(lineHeight)) / Double(lineHeight)
             var rowIndex = firstRow + Int(rowsFromTop.rounded(.down))
             rowIndex = max(0, min(rowIndex, layout.visualRowCount - 1))
 
@@ -1007,6 +1023,36 @@ final class ViewportView: NSView {
         drawGutter(rows: rows, width: gutterWidth, fraction: fraction)
         drawInsertionCaret(layout: layout, firstRow: firstRow, fraction: fraction,
                            gutterWidth: gutterWidth)
+        drawPinnedCSVHeader(layout: layout, gutterWidth: gutterWidth)
+    }
+
+    /// Draws the CSV header row in the strip reserved at the top, so the column
+    /// names stay readable however far down the file you scroll.
+    private func drawPinnedCSVHeader(layout: EditedLayout, gutterWidth: CGFloat) {
+        guard isPinnedHeaderVisible,
+              let headerLine = layout.visualLines(forRows: 0..<1).first,
+              let headerText = alignedCSVText(decodeChunk(headerLine), visualLine: headerLine)
+        else {
+            return
+        }
+        let strip = NSRect(x: 0, y: 0, width: bounds.width, height: lineHeight)
+        NSColor.windowBackgroundColor.setFill()
+        strip.fill()
+
+        let textOriginX = gutterWidth + gutterPadding
+        NSGraphicsContext.current?.saveGraphicsState()
+        NSBezierPath(rect: NSRect(x: textOriginX, y: 0,
+                                  width: bounds.width - textOriginX,
+                                  height: lineHeight)).addClip()
+        csvAttributedRow(headerText, documentLine: 0)
+            .draw(at: NSPoint(x: textOriginX - horizontalOffset, y: 0))
+        NSGraphicsContext.current?.restoreGraphicsState()
+
+        NSColor.separatorColor.setStroke()
+        let underline = NSBezierPath()
+        underline.move(to: NSPoint(x: 0, y: lineHeight - 0.5))
+        underline.line(to: NSPoint(x: bounds.width, y: lineHeight - 0.5))
+        underline.stroke()
     }
 
     /// Draws the blinking insertion caret at the empty selection's active end.
@@ -1027,7 +1073,8 @@ final class ViewportView: NSView {
         let widthToCaret = clamped > start ? textWidth(ofBytes: start..<clamped) : 0
         let textOriginX = gutterWidth + gutterPadding
         let x = textOriginX - horizontalOffset + widthToCaret
-        let y = CGFloat(caretRow - firstRow) * lineHeight - fraction * lineHeight
+        let y = pinnedHeaderHeight + CGFloat(caretRow - firstRow) * lineHeight
+            - fraction * lineHeight
 
         NSGraphicsContext.current?.saveGraphicsState()
         NSBezierPath(rect: NSRect(x: textOriginX, y: 0,
@@ -1056,7 +1103,7 @@ final class ViewportView: NSView {
 
         var state = startState
         for (row, visualLine) in rows.enumerated() {
-            let y = CGFloat(row) * lineHeight - fraction * lineHeight
+            let y = pinnedHeaderHeight + CGFloat(row) * lineHeight - fraction * lineHeight
             // Search highlights, then selection, then text — each layer above
             // the previous so the rendered text is always on top.
             drawMatchHighlights(for: visualLine, rowY: y, textOriginX: textOriginX)
