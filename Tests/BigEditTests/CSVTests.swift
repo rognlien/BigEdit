@@ -43,6 +43,21 @@ final class CSVTests: XCTestCase {
         XCTAssertEqual(fields, ["a", "say \"hi\"", "b"])
     }
 
+    func testStrayQuoteInsideAFieldIsLiteral() {
+        // Every standard reader treats a quote that is not at the field's start
+        // as an ordinary character, rather than as an opening quote.
+        let fields = CSVParser.fields(in: "ab\"cd", dialect: CSVDialect())
+        XCTAssertEqual(fields, ["ab\"cd"])
+    }
+
+    func testTextAfterAClosingQuoteIsKept() {
+        XCTAssertEqual(CSVParser.fields(in: "\"ab\"cd", dialect: CSVDialect()), ["abcd"])
+    }
+
+    func testLeadingSpaceStopsAFieldBeingQuoted() {
+        XCTAssertEqual(CSVParser.fields(in: " \"ab\"", dialect: CSVDialect()), [" \"ab\""])
+    }
+
     func testEmptyFieldsArePreserved() {
         let fields = CSVParser.fields(in: "a,,c,", dialect: CSVDialect())
         XCTAssertEqual(fields, ["a", "", "c", ""])
