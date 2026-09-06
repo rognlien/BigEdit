@@ -27,8 +27,12 @@ enum CSVParser {
                 if insideQuotes, next < line.endIndex, line[next] == quote {
                     current.append(quote)     // a doubled quote is one literal
                     index = next
+                } else if insideQuotes {
+                    insideQuotes = false
+                } else if current.isEmpty {
+                    insideQuotes = true        // only opens at the field's start
                 } else {
-                    insideQuotes.toggle()
+                    current.append(character)  // a stray quote mid-field is literal
                 }
             } else if character == dialect.delimiter && !insideQuotes {
                 fields.append(current)
