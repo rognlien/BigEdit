@@ -47,7 +47,6 @@ final class DocumentView: NSView, FindBarDelegate {
         super.init(frame: frameRect)
 
         addSubview(viewport)
-        viewport.setEditModel(editModel)
 
         scroller.scrollerStyle = .legacy
         scroller.target = self
@@ -90,7 +89,7 @@ final class DocumentView: NSView, FindBarDelegate {
         statisticsScan?.cancel()
         statisticsScan = nil
         window?.isDocumentEdited = false
-        viewport.load(file: file, index: index)
+        viewport.load(document: EditedDocument(file: file, editModel: editModel), index: index)
         viewport.setSyntaxMode(DocumentView.syntaxMode(for: file))
         syncScroller()
         if infoPaneVisible {
