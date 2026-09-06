@@ -134,7 +134,11 @@ These ripple into several tasks below — worth pinning down before starting.
         need the same care that kept the layout viewport-bound.
       - Join a quoted field that spans a newline across rows, which means a
         CSV-aware line model rather than physical lines.
-      - Remember the chosen mode and dialect per document in the session.
+      - Remember the chosen mode, dialect and dragged column widths per
+        document in the session; widths currently reset when an option
+        changes and are not restored when reopening a file.
+      - Double-click a column divider to size it to its widest sampled
+        field.
 - [ ] **Cursor refinement.** Today the I-beam covers the whole viewport
       including the gutter. Switch to default cursor over the gutter strip.
 - [ ] **Carry lexer state across rows.** Stateless highlighters miss
