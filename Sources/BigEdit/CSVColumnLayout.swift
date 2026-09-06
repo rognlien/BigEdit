@@ -17,7 +17,8 @@ struct CSVColumnLayout: Equatable {
     static let columnGap = 2
 
     /// A column wider than this is truncated with an ellipsis, so one runaway
-    /// field cannot push every later column off the screen.
+    /// field cannot push every later column off the screen. This caps the
+    /// *measured* width only — dragging a column wider is always allowed.
     static let maximumColumnWidth = 40
 
     private static let sampleByteLimit = 1024 * 1024
@@ -36,6 +37,29 @@ struct CSVColumnLayout: Equatable {
                     widths.append(width)
                 }
             }
+        }
+        return CSVColumnLayout(columnWidths: widths)
+    }
+
+    /// The character offset of each column's trailing edge — where its divider
+    /// is drawn and grabbed. One per column, so the last column resizes too.
+    var dividerCharacterOffsets: [Int] {
+        var offsets: [Int] = []
+        var cursor = 0
+        for width in columnWidths {
+            cursor += width
+            offsets.append(cursor)
+            cursor += CSVColumnLayout.columnGap
+        }
+        return offsets
+    }
+
+    /// A copy with `column` set to `width`, never narrower than one character.
+    /// A column beyond the measured ones is ignored, since it has no divider.
+    func settingWidth(_ width: Int, forColumn column: Int) -> CSVColumnLayout {
+        var widths = columnWidths
+        if column >= 0 && column < widths.count {
+            widths[column] = max(1, width)
         }
         return CSVColumnLayout(columnWidths: widths)
     }

@@ -40,6 +40,10 @@ The package opens directly in Xcode (`File ▸ Open…` the `BigEdit` folder).
   becomes available when the file is detected as delimited data, and turns it
   into aligned columns with options for the delimiter, quote character,
   header row, pinning the header while scrolling, and trimming field spaces.
+- **Drag a column edge** — the ticks along the top row mark each column's
+  trailing edge; the pointer becomes a resize cursor within a few pixels of
+  one. Widths reset when a CSV option changes, since that re-measures the
+  columns.
 
 ## Status — steps 1–5 of the plan
 

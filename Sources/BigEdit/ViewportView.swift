@@ -60,6 +60,11 @@ final class ViewportView: NSView {
     private var csvDialect: CSVDialect?
     private var csvColumnLayout: CSVColumnLayout?
 
+    /// The column being resized by a drag on its divider, with where the drag
+    /// started so the new width is measured from the original rather than
+    /// accumulating rounding error tick by tick.
+    private var columnDrag: (column: Int, startX: CGFloat, startWidth: Int)?
+
     /// The user's current selection, as byte offsets into the original file.
     /// Its `activeOffset` doubles as the keyboard caret (the end being moved).
     private var selection: TextSelection? {
@@ -257,6 +262,47 @@ final class ViewportView: NSView {
         max(1, Int((bounds.height - pinnedHeaderHeight) / lineHeight))
     }
 
+    /// Column dividers move with the horizontal scroll, so their cursor rects
+    /// have to be rebuilt whenever it changes.
+    private func refreshCSVDividerCursors() {
+        if isCSVRenderingActive {
+            window?.invalidateCursorRects(for: self)
+        }
+    }
+
+    /// The band along the top of the viewport where column dividers are drawn
+    /// and grabbed — the pinned header when there is one, and otherwise the
+    /// topmost row, so the ruler is always in the same place.
+    private var csvDividerBand: NSRect {
+        NSRect(x: 0, y: 0, width: bounds.width, height: lineHeight)
+    }
+
+    /// The on-screen x of each column's trailing divider.
+    private func csvDividerPositions() -> [CGFloat] {
+        var positions: [CGFloat] = []
+        if let csvColumnLayout, let layout {
+            let textOriginX = gutterWidth(for: layout.documentLineCount) + gutterPadding
+            positions = csvColumnLayout.dividerCharacterOffsets.map {
+                textOriginX - horizontalOffset + CGFloat($0) * characterWidth
+            }
+        }
+        return positions
+    }
+
+    /// The column whose divider sits under `point`, or `nil` if none does.
+    private func csvDividerColumn(at point: NSPoint) -> Int? {
+        var result: Int?
+        if isCSVRenderingActive && csvDividerBand.contains(point) {
+            let tolerance: CGFloat = 3
+            for (column, x) in csvDividerPositions().enumerated()
+            where abs(point.x - x) <= tolerance {
+                result = column
+                break
+            }
+        }
+        return result
+    }
+
     /// True when a CSV header row is being held at the top of the viewport.
     ///
     /// Only once scrolled past it: at the very top the header is simply the
@@ -319,6 +365,7 @@ final class ViewportView: NSView {
         setScrollRow(scrollRow - rowDelta * multiplier)
 
         horizontalOffset = max(0, horizontalOffset - event.scrollingDeltaX)
+        refreshCSVDividerCursors()
         needsDisplay = true
     }
 
@@ -612,6 +659,7 @@ final class ViewportView: NSView {
 
     private func shiftHorizontally(by delta: CGFloat) {
         horizontalOffset = max(0, horizontalOffset + delta)
+        refreshCSVDividerCursors()
         needsDisplay = true
     }
 
@@ -623,6 +671,15 @@ final class ViewportView: NSView {
         let textRect = NSRect(x: gutterW, y: 0,
                               width: max(0, bounds.width - gutterW), height: bounds.height)
         addCursorRect(textRect, cursor: .iBeam)
+
+        // Column dividers take precedence in the band along the top.
+        if isCSVRenderingActive {
+            let band = csvDividerBand
+            for x in csvDividerPositions() where x >= gutterW && x <= bounds.width {
+                addCursorRect(NSRect(x: x - 3, y: band.minY, width: 6, height: band.height),
+                              cursor: .resizeLeftRight)
+            }
+        }
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {
@@ -650,6 +707,11 @@ final class ViewportView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
+        let downPoint = convert(event.locationInWindow, from: nil)
+        if let column = csvDividerColumn(at: downPoint), let csvColumnLayout {
+            columnDrag = (column, downPoint.x, csvColumnLayout.columnWidths[column])
+            return
+        }
         if hasMarkedText() {
             // A click commits the composition (its bytes are already in the
             // document) and lets the input method start fresh.
@@ -672,11 +734,24 @@ final class ViewportView: NSView {
     }
 
     override func mouseDragged(with event: NSEvent) {
+        if let columnDrag {
+            let point = convert(event.locationInWindow, from: nil)
+            let movedColumns = Int(((point.x - columnDrag.startX) / characterWidth).rounded())
+            csvColumnLayout = csvColumnLayout?.settingWidth(
+                columnDrag.startWidth + movedColumns, forColumn: columnDrag.column)
+            window?.invalidateCursorRects(for: self)
+            needsDisplay = true
+            return
+        }
         lastDragLocationInWindow = event.locationInWindow
         updateSelectionForDrag()
     }
 
     override func mouseUp(with event: NSEvent) {
+        if columnDrag != nil {
+            columnDrag = nil
+            return
+        }
         stopAutoscrollTimer()
         lastDragLocationInWindow = nil
     }
@@ -993,6 +1068,7 @@ final class ViewportView: NSView {
     func setCSVRendering(dialect: CSVDialect?, columnLayout: CSVColumnLayout?) {
         csvDialect = dialect
         csvColumnLayout = columnLayout
+        window?.invalidateCursorRects(for: self)
         needsDisplay = true
     }
 
@@ -1024,6 +1100,23 @@ final class ViewportView: NSView {
         drawInsertionCaret(layout: layout, firstRow: firstRow, fraction: fraction,
                            gutterWidth: gutterWidth)
         drawPinnedCSVHeader(layout: layout, gutterWidth: gutterWidth)
+        drawCSVColumnDividers(gutterWidth: gutterWidth)
+    }
+
+    /// Draws a tick at each column's trailing edge along the top band, so the
+    /// draggable boundaries can be seen rather than only found by feel.
+    private func drawCSVColumnDividers(gutterWidth: CGFloat) {
+        guard isCSVRenderingActive else {
+            return
+        }
+        let band = csvDividerBand
+        NSColor.separatorColor.setStroke()
+        for x in csvDividerPositions() where x >= gutterWidth && x <= bounds.width {
+            let tick = NSBezierPath()
+            tick.move(to: NSPoint(x: x + 0.5, y: band.minY + 2))
+            tick.line(to: NSPoint(x: x + 0.5, y: band.maxY - 2))
+            tick.stroke()
+        }
     }
 
     /// Draws the CSV header row in the strip reserved at the top, so the column

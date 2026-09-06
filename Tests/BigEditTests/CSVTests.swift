@@ -181,6 +181,47 @@ final class CSVTests: XCTestCase {
         XCTAssertEqual(layout?.columnWidths, [CSVColumnLayout.maximumColumnWidth])
     }
 
+    func testDividerOffsetsSitAtEachColumnsTrailingEdge() {
+        let layout = CSVColumnLayout(columnWidths: [3, 6, 2])
+        // Column 0 ends at 3; the next starts after the gap, so column 1 ends
+        // at 3 + gap + 6, and column 2 at that + gap + 2.
+        let gap = CSVColumnLayout.columnGap
+        XCTAssertEqual(layout.dividerCharacterOffsets,
+                       [3, 3 + gap + 6, 3 + gap + 6 + gap + 2])
+    }
+
+    func testDividerOffsetsHaveOnePerColumn() {
+        let layout = CSVColumnLayout(columnWidths: [4, 4])
+        XCTAssertEqual(layout.dividerCharacterOffsets.count, layout.columnWidths.count)
+    }
+
+    func testSettingWidthResizesOneColumn() {
+        let layout = CSVColumnLayout(columnWidths: [3, 6]).settingWidth(10, forColumn: 1)
+        XCTAssertEqual(layout.columnWidths, [3, 10])
+    }
+
+    func testSettingWidthNeverGoesBelowOneCharacter() {
+        let layout = CSVColumnLayout(columnWidths: [3]).settingWidth(-5, forColumn: 0)
+        XCTAssertEqual(layout.columnWidths, [1])
+    }
+
+    func testSettingWidthIgnoresAColumnThatDoesNotExist() {
+        let layout = CSVColumnLayout(columnWidths: [3]).settingWidth(9, forColumn: 4)
+        XCTAssertEqual(layout.columnWidths, [3])
+    }
+
+    func testADraggedColumnMayExceedTheMeasuredCap() {
+        // The cap bounds what measuring infers, not what the user asks for.
+        let wide = CSVColumnLayout.maximumColumnWidth + 25
+        let layout = CSVColumnLayout(columnWidths: [3]).settingWidth(wide, forColumn: 0)
+        XCTAssertEqual(layout.columnWidths, [wide])
+    }
+
+    func testResizedColumnChangesTheAlignedRow() {
+        let layout = CSVColumnLayout(columnWidths: [3, 3]).settingWidth(6, forColumn: 0)
+        XCTAssertEqual(layout.alignedRow(["ab", "cd"]), "ab      cd ")
+    }
+
     func testRowsAlignIntoAGrid() {
         let contents = "id,name,city\n1,Ada Lovelace,London\n2,Alan,Oslo\n"
         guard let layout = columnLayout(contents, dialect: CSVDialect()) else {
