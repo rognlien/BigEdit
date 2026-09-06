@@ -8,17 +8,22 @@ import AppKit
 /// file — where AppKit's drawing precision and scroller behaviour break down.
 /// Instead the scroller is driven directly over the range `0...visualRowCount`,
 /// and the viewport stays a fixed size. This sidesteps the geometry problem.
-final class DocumentView: NSView, FindBarDelegate {
+final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
 
     let viewport = ViewportView(frame: .zero)
     private let scroller = NSScroller(frame: NSRect(x: 0, y: 0, width: 16, height: 100))
     private let findBar = FindBar(frame: .zero)
+    private let formatBar = FormatBar(frame: .zero)
     private let infoPane = InfoPane(frame: .zero)
     private let infoDivider = InfoPaneDivider(frame: .zero)
     private let statusBar = StatusBar(frame: .zero)
 
     private let editModel = EditModel()
     private var fileFormat: FileFormat?
+
+    /// The mapped file behind the current document, kept so CSV column
+    /// widths can be re-measured when an option changes.
+    private var mappedFile: MappedFile?
 
     private var findBarVisible = false
     private var infoPaneVisible = false
@@ -60,6 +65,9 @@ final class DocumentView: NSView, FindBarDelegate {
         findBar.isHidden = true
         addSubview(findBar)
 
+        formatBar.delegate = self
+        addSubview(formatBar)
+
         infoPane.isHidden = true
         addSubview(infoPane)
 
@@ -99,6 +107,11 @@ final class DocumentView: NSView, FindBarDelegate {
         window?.isDocumentEdited = false
         viewport.load(document: EditedDocument(file: file, editModel: editModel, lineIndex: index))
         viewport.setSyntaxMode(DocumentView.syntaxMode(for: file))
+        mappedFile = file
+        viewport.setCSVRendering(dialect: nil, columnLayout: nil)
+        formatBar.setDetectedDialect(CSVDialect.detect(in: file))
+        formatBar.setMode(.text)
+        layoutComponents()
         syncScroller()
         if infoPaneVisible {
             startStatisticsScan(in: file)
@@ -183,10 +196,11 @@ final class DocumentView: NSView, FindBarDelegate {
     private func layoutComponents() {
         let scrollerWidth = NSScroller.scrollerWidth(for: .regular, scrollerStyle: .legacy)
         let findHeight = findBarVisible ? findBar.preferredHeight : 0
+        let formatHeight = formatBar.preferredHeight
         let infoWidth = infoPaneVisible ? clampedInfoWidth() : 0
         let statusHeight = StatusBar.preferredHeight
         let documentWidth = max(0, bounds.width - infoWidth)
-        let contentHeight = max(0, bounds.height - findHeight - statusHeight)
+        let contentHeight = max(0, bounds.height - findHeight - formatHeight - statusHeight)
         let viewportWidth = max(0, documentWidth - scrollerWidth)
 
         statusBar.frame = NSRect(x: 0, y: 0, width: documentWidth, height: statusHeight)
@@ -194,6 +208,8 @@ final class DocumentView: NSView, FindBarDelegate {
         scroller.frame = NSRect(x: viewportWidth, y: statusHeight, width: scrollerWidth, height: contentHeight)
         findBar.isHidden = !findBarVisible
         findBar.frame = NSRect(x: 0, y: statusHeight + contentHeight, width: documentWidth, height: findHeight)
+        formatBar.frame = NSRect(x: 0, y: statusHeight + contentHeight + findHeight,
+                                 width: documentWidth, height: formatHeight)
         infoPane.isHidden = !infoPaneVisible
         infoPane.frame = NSRect(x: documentWidth, y: 0, width: infoWidth, height: bounds.height)
         infoDivider.isHidden = !infoPaneVisible
@@ -259,6 +275,11 @@ final class DocumentView: NSView, FindBarDelegate {
         var right = ""
         if let format = fileFormat {
             right = format.lineEnding == "—" ? format.encoding : "\(format.lineEnding)  ·  \(format.encoding)"
+        }
+        // Aligned columns pad the drawn text, so editing is off while CSV mode
+        // is on. Say so, rather than letting typing silently do nothing.
+        if viewport.isCSVRenderingActive {
+            right = right.isEmpty ? "CSV — read-only" : "CSV — read-only  ·  \(right)"
         }
         statusBar.setRight(right)
     }
@@ -794,5 +815,33 @@ final class InfoPaneDivider: NSView {
 
     override func mouseDragged(with event: NSEvent) {
         onDrag?(event.locationInWindow)
+    }
+}
+
+// MARK: - CSV mode
+
+extension DocumentView {
+
+    /// Applies the chosen view mode: plain text, or delimited data drawn as
+    /// aligned columns.
+    func formatBar(_ bar: FormatBar, didSelect mode: FormatBar.Mode) {
+        applyCSVRendering(enabled: mode == .csv, dialect: bar.dialect)
+    }
+
+    /// Re-measures the columns when an option changes, since a different
+    /// delimiter, quote, or trim setting moves every field boundary.
+    func formatBar(_ bar: FormatBar, didChange dialect: CSVDialect) {
+        applyCSVRendering(enabled: bar.mode == .csv, dialect: dialect)
+    }
+
+    private func applyCSVRendering(enabled: Bool, dialect: CSVDialect) {
+        var columnLayout: CSVColumnLayout?
+        if enabled, let mappedFile {
+            columnLayout = CSVColumnLayout.measure(file: mappedFile, dialect: dialect)
+        }
+        viewport.setCSVRendering(dialect: enabled ? dialect : nil, columnLayout: columnLayout)
+        layoutComponents()
+        viewport.needsDisplay = true
+        updateStatusBar()
     }
 }
