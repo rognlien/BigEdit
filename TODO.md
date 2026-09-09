@@ -60,7 +60,6 @@ resize and the horizontal-scroll fix.
       - Remember the chosen mode, dialect and dragged column widths per
         document; widths currently reset when an option changes and are not
         restored when reopening a file.
-      - Double-click a column divider to size it to its widest sampled field.
 
 ## Optional
 

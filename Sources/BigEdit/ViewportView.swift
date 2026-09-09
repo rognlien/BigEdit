@@ -73,6 +73,11 @@ final class ViewportView: NSView {
     private var csvDialect: CSVDialect?
     private var csvColumnLayout: CSVColumnLayout?
 
+    /// The widths as measured from the file, kept beside the working layout so
+    /// a column dragged to some other width can be sent back to the width its
+    /// own content asks for.
+    private var csvMeasuredColumnLayout: CSVColumnLayout?
+
     /// The column being resized by a drag on its divider, with where the drag
     /// started so the new width is measured from the original rather than
     /// accumulating rounding error tick by tick.
@@ -283,6 +288,19 @@ final class ViewportView: NSView {
     private func refreshCSVDividerCursors() {
         if isCSVRenderingActive {
             window?.invalidateCursorRects(for: self)
+        }
+    }
+
+    /// Returns `column` to the width measured from the file — what a
+    /// double-click on its divider means.
+    private func sizeCSVColumnToContent(_ column: Int) {
+        if let measured = csvMeasuredColumnLayout,
+           column < measured.columnWidths.count {
+            csvColumnLayout = csvColumnLayout?.settingWidth(measured.columnWidths[column],
+                                                            forColumn: column)
+            widestDrawnRowWidth = 0      // the table's width just changed
+            window?.invalidateCursorRects(for: self)
+            needsDisplay = true
         }
     }
 
@@ -743,7 +761,11 @@ final class ViewportView: NSView {
         window?.makeFirstResponder(self)
         let downPoint = convert(event.locationInWindow, from: nil)
         if let column = csvDividerColumn(at: downPoint), let csvColumnLayout {
-            columnDrag = (column, downPoint.x, csvColumnLayout.columnWidths[column])
+            if event.clickCount == 2 {
+                sizeCSVColumnToContent(column)
+            } else {
+                columnDrag = (column, downPoint.x, csvColumnLayout.columnWidths[column])
+            }
             return
         }
         if hasMarkedText() {
@@ -1102,6 +1124,7 @@ final class ViewportView: NSView {
     func setCSVRendering(dialect: CSVDialect?, columnLayout: CSVColumnLayout?) {
         csvDialect = dialect
         csvColumnLayout = columnLayout
+        csvMeasuredColumnLayout = columnLayout
         widestDrawnRowWidth = 0
         window?.invalidateCursorRects(for: self)
         needsDisplay = true

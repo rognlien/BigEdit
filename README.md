@@ -42,8 +42,9 @@ The package opens directly in Xcode (`File ▸ Open…` the `BigEdit` folder).
   header row, pinning the header while scrolling, and trimming field spaces.
 - **Drag a column edge** — the ticks along the top row mark each column's
   trailing edge; the pointer becomes a resize cursor within a few pixels of
-  one. Widths reset when a CSV option changes, since that re-measures the
-  columns.
+  one. **Double-click an edge** to put that column back to the width its own
+  content asks for. Widths reset when a CSV option changes, since that
+  re-measures the columns.
 
 ## Command line
 
