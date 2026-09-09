@@ -39,19 +39,18 @@ enum XMLHighlighter {
     static func attributedRow(_ text: String, font: NSFont,
                               startState: HighlightState) -> (NSAttributedString, HighlightState) {
         if startState == .blockComment {
-            let source = text as NSString
-            let result = NSMutableAttributedString(
-                string: text, attributes: [.font: font, .foregroundColor: NSColor.textColor])
-            if let closeEnd = indexAfter(source, of: "-->", from: 0) {
-                apply(commentColor, 0..<closeEnd, result)
-                let rest = source.substring(from: closeEnd)
+            let scanner = RowScanner(text)
+            let result = NSMutableAttributedString.plainRow(text, font: font)
+            if let closeEnd = scanner.indexAfter("-->", from: 0) {
+                result.setColor(commentColor, in: 0..<closeEnd)
+                let rest = scanner.source.substring(from: closeEnd)
                 let restAttr = attributedRow(rest, font: font)
                 result.replaceCharacters(
-                    in: NSRange(location: closeEnd, length: source.length - closeEnd),
+                    in: NSRange(location: closeEnd, length: scanner.length - closeEnd),
                     with: restAttr)
                 return (result, endState(rest, start: .normal))
             }
-            apply(commentColor, 0..<source.length, result)
+            result.setColor(commentColor, in: 0..<scanner.length)
             return (result, .blockComment)
         }
         return (attributedRow(text, font: font), endState(text, start: .normal))
@@ -60,14 +59,14 @@ enum XMLHighlighter {
     /// Computes the comment state at the end of `text`. XML comments can't nest
     /// and `<!--` can't appear in attribute values, so a plain scan suffices.
     static func endState(_ text: String, start: HighlightState) -> HighlightState {
-        let source = text as NSString
+        let scanner = RowScanner(text)
         var index = 0
         if start == .blockComment {
-            guard let closeEnd = indexAfter(source, of: "-->", from: 0) else { return .blockComment }
+            guard let closeEnd = scanner.indexAfter("-->", from: 0) else { return .blockComment }
             index = closeEnd
         }
-        while let open = indexAfter(source, of: "<!--", from: index) {
-            guard let closeEnd = indexAfter(source, of: "-->", from: open) else { return .blockComment }
+        while let open = scanner.indexAfter("<!--", from: index) {
+            guard let closeEnd = scanner.indexAfter("-->", from: open) else { return .blockComment }
             index = closeEnd
         }
         return .normal
@@ -75,15 +74,12 @@ enum XMLHighlighter {
 
     /// Returns `text` as an attributed string with XML tokens coloured.
     static func attributedRow(_ text: String, font: NSFont) -> NSAttributedString {
-        let result = NSMutableAttributedString(
-            string: text,
-            attributes: [.font: font, .foregroundColor: NSColor.textColor]
-        )
-        let source = text as NSString
+        let result = NSMutableAttributedString.plainRow(text, font: font)
+        let scanner = RowScanner(text)
         var index = 0
-        while index < source.length {
-            if source.character(at: index) == lessThan {
-                index = colorMarkup(source, from: index, into: result)
+        while index < scanner.length {
+            if scanner.character(at: index) == lessThan {
+                index = colorMarkup(scanner, from: index, into: result)
             } else {
                 index += 1  // Text content keeps the default colour.
             }
@@ -94,73 +90,69 @@ enum XMLHighlighter {
     /// Colours one markup construct beginning at `start` (`<`); returns the
     /// index just past it. Always advances by at least one.
     private static func colorMarkup(
-        _ source: NSString,
+        _ scanner: RowScanner,
         from start: Int,
         into result: NSMutableAttributedString
     ) -> Int {
-        let length = source.length
-        let secondChar = start + 1 < length ? source.character(at: start + 1) : 0
+        let length = scanner.length
+        let secondChar = scanner.character(at: start + 1)
 
         if secondChar == bang {
-            let thirdChar = start + 2 < length ? source.character(at: start + 2) : 0
-            let fourthChar = start + 3 < length ? source.character(at: start + 3) : 0
-            if thirdChar == dash && fourthChar == dash {
-                let end = indexAfter(source, of: "-->", from: start + 4) ?? length
-                apply(commentColor, start..<end, result)
+            if scanner.character(at: start + 2) == dash && scanner.character(at: start + 3) == dash {
+                let end = scanner.indexAfter("-->", from: start + 4) ?? length
+                result.setColor(commentColor, in: start..<end)
                 return end
             }
-            let end = indexAfter(source, of: ">", from: start + 2) ?? length
-            apply(declarationColor, start..<end, result)
+            let end = scanner.indexAfter(">", from: start + 2) ?? length
+            result.setColor(declarationColor, in: start..<end)
             return end
         }
 
         if secondChar == question {
-            let end = indexAfter(source, of: "?>", from: start + 2) ?? length
-            apply(declarationColor, start..<end, result)
+            let end = scanner.indexAfter("?>", from: start + 2) ?? length
+            result.setColor(declarationColor, in: start..<end)
             return end
         }
 
-        return colorTag(source, from: start, into: result)
+        return colorTag(scanner, from: start, into: result)
     }
 
     /// Colours an element tag and its attributes; returns the index past it.
     private static func colorTag(
-        _ source: NSString,
+        _ scanner: RowScanner,
         from start: Int,
         into result: NSMutableAttributedString
     ) -> Int {
-        let length = source.length
+        let length = scanner.length
         var index = start
 
-        apply(punctuationColor, index..<(index + 1), result)  // '<'
+        result.setColor(punctuationColor, in: index..<(index + 1))  // '<'
         index += 1
-        if index < length && source.character(at: index) == slash {
-            apply(punctuationColor, index..<(index + 1), result)
+        if scanner.has(slash, at: index) {
+            result.setColor(punctuationColor, in: index..<(index + 1))
             index += 1
         }
 
         let nameStart = index
-        while index < length && isNameCharacter(source.character(at: index)) {
-            index += 1
-        }
-        apply(tagColor, nameStart..<index, result)
+        index = scanner.endOfRun(from: index, while: isNameCharacter)
+        result.setColor(tagColor, in: nameStart..<index)
 
         var tagClosed = false
         while index < length && !tagClosed {
-            let character = source.character(at: index)
+            let character = scanner.character(at: index)
             if character == greaterThan {
-                apply(punctuationColor, index..<(index + 1), result)
+                result.setColor(punctuationColor, in: index..<(index + 1))
                 index += 1
                 tagClosed = true
             } else if character == slash || character == equals {
-                apply(punctuationColor, index..<(index + 1), result)
+                result.setColor(punctuationColor, in: index..<(index + 1))
                 index += 1
-            } else if isWhitespace(character) {
+            } else if RowScanner.isWhitespace(character) {
                 index += 1
             } else if character == quote || character == apostrophe {
-                index = colorString(source, from: index, quote: character, into: result)
+                index = colorString(scanner, from: index, quote: character, into: result)
             } else {
-                index = colorAttributeName(source, from: index, into: result)
+                index = colorAttributeName(scanner, from: index, into: result)
             }
         }
         return max(index, start + 1)
@@ -168,46 +160,25 @@ enum XMLHighlighter {
 
     /// Colours a quoted attribute value; returns the index past the close quote.
     private static func colorString(
-        _ source: NSString,
+        _ scanner: RowScanner,
         from start: Int,
         quote: unichar,
         into result: NSMutableAttributedString
     ) -> Int {
-        let length = source.length
-        var index = start + 1
-        while index < length && source.character(at: index) != quote {
-            index += 1
-        }
-        if index < length {
-            index += 1  // Include the closing quote.
-        }
-        apply(attributeValueColor, start..<index, result)
-        return index
+        let end = scanner.endOfQuotedString(from: start, quote: quote, escaping: false)
+        result.setColor(attributeValueColor, in: start..<end)
+        return end
     }
 
     /// Colours an attribute name; returns the index past it (always advances).
     private static func colorAttributeName(
-        _ source: NSString,
+        _ scanner: RowScanner,
         from start: Int,
         into result: NSMutableAttributedString
     ) -> Int {
-        let length = source.length
-        var index = start
-        while index < length {
-            let character = source.character(at: index)
-            let isDelimiter = isWhitespace(character)
-                || character == equals
-                || character == greaterThan
-                || character == slash
-                || character == quote
-                || character == apostrophe
-            if isDelimiter {
-                break
-            }
-            index += 1
-        }
+        var index = scanner.endOfRun(from: start) { !isAttributeNameDelimiter($0) }
         if index > start {
-            apply(attributeNameColor, start..<index, result)
+            result.setColor(attributeNameColor, in: start..<index)
         } else {
             index = start + 1  // Safety: never stall the caller's loop.
         }
@@ -216,42 +187,20 @@ enum XMLHighlighter {
 
     // MARK: - Helpers
 
-    private static func apply(
-        _ color: NSColor,
-        _ range: Range<Int>,
-        _ result: NSMutableAttributedString
-    ) {
-        if !range.isEmpty {
-            result.addAttribute(
-                .foregroundColor,
-                value: color,
-                range: NSRange(location: range.lowerBound, length: range.count)
-            )
-        }
-    }
-
-    /// The index just past the first occurrence of `literal` at or after `from`.
-    private static func indexAfter(_ source: NSString, of literal: String, from: Int) -> Int? {
-        var result: Int?
-        if from <= source.length {
-            let searchRange = NSRange(location: from, length: source.length - from)
-            let found = source.range(of: literal, options: [], range: searchRange)
-            if found.location != NSNotFound {
-                result = found.location + found.length
-            }
-        }
-        return result
+    private static func isAttributeNameDelimiter(_ character: unichar) -> Bool {
+        return RowScanner.isWhitespace(character)
+            || character == equals
+            || character == greaterThan
+            || character == slash
+            || character == quote
+            || character == apostrophe
     }
 
     private static func isNameCharacter(_ character: unichar) -> Bool {
-        return (character >= 65 && character <= 90)      // A-Z
-            || (character >= 97 && character <= 122)     // a-z
-            || (character >= 48 && character <= 57)      // 0-9
+        return RowScanner.isUppercaseLetter(character)
+            || RowScanner.isLowercaseLetter(character)
+            || RowScanner.isDigit(character)
             || character == 45 || character == 46        // - .
             || character == 95 || character == 58        // _ :
-    }
-
-    private static func isWhitespace(_ character: unichar) -> Bool {
-        return character == 32 || character == 9 || character == 10 || character == 13
     }
 }
