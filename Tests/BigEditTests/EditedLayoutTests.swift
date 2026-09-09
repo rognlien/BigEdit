@@ -11,6 +11,61 @@ final class EditedLayoutTests: XCTestCase {
     /// Recomputes lines, rows, and chunking from plain bytes, mirroring
     /// `LineIndex` semantics: lines split on `\n`, trailing bytes after the
     /// last newline form a final line, long lines chunk at the wrap width.
+    // MARK: - The empty final line
+
+    /// Pressing Return at the end of a document used to change nothing on
+    /// screen: a trailing newline produced no row, so the caret had nowhere to
+    /// land. It took a second Return to see anything happen.
+    func testReturnAtTheEndOfADocumentAddsARow() {
+        let layout = makeLayout(Array("hello".utf8))
+        XCTAssertEqual(layout.visualRowCount, 1)
+
+        var model = Array("hello".utf8)
+        edit(layout, &model, replace: 5..<5, with: [0x0A])
+        XCTAssertEqual(layout.visualRowCount, 2, "the empty final line needs a row of its own")
+        XCTAssertEqual(layout.visualRow(forLogicalByteOffset: 6), 1,
+                       "the caret belongs on the new row")
+    }
+
+    func testTypingInANewEmptyDocumentThenPressingReturn() {
+        let layout = makeLayout([])
+        XCTAssertEqual(layout.visualRowCount, 1, "an empty document is one empty row")
+
+        var model: [UInt8] = []
+        edit(layout, &model, replace: 0..<0, with: Array("hello".utf8))
+        XCTAssertEqual(layout.visualRowCount, 1)
+        edit(layout, &model, replace: 5..<5, with: [0x0A])
+        XCTAssertEqual(layout.visualRowCount, 2)
+        edit(layout, &model, replace: 6..<6, with: [0x0A])
+        XCTAssertEqual(layout.visualRowCount, 3)
+    }
+
+    func testTrailingRowDisappearsWhenTheNewlineIsDeleted() {
+        let layout = makeLayout(Array("hello\n".utf8))
+        XCTAssertEqual(layout.visualRowCount, 2)
+
+        var model = Array("hello\n".utf8)
+        edit(layout, &model, replace: 5..<6, with: [])
+        XCTAssertEqual(layout.visualRowCount, 1, "no trailing newline, no extra row")
+    }
+
+    func testTheTrailingRowIsEmptyAndNumberedNext() {
+        let layout = makeLayout(Array("alpha\nbeta\n".utf8))
+        let rows = layout.visualLines(forRows: 0..<layout.visualRowCount)
+        XCTAssertEqual(rows.count, 3)
+        XCTAssertEqual(rows.last?.byteRange, 11..<11, "the final row holds no bytes")
+        XCTAssertEqual(rows.last?.documentLine, 2, "and carries the next line number")
+    }
+
+    /// The line count keeps wc -l semantics even though the row count does not,
+    /// because the info pane and --index both report it.
+    func testLineCountIsUnchangedByTheTrailingRow() {
+        let layout = makeLayout(Array("alpha\nbeta\n".utf8))
+        XCTAssertEqual(layout.documentLineCount, 2)
+        XCTAssertEqual(layout.visualRowCount, 3)
+        XCTAssertEqual(layout.gutterLineCount, 3, "the gutter still has to number the last row")
+    }
+
     private struct NaiveLayout {
         struct Line {
             let start: Int
@@ -19,6 +74,11 @@ final class EditedLayoutTests: XCTestCase {
 
         let lines: [Line]
         let wrap: Int
+        /// A document ending in a newline — or an empty one — shows an extra
+        /// empty row for the final line, which is where the caret sits after
+        /// Return.
+        let hasTrailingEmptyRow: Bool
+        let byteCount: Int
 
         init(_ bytes: [UInt8], wrap: Int) {
             var collected: [Line] = []
@@ -32,6 +92,8 @@ final class EditedLayoutTests: XCTestCase {
             }
             self.lines = collected
             self.wrap = wrap
+            self.byteCount = bytes.count
+            self.hasTrailingEmptyRow = bytes.isEmpty || bytes.last == 0x0A
         }
 
         func chunkCount(_ line: Line) -> Int {
@@ -39,6 +101,10 @@ final class EditedLayoutTests: XCTestCase {
         }
 
         var rowCount: Int {
+            baseRowCount + (hasTrailingEmptyRow ? 1 : 0)
+        }
+
+        var baseRowCount: Int {
             lines.reduce(0) { $0 + chunkCount($1) }
         }
 
@@ -60,6 +126,11 @@ final class EditedLayoutTests: XCTestCase {
                         documentLine: number, chunkIndex: chunk,
                         chunkCount: chunks, byteRange: start..<end))
                 }
+            }
+            if hasTrailingEmptyRow {
+                result.append(LineIndex.VisualLine(
+                    documentLine: lines.count, chunkIndex: 0,
+                    chunkCount: 1, byteRange: byteCount..<byteCount))
             }
             return result
         }

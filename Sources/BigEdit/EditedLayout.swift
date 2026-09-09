@@ -26,6 +26,14 @@ final class EditedLayout {
     /// The logical document length in bytes, kept in step with every edit.
     private(set) var length: Int
 
+    /// Whether the document's last byte is a newline.
+    ///
+    /// A document that ends in one has an empty final line, and that line needs
+    /// a row of its own: it is where the caret lands after Return. Without it
+    /// the row count is unchanged by the keystroke, the caret has nowhere to
+    /// go, and Return looks like it did nothing.
+    private var endsWithNewline = false
+
     private var spans: [Span] = []
     private var gaps: [Gap] = []
     private var wrapBytes = LineIndex.defaultWrapBytes
@@ -43,6 +51,19 @@ final class EditedLayout {
         self.file = file
         self.index = index
         self.length = file.size
+        self.endsWithNewline = file.size > 0 && file.buffer[file.size - 1] == 0x0A
+    }
+
+    /// True when the document shows one more row than it has lines: the empty
+    /// final line. An empty document is the same case — one empty row.
+    private var hasTrailingEmptyRow: Bool {
+        length == 0 || endsWithNewline
+    }
+
+    /// The highest line number the gutter has to draw, which is one past the
+    /// line count when there is a trailing empty line.
+    var gutterLineCount: Int {
+        documentLineCount + (hasTrailingEmptyRow ? 1 : 0)
     }
 
     /// True once any edit has been applied; without edits every query is a
@@ -174,6 +195,12 @@ final class EditedLayout {
     // MARK: - Queries
 
     var visualRowCount: Int {
+        baseVisualRowCount + (hasTrailingEmptyRow ? 1 : 0)
+    }
+
+    /// The rows the index and spans actually describe, before the empty final
+    /// line is added.
+    private var baseVisualRowCount: Int {
         var result: Int
         if spans.isEmpty {
             result = index.visualRowCount
@@ -199,14 +226,25 @@ final class EditedLayout {
     /// offsets and `documentLine` numbered in the logical document.
     func visualLines(forRows range: Range<Int>) -> [LineIndex.VisualLine] {
         var result: [LineIndex.VisualLine] = []
-        if spans.isEmpty {
-            result = index.visualLines(forRows: range, file: file)
-        } else {
-            ensureTableValid()
-            let clamped = range.clamped(to: 0..<totalRows)
-            if !clamped.isEmpty {
-                collectRows(clamped, into: &result)
+        let base = baseVisualRowCount
+        let realRows = range.clamped(to: 0..<base)
+        if !realRows.isEmpty {
+            if spans.isEmpty {
+                result = index.visualLines(forRows: realRows, file: file)
+            } else {
+                ensureTableValid()
+                collectRows(realRows, into: &result)
             }
+        }
+        // The empty final line belongs to no gap or span, so it is described
+        // here rather than being looked up.
+        if hasTrailingEmptyRow && range.contains(base) {
+            result.append(LineIndex.VisualLine(
+                documentLine: documentLineCount,
+                chunkIndex: 0,
+                chunkCount: 1,
+                byteRange: length..<length
+            ))
         }
         return result
     }
@@ -214,7 +252,9 @@ final class EditedLayout {
     /// The visual row containing logical byte `offset` (clamped).
     func visualRow(forLogicalByteOffset offset: Int) -> Int {
         var result = 0
-        if spans.isEmpty {
+        if hasTrailingEmptyRow && offset >= length {
+            result = baseVisualRowCount
+        } else if spans.isEmpty {
             result = index.visualRow(forByteOffset: offset, file: file)
         } else if length > 0 {
             ensureTableValid()
@@ -428,6 +468,8 @@ final class EditedLayout {
         rebuildGaps()
 
         length += delta
+        endsWithNewline = length > 0
+            && contentReader((length - 1)..<length).first == 0x0A
         tableValid = false
     }
 

@@ -258,7 +258,7 @@ final class ViewportView: NSView {
         guard let layout, characterWidth > 0 else {
             return LineIndex.defaultWrapBytes
         }
-        let gutterW = gutterWidth(for: layout.documentLineCount)
+        let gutterW = gutterWidth(for: layout.gutterLineCount)
         let textAreaWidth = max(0, bounds.width - gutterW - gutterPadding)
         let columns = Int(textAreaWidth / characterWidth)
         return max(LineIndex.minimumWrapBytes, columns)
@@ -315,7 +315,7 @@ final class ViewportView: NSView {
     private func csvDividerPositions() -> [CGFloat] {
         var positions: [CGFloat] = []
         if let csvColumnLayout, let layout {
-            let textOriginX = gutterWidth(for: layout.documentLineCount) + gutterPadding
+            let textOriginX = gutterWidth(for: layout.gutterLineCount) + gutterPadding
             positions = csvColumnLayout.dividerCharacterOffsets.map {
                 textOriginX - horizontalOffset + CGFloat($0) * characterWidth
             }
@@ -702,7 +702,7 @@ final class ViewportView: NSView {
     private var maximumHorizontalOffset: CGFloat {
         var result: CGFloat = 0
         if let layout {
-            let gutter = gutterWidth(for: layout.documentLineCount)
+            let gutter = gutterWidth(for: layout.gutterLineCount)
             let textAreaWidth = max(0, bounds.width - gutter - gutterPadding)
             result = max(0, widestDrawnRowWidth - textAreaWidth)
         }
@@ -719,7 +719,7 @@ final class ViewportView: NSView {
 
     override func resetCursorRects() {
         // I-beam over the text area only; the gutter keeps the default arrow.
-        let gutterW = layout.map { gutterWidth(for: $0.documentLineCount) } ?? 0
+        let gutterW = layout.map { gutterWidth(for: $0.gutterLineCount) } ?? 0
         let textRect = NSRect(x: gutterW, y: 0,
                               width: max(0, bounds.width - gutterW), height: bounds.height)
         addCursorRect(textRect, cursor: .iBeam)
@@ -961,7 +961,7 @@ final class ViewportView: NSView {
 
             let rows = layout.visualLines(forRows: rowIndex..<(rowIndex + 1))
             if let visualLine = rows.first {
-                let gutterW = gutterWidth(for: layout.documentLineCount)
+                let gutterW = gutterWidth(for: layout.gutterLineCount)
                 let textOriginX = gutterW + gutterPadding
                 let relativeX = point.x - textOriginX + horizontalOffset
                 result = byteOffset(inRow: visualLine, atX: relativeX)
@@ -1151,7 +1151,7 @@ final class ViewportView: NSView {
         let lastRow = min(totalRows, firstRow + rowsPerPage + 2)
         let rows = layout.visualLines(forRows: firstRow..<lastRow)
 
-        let gutterWidth = self.gutterWidth(for: layout.documentLineCount)
+        let gutterWidth = self.gutterWidth(for: layout.gutterLineCount)
         let startState = seedState(forFirstRow: firstRow, layout: layout)
         drawText(rows: rows, gutterWidth: gutterWidth, fraction: fraction,
                  startState: startState)
@@ -1684,7 +1684,7 @@ extension ViewportView: NSTextInputClient {
         if let layout, let window, let caret = caretByteOffset {
             let caretRow = layout.visualRow(forLogicalByteOffset: caret)
             let x = caretX(forOffset: caret, row: caretRow)
-            let gutterW = gutterWidth(for: layout.documentLineCount)
+            let gutterW = gutterWidth(for: layout.gutterLineCount)
             let viewRect = NSRect(
                 x: gutterW + gutterPadding - horizontalOffset + x,
                 y: (CGFloat(caretRow) - CGFloat(scrollRow)) * lineHeight,
