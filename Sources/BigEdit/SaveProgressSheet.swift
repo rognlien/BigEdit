@@ -14,7 +14,11 @@ final class SaveProgressSheet: NSObject {
     /// Invoked when the user clicks Cancel.
     var onCancel: (() -> Void)?
 
-    init(fileName: String) {
+    convenience init(fileName: String) {
+        self.init(title: "Saving \(fileName)…")
+    }
+
+    init(title: String) {
         let contentRect = NSRect(x: 0, y: 0, width: 420, height: 130)
         window = NSWindow(
             contentRect: contentRect,
@@ -24,7 +28,7 @@ final class SaveProgressSheet: NSObject {
         )
         window.isReleasedWhenClosed = false
 
-        titleLabel = NSTextField(labelWithString: "Saving \(fileName)…")
+        titleLabel = NSTextField(labelWithString: title)
         titleLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)
 
         detailLabel = NSTextField(labelWithString: "0%")

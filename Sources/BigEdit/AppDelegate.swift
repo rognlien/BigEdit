@@ -23,6 +23,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
     private var activeIndex: Int?
     private var saveProgressSheet: SaveProgressSheet?
 
+    /// Held while the Process Lines sheet is up, so it is not deallocated
+    /// before the user answers it.
+    private var processLinesSheet: ProcessLinesSheet?
+
     private let openRecentMenu = NSMenu(title: "Open Recent")
     private var didOpenFromURL = false
     private static let lastFilePathDefaultsKey = "BigEditLastFilePath"
@@ -509,6 +513,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
             keyEquivalent: "v"
         ))
         editMenu.addItem(NSMenuItem.separator())
+        let processLinesItem = NSMenuItem(
+            title: "Process Lines…",
+            action: #selector(showProcessLines),
+            keyEquivalent: "l"
+        )
+        processLinesItem.keyEquivalentModifierMask = [.command, .shift]
+        processLinesItem.target = self
+        editMenu.addItem(processLinesItem)
+
+        editMenu.addItem(NSMenuItem.separator())
         editMenu.addItem(NSMenuItem(
             title: "Select All",
             action: #selector(NSResponder.selectAll(_:)),
@@ -726,6 +740,58 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         } else {
             presentError("Could not create \(url.lastPathComponent).")
         }
+    }
+
+    /// Asks which line operation to run, then runs it over the whole document.
+    @objc private func showProcessLines() {
+        guard let view = activeView, view.canProcessLines else {
+            return
+        }
+        let sheet = ProcessLinesSheet()
+        processLinesSheet = sheet
+        sheet.present(in: window) { [weak self, weak view] operation in
+            self?.processLinesSheet = nil
+            if let operation, let view {
+                self?.runProcessLines(operation, in: view)
+            }
+        }
+    }
+
+    private func runProcessLines(_ operation: LineOperation, in view: DocumentView) {
+        view.processLines(operation) { [weak self] result in
+            switch result {
+            case .success:
+                self?.updateTitle()
+            case .failure(let error):
+                self?.presentProcessLinesFailure(error)
+            }
+        }
+    }
+
+    private func presentProcessLinesFailure(_ error: Error) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "OK")
+        switch error {
+        case DocumentView.ProcessLinesRefusal.tooLarge(let size, let limit):
+            let formatter = ByteCountFormatter()
+            alert.messageText = "This document is too large to process"
+            alert.informativeText = "Processing lines holds the whole document in memory, so it "
+                + "is limited to \(formatter.string(fromByteCount: Int64(limit))). "
+                + "This one is \(formatter.string(fromByteCount: Int64(size)))."
+        case DocumentView.ProcessLinesRefusal.notEditable:
+            alert.messageText = "This document cannot be edited"
+            alert.informativeText = "Processing lines rewrites the document, which is not "
+                + "possible while a replacement rule or CSV view is active, or for a file that "
+                + "is not UTF-8 text."
+        case LineProcessor.ProcessingError.invalidPattern(let pattern):
+            alert.messageText = "That pattern is not a valid regular expression"
+            alert.informativeText = "“\(pattern)” could not be understood."
+        default:
+            alert.messageText = "Could not process the lines"
+            alert.informativeText = "\(error)"
+        }
+        alert.beginSheetModal(for: window) { _ in }
     }
 
     @objc private func openDocument() {
@@ -1150,6 +1216,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         switch menuItem.action {
         case #selector(newDocument):
             enabled = true
+        case #selector(showProcessLines):
+            enabled = activeView?.canProcessLines == true
         case #selector(save), #selector(saveAs):
             enabled = activeDocument?.isEdited == true
         case #selector(closeActiveDocument), #selector(reloadActiveFromDisk),

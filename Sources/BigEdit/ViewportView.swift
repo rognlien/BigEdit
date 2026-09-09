@@ -459,6 +459,16 @@ final class ViewportView: NSView {
             && !isCSVRenderingActive
     }
 
+    /// Replaces the whole document in one undoable step.
+    ///
+    /// The line operations rewrite every line, so they land as a single edit
+    /// rather than as thousands — one ⌘Z puts the document back.
+    func replaceEntireDocument(with bytes: [UInt8]) {
+        if let document {
+            performEdit(replacing: 0..<document.length, with: bytes)
+        }
+    }
+
     /// Replaces `range` with `bytes`, collapses the caret to the end of the
     /// insertion, and refreshes everything that depends on the content.
     private func performEdit(replacing range: Range<Int>, with bytes: [UInt8]) {
