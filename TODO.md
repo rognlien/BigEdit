@@ -3,26 +3,20 @@
 What is actually left. Everything above the "Done" section is open work;
 `[x]` items in Done are recorded so this file stops re-proposing them.
 
-Last audited against the code on 2026-09-09, at v0.1.16 plus the CSV column
-resize and the horizontal-scroll fix.
+Last audited against the code on 2026-09-09, at v0.1.17 plus the CSV column
+resize, the horizontal-scroll fix, the command line tool, the line-processing
+engine, and the two Return fixes.
 
 ## New features
 
-- [ ] **Process lines.** A "Process lines" function operating on the whole
-      document:
-      - Remove duplicate lines.
-      - Remove lines containing a pattern.
-      - Sort lines (naturally, or by a regex-extracted key).
-      - Process each line with a regex.
-      Needs a decision on how results are produced: materialised as undoable
-      edits through the piece table (like Replace All under its cap), or
-      streamed to a new document. Sorting in particular cannot be viewport-
-      bounded — it has to read the whole file — so it needs a progress sheet
-      and a cancel, and a stated ceiling on file size.
-- [ ] **Command line tool.** A `bigedit` executable, bundled inside the app and
-      installed by clicking a button in BigEdit (the usual pattern is a symlink
-      into `/usr/local/bin`, which needs an authorisation prompt). `bigedit
-      file.txt` opens that file in BigEdit, creating it if it does not exist.
+- [ ] **Process lines — the user interface.** The engine is done
+      (`LineProcessor`, reachable as `--process-lines`); what is missing is the
+      way to reach it from the app: a sheet to pick the operation and its
+      pattern, run it off the main thread with progress and a cancel, and
+      decide how the result lands. That last part is still open — materialised
+      as one undoable edit through the piece table (like Replace All under its
+      cap), or streamed into a new document above it. Sorting and deduplication
+      cannot be viewport-bounded, so whichever is chosen needs a stated ceiling.
 
 ## Beta polish
 
@@ -35,6 +29,19 @@ resize and the horizontal-scroll fix.
       nothing to assistive tech. Real fix: `NSAccessibilityStaticText` (or
       similar) exposing visible row text via `accessibilityValue`. Substantial;
       until then it belongs in the README's limitations.
+
+## Adaptive limits for small documents
+
+Several bounds exist only because a document might be enormous. Below a size
+threshold each could be lifted, with no user-visible "mode" — the same bargain
+Replace All already makes when it materialises under its cap and falls back to
+the streaming rule above it.
+
+- [ ] **Whole-file lexer state** instead of replaying a bounded ~400-row window
+      above the viewport, so a construct opened far above is coloured.
+- [ ] **Exact CSV column widths** measured from the whole file rather than a
+      head sample, so a wider field further down is not truncated.
+- [ ] **No 1,000,000-match display cap** on search.
 
 ## Follow-ups from shipped work
 
@@ -99,7 +106,7 @@ they are not proposed again.
 - [x] **Dock-click reopen** (`applicationShouldHandleReopen`).
 - [x] **Cancel `LineIndex` indexing** when the file changes — `LineIndex` has
       `cancel()` alongside `SearchScan` and `StatisticsScan`.
-- [x] **Unit tests.** 124 XCTests, run in CI on every PR, plus the headless
+- [x] **Unit tests.** 192 XCTests, run in CI on every PR, plus the headless
       cross-checks below.
 - [x] **Word-width hit testing** via `CTLineGetStringIndexForPosition`.
 - [x] **Cursor refinement** — the I-beam stops at the gutter.
@@ -114,12 +121,20 @@ they are not proposed again.
       right; CSV mode draws aligned columns with delimiter, quote, header,
       pin-header and trim options, and columns resize by dragging their
       trailing edge.
-- [x] **Word/character statistics over the edited document.** The info pane
-      counts what is on screen rather than what is still on disk, by
-      walking a piece snapshot; re-run 300 ms after typing pauses.
-- [x] **`⌘N` new empty document.** File ▸ New asks where to create the
-      file, creates it empty, and opens it — BigEdit reads through mmap,
-      so a document is always a real file.
+- [x] **Process lines — the engine.** `LineProcessor` does remove duplicates,
+      remove/keep lines containing a pattern, sort (plain, natural, or by a
+      regex-extracted key, stably), and regex replacement within each line.
+      Cross-checked against awk, grep, sort and sed by
+      `scripts/verify-process-lines.sh`.
+- [x] **The `bigedit` command line tool.** Bundled in the app, installed from
+      the app menu via a privileged helper whose authorisation accepts Touch ID.
+      `scripts/verify-helper.sh` checks the SMJobBless preconditions in CI.
+- [x] **Word/character statistics over the edited document.**
+- [x] **`⌘N` new empty document.**
+- [x] **Return at the end of a document.** A trailing newline now has a visual
+      row of its own, and spans covering only inserted text stay in order — two
+      separate bugs that together made Return look like it did nothing, then
+      shift the previous line.
 - [x] **Horizontal scrolling is bounded** by the widest row drawn, so no
       document scrolls off into empty space.
 
