@@ -12,8 +12,6 @@ enum CommandLineToolInstaller {
 
     enum InstallationFailure: Error {
         case toolMissingFromBundle
-        case authorisationRefused
-        case failed(String)
     }
 
     /// Where the tool lives inside the running app.
@@ -48,7 +46,10 @@ enum CommandLineToolInstaller {
             throw InstallationFailure.toolMissingFromBundle
         }
         if !linkDirectly(from: bundledToolURL) {
-            try linkWithAdministratorRights(from: bundledToolURL)
+            // Root-owned destination: hand it to the privileged helper, whose
+            // one-time authorisation dialog supports Touch ID.
+            try PrivilegedHelperInstaller.installCommandLineTool(
+                toolURL: bundledToolURL, destination: destinationURL)
         }
     }
 
@@ -73,42 +74,5 @@ enum CommandLineToolInstaller {
             }
         }
         return succeeded
-    }
-
-    /// Falls back to an authenticated shell, which is what a stock macOS needs:
-    /// /usr/local/bin is root-owned, and on a clean install may not exist.
-    private static func linkWithAdministratorRights(from toolURL: URL) throws {
-        let command = "/bin/mkdir -p \(shellQuoted(destinationDirectory)) && "
-            + "/bin/ln -sf \(shellQuoted(toolURL.path)) \(shellQuoted(destinationURL.path))"
-        let script = "do shell script \(appleScriptQuoted(command)) with administrator privileges"
-
-        var errorInfo: NSDictionary?
-        NSAppleScript(source: script)?.executeAndReturnError(&errorInfo)
-
-        if let errorInfo {
-            let code = errorInfo[NSAppleScript.errorNumber] as? Int ?? 0
-            if code == -128 {                     // the user cancelled the prompt
-                throw InstallationFailure.authorisationRefused
-            }
-            let message = errorInfo[NSAppleScript.errorMessage] as? String ?? "unknown error"
-            throw InstallationFailure.failed(message)
-        }
-    }
-
-    // MARK: - Quoting
-
-    /// A path as a single shell word. Wrapping in single quotes protects every
-    /// character except a single quote, which has to be closed, escaped, and
-    /// reopened.
-    static func shellQuoted(_ path: String) -> String {
-        "'" + path.replacingOccurrences(of: "'", with: "'\\''") + "'"
-    }
-
-    /// A shell command as an AppleScript string literal.
-    static func appleScriptQuoted(_ command: String) -> String {
-        let escaped = command
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-        return "\"" + escaped + "\""
     }
 }

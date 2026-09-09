@@ -13,9 +13,22 @@ let package = Package(
         .executableTarget(
             name: "BigEdit",
             dependencies: [
-                .product(name: "Sparkle", package: "Sparkle")
+                .product(name: "Sparkle", package: "Sparkle"),
+                "BigEditHelperKit"
             ],
             path: "Sources/BigEdit"
+        ),
+        .target(
+            name: "BigEditHelperKit",
+            path: "Sources/BigEditHelperKit"
+        ),
+        // The privileged helper. Its embedded Info.plist and launchd.plist are
+        // linked in by make-app.sh's build, which SMJobBless requires; see the
+        // linker flags there.
+        .executableTarget(
+            name: "BigEditHelper",
+            dependencies: ["BigEditHelperKit"],
+            path: "Sources/BigEditHelper"
         ),
         .target(
             name: "BigEditCLI",
@@ -32,7 +45,7 @@ let package = Package(
         ),
         .testTarget(
             name: "BigEditTests",
-            dependencies: ["BigEdit", "BigEditCLI"],
+            dependencies: ["BigEdit", "BigEditCLI", "BigEditHelperKit"],
             path: "Tests/BigEditTests"
         )
     ]
