@@ -114,6 +114,42 @@ cat > "$APP/Contents/Info.plist" <<PLIST
                 <string>public.html</string>
             </array>
         </dict>
+        <dict>
+            <!-- BigEdit opens anything: huge logs and dumps routinely have no
+                 extension, or one macOS maps to public.data. Without this the
+                 Dock refuses the drop before the app is ever asked. Ranked
+                 Alternate so it appears under "Open With" without claiming to
+                 be the default for every file on the disk. public.data covers
+                 files but not folders, which BigEdit cannot open anyway. -->
+            <key>CFBundleTypeName</key>
+            <string>Any File</string>
+            <key>CFBundleTypeRole</key>
+            <string>Viewer</string>
+            <key>LSHandlerRank</key>
+            <string>Alternate</string>
+            <key>LSItemContentTypes</key>
+            <array>
+                <string>public.data</string>
+            </array>
+        </dict>
+        <dict>
+            <!-- The wildcard extension is the older mechanism, and the only one
+                 Launch Services honours for arbitrary extensions: declaring
+                 public.data above covers files with no extension, but a .dat or
+                 .bin is still refused without this. Kept in its own entry
+                 because LSItemContentTypes takes precedence over
+                 CFBundleTypeExtensions when both appear together. -->
+            <key>CFBundleTypeName</key>
+            <string>Any Extension</string>
+            <key>CFBundleTypeRole</key>
+            <string>Viewer</string>
+            <key>LSHandlerRank</key>
+            <string>Alternate</string>
+            <key>CFBundleTypeExtensions</key>
+            <array>
+                <string>*</string>
+            </array>
+        </dict>
     </array>
 $ICON_KEY
 </dict>
