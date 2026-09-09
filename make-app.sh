@@ -19,6 +19,12 @@ APP="BigEdit.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Frameworks"
 cp .build/release/BigEdit "$APP/Contents/MacOS/BigEdit"
+# The command line tool ships under its real name in SharedSupport/bin —
+# NOT in MacOS/, where the case-insensitive filesystem would make
+# `bigedit` and `BigEdit` the same file. BigEdit symlinks this onto the
+# user's PATH.
+mkdir -p "$APP/Contents/SharedSupport/bin"
+cp .build/release/BigEditTool "$APP/Contents/SharedSupport/bin/bigedit"
 
 # --- Embed Sparkle.framework --------------------------------------------------
 # SwiftPM builds against Sparkle but doesn't bundle it; copy it in and add the
@@ -122,6 +128,8 @@ if [ -n "${SIGN_IDENTITY:-}" ]; then
     codesign --force --options runtime --timestamp \
         --sign "$SIGN_IDENTITY" "$FW"
 
+    codesign --force --options runtime --timestamp \
+        --sign "$SIGN_IDENTITY" "$APP/Contents/SharedSupport/bin/bigedit"
     codesign --force --options runtime --timestamp \
         --entitlements "$ENTITLEMENTS" \
         --sign "$SIGN_IDENTITY" "$APP/Contents/MacOS/BigEdit"

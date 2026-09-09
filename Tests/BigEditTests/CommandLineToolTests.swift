@@ -103,9 +103,9 @@ final class CommandLineToolTests: XCTestCase {
 
     func testFindsTheEnclosingApplicationBundle() throws {
         let app = workingDirectory.appendingPathComponent("BigEdit.app")
-        let macOS = app.appendingPathComponent("Contents/MacOS")
-        try FileManager.default.createDirectory(at: macOS, withIntermediateDirectories: true)
-        let tool = macOS.appendingPathComponent("bigedit")
+        let binaryDirectory = app.appendingPathComponent("Contents/SharedSupport/bin")
+        try FileManager.default.createDirectory(at: binaryDirectory, withIntermediateDirectories: true)
+        let tool = binaryDirectory.appendingPathComponent("bigedit")
         FileManager.default.createFile(atPath: tool.path, contents: Data())
 
         let found = try CommandLineTool.applicationURL(forExecutableAt: tool.path)
@@ -114,9 +114,9 @@ final class CommandLineToolTests: XCTestCase {
 
     func testFollowsASymlinkOnThePathBackIntoTheBundle() throws {
         let app = workingDirectory.appendingPathComponent("BigEdit.app")
-        let macOS = app.appendingPathComponent("Contents/MacOS")
-        try FileManager.default.createDirectory(at: macOS, withIntermediateDirectories: true)
-        let tool = macOS.appendingPathComponent("bigedit")
+        let binaryDirectory = app.appendingPathComponent("Contents/SharedSupport/bin")
+        try FileManager.default.createDirectory(at: binaryDirectory, withIntermediateDirectories: true)
+        let tool = binaryDirectory.appendingPathComponent("bigedit")
         FileManager.default.createFile(atPath: tool.path, contents: Data())
 
         // This is what installing on the PATH actually creates.

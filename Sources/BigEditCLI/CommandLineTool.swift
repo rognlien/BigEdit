@@ -109,20 +109,30 @@ public enum CommandLineTool {
 
     // MARK: - The application
 
+    /// How far up from the tool an enclosing bundle is looked for. The tool
+    /// ships at `<App>.app/Contents/SharedSupport/bin/bigedit`, which is four
+    /// levels; the extra room means moving it inside the bundle would not
+    /// silently break this.
+    private static let bundleSearchDepth = 6
+
     /// The `.app` the tool is bundled inside, found by walking up from its own
-    /// location. Symlinks are resolved first, so an install on the PATH still
-    /// finds the bundle it points into.
+    /// location until a directory named `*.app` appears.
+    ///
+    /// Symlinks are resolved first, so an install on the PATH still finds the
+    /// bundle it points into. Walking rather than counting levels means the
+    /// tool's place inside the bundle can change without this having to.
     static func applicationURL(forExecutableAt executablePath: String) throws -> URL? {
         var result: URL?
-        let executable = URL(fileURLWithPath: executablePath).resolvingSymlinksInPath()
-        // <App>.app/Contents/MacOS/bigedit → up three to the bundle.
-        let candidate = executable
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        if candidate.pathExtension == "app",
-           FileManager.default.fileExists(atPath: candidate.path) {
-            result = candidate
+        var candidate = URL(fileURLWithPath: executablePath).resolvingSymlinksInPath()
+        for _ in 0..<bundleSearchDepth where result == nil {
+            candidate = candidate.deletingLastPathComponent()
+            if candidate.path == "/" {
+                break
+            }
+            if candidate.pathExtension == "app",
+               FileManager.default.fileExists(atPath: candidate.path) {
+                result = candidate
+            }
         }
         return result
     }
