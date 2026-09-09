@@ -418,9 +418,29 @@ final class EditedLayout {
         if firstSpan <= lastSpan {
             spans.replaceSubrange(firstSpan...lastSpan, with: coversNothing ? [] : [newSpan])
         } else if !coversNothing {
+            // Spans stay ordered by original range, which is what rebuildGaps
+            // walks. That alone is not enough: a span covering inserted text
+            // has an empty original range, so two of them compare equal and
+            // neither can be placed relative to the other. Typing a second
+            // newline straight after the first produced exactly that pair, and
+            // the new span landed before the old one — laying the document out
+            // in the wrong order. Logical position breaks the tie; the pre-edit
+            // segment offsets are still valid here.
             var insertAt = 0
-            while insertAt < spans.count
-                && spans[insertAt].originalRange.lowerBound < newSpan.originalRange.upperBound {
+            while insertAt < spans.count {
+                let existing = spans[insertAt].originalRange
+                let incoming = newSpan.originalRange
+                let existingComesFirst: Bool
+                if existing.lowerBound != incoming.lowerBound {
+                    existingComesFirst = existing.lowerBound < incoming.lowerBound
+                } else if existing.upperBound != incoming.upperBound {
+                    existingComesFirst = existing.upperBound < incoming.upperBound
+                } else {
+                    existingComesFirst = segmentStartOffsets[2 * insertAt + 1] < alignedLower
+                }
+                if !existingComesFirst {
+                    break
+                }
                 insertAt += 1
             }
             spans.insert(newSpan, at: insertAt)

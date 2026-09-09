@@ -299,6 +299,73 @@ final class EditedLayoutTests: XCTestCase {
 
     // MARK: - Fuzz
 
+    // MARK: - Typing, one keystroke at a time
+
+    /// Two Returns in a row used to put the newest span *before* the existing
+    /// one, so the document was laid out in the wrong order: after typing
+    /// `hello` and pressing Return twice, the first row came out empty and the
+    /// second held `ello\n`.
+    ///
+    /// Both spans covered inserted text, so both had empty original ranges, and
+    /// the insertion point was chosen by comparing those.
+    func testTwoReturnsInARowKeepTheDocumentInOrder() {
+        let layout = makeLayout([])
+        var model: [UInt8] = []
+        edit(layout, &model, replace: 0..<0, with: Array("hello".utf8))
+        edit(layout, &model, replace: 5..<5, with: [0x0A])
+        edit(layout, &model, replace: 6..<6, with: [0x0A])
+
+        let rows = layout.visualLines(forRows: 0..<layout.visualRowCount)
+        XCTAssertEqual(rows.first?.byteRange, 0..<5, "the first row is still hello")
+        XCTAssertEqual(rows.dropFirst().first?.byteRange, 6..<6, "then the empty line")
+    }
+
+    func testSeveralReturnsInARow() {
+        let layout = makeLayout(Array("x\n".utf8))
+        var model = Array("x\n".utf8)
+        edit(layout, &model, replace: 2..<2, with: Array("hello".utf8))
+        for position in 7...9 {
+            edit(layout, &model, replace: position..<position, with: [0x0A])
+        }
+        let rows = layout.visualLines(forRows: 0..<layout.visualRowCount)
+        XCTAssertEqual(rows.first?.byteRange, 0..<1, "x is still first")
+        XCTAssertEqual(rows.dropFirst().first?.byteRange, 2..<7, "hello is still second")
+    }
+
+    /// The existing fuzz picks random ranges anywhere in a 1500-byte document,
+    /// which essentially never produces the pattern a person types: one
+    /// character at a time at the caret, newlines included. That is why the
+    /// span-ordering bug survived it.
+    func testTypingOneCharacterAtATimeMatchesNaiveLayout() {
+        for seed: UInt64 in [3, 91, 5150] {
+            var generator = SeededGenerator(seed: seed)
+            for start in [[UInt8](), Array("first line\nsecond line\n".utf8)] {
+                var model = start
+                let layout = makeLayout(start)
+                var caret = model.count
+
+                for step in 0..<60 {
+                    // A quarter newlines, so runs of them happen often.
+                    let byte: UInt8 = Int.random(in: 0..<4, using: &generator) == 0
+                        ? 0x0A
+                        : UInt8(Int.random(in: 97...122, using: &generator))
+                    edit(layout, &model, replace: caret..<caret, with: [byte])
+                    caret += 1
+                    verify(layout, against: model, probesUsing: &generator,
+                           context: "seed \(seed) step \(step) typing")
+                }
+
+                // And backspacing, which is the other half of typing.
+                for step in 0..<20 where caret > 0 {
+                    edit(layout, &model, replace: (caret - 1)..<caret, with: [])
+                    caret -= 1
+                    verify(layout, against: model, probesUsing: &generator,
+                           context: "seed \(seed) step \(step) backspacing")
+                }
+            }
+        }
+    }
+
     func testFuzzAgainstNaiveLayout() {
         for seed: UInt64 in [11, 77, 4242] {
             var generator = SeededGenerator(seed: seed)
