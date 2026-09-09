@@ -425,6 +425,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
             keyEquivalent: "o"
         )
         openItem.target = self
+
+        let newItem = NSMenuItem(
+            title: "New",
+            action: #selector(newDocument),
+            keyEquivalent: "n"
+        )
+        newItem.target = self
+        fileMenu.addItem(newItem)
         fileMenu.addItem(openItem)
 
         let openRecentItem = NSMenuItem(title: "Open Recent", action: nil, keyEquivalent: "")
@@ -690,6 +698,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
     }
 
     // MARK: - Opening files
+
+    /// Creates an empty file and opens it.
+    ///
+    /// BigEdit reads through `mmap`, so a document is always a real file —
+    /// there is no untitled-and-unsaved state to fall back on. Asking where
+    /// the file goes up front keeps every other part of the app (the file
+    /// watcher, Open Recent, session restore, Save) working exactly as it does
+    /// for a file that was already there.
+    @objc private func newDocument() {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "Untitled.txt"
+        panel.canCreateDirectories = true
+        panel.message = "Choose where to create the new file."
+        panel.beginSheetModal(for: window) { [weak self] response in
+            if response == .OK, let url = panel.url {
+                self?.createAndOpenDocument(at: url)
+            }
+        }
+    }
+
+    /// Writes an empty file at `url` and opens it, replacing anything already
+    /// there — the save panel has already asked about overwriting.
+    private func createAndOpenDocument(at url: URL) {
+        if FileManager.default.createFile(atPath: url.path, contents: Data()) {
+            openDocuments(at: [url])
+        } else {
+            presentError("Could not create \(url.lastPathComponent).")
+        }
+    }
 
     @objc private func openDocument() {
         let panel = NSOpenPanel()
@@ -1111,6 +1148,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         var enabled = true
         switch menuItem.action {
+        case #selector(newDocument):
+            enabled = true
         case #selector(save), #selector(saveAs):
             enabled = activeDocument?.isEdited == true
         case #selector(closeActiveDocument), #selector(reloadActiveFromDisk),
