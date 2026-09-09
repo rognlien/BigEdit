@@ -49,13 +49,21 @@ enum PrivilegedHelperInstaller {
 
     /// Asks the user to authorise installing the helper, then installs it.
     private static func blessHelper() throws {
+        // Every C string handed to Authorization Services has to outlive the
+        // call that reads it, including the *name* of the environment item —
+        // passing a Swift string there hands over a pointer that is already
+        // dangling by the time it is read.
         var rightName = kSMRightBlessPrivilegedHelper.utf8CString
+        var promptName = kAuthorizationEnvironmentPrompt.utf8CString
         var promptText = authorisationPrompt.utf8CString
 
         let authorization = try rightName.withUnsafeMutableBufferPointer { rightBuffer in
-            try promptText.withUnsafeMutableBufferPointer { promptBuffer in
-                try createAuthorization(rightName: rightBuffer.baseAddress!,
-                                        prompt: promptBuffer.baseAddress!)
+            try promptName.withUnsafeMutableBufferPointer { nameBuffer in
+                try promptText.withUnsafeMutableBufferPointer { textBuffer in
+                    try createAuthorization(rightName: rightBuffer.baseAddress!,
+                                            promptName: nameBuffer.baseAddress!,
+                                            promptText: textBuffer.baseAddress!)
+                }
             }
         }
         defer { AuthorizationFree(authorization, []) }
@@ -77,25 +85,31 @@ enum PrivilegedHelperInstaller {
     /// dialog — and therefore what allows Touch ID.
     private static func createAuthorization(
         rightName: UnsafeMutablePointer<CChar>,
-        prompt: UnsafeMutablePointer<CChar>
+        promptName: UnsafeMutablePointer<CChar>,
+        promptText: UnsafeMutablePointer<CChar>
     ) throws -> AuthorizationRef {
-        var item = AuthorizationItem(name: rightName, valueLength: 0, value: nil, flags: 0)
-        var rights = withUnsafeMutablePointer(to: &item) {
-            AuthorizationRights(count: 1, items: $0)
-        }
+        var rightItem = AuthorizationItem(name: rightName, valueLength: 0, value: nil, flags: 0)
         var promptItem = AuthorizationItem(
-            name: kAuthorizationEnvironmentPrompt,
-            valueLength: strlen(prompt),
-            value: UnsafeMutableRawPointer(prompt),
+            name: promptName,
+            valueLength: strlen(promptText),
+            value: UnsafeMutableRawPointer(promptText),
             flags: 0
         )
-        var environment = withUnsafeMutablePointer(to: &promptItem) {
-            AuthorizationEnvironment(count: 1, items: $0)
-        }
 
         var authorization: AuthorizationRef?
-        let flags: AuthorizationFlags = [.interactionAllowed, .preAuthorize, .extendRights]
-        let status = AuthorizationCreate(&rights, &environment, flags, &authorization)
+        var status = errAuthorizationInternal
+        // The call has to happen *inside* both closures: a pointer taken with
+        // withUnsafeMutablePointer is only valid for the closure's duration, so
+        // building the structs and using them afterwards reads freed memory.
+        withUnsafeMutablePointer(to: &rightItem) { rightPointer in
+            withUnsafeMutablePointer(to: &promptItem) { promptPointer in
+                var rights = AuthorizationRights(count: 1, items: rightPointer)
+                var environment = AuthorizationEnvironment(count: 1, items: promptPointer)
+                let flags: AuthorizationFlags =
+                    [.interactionAllowed, .preAuthorize, .extendRights]
+                status = AuthorizationCreate(&rights, &environment, flags, &authorization)
+            }
+        }
 
         guard status == errAuthorizationSuccess, let authorization else {
             throw status == errAuthorizationCanceled
