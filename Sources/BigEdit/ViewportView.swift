@@ -41,6 +41,19 @@ final class ViewportView: NSView {
     /// Horizontal scroll offset in points, for rows wider than the viewport.
     private var horizontalOffset: CGFloat = 0
 
+    /// The widest row drawn so far, which is what bounds horizontal scrolling.
+    ///
+    /// Measured from rows as they are drawn — the same bargain the rest of the
+    /// viewport makes, so no width is ever computed for a part of the file we
+    /// are not looking at — and kept as a high-water mark rather than the
+    /// current screen's widest. If it shrank as you scrolled, moving down into
+    /// shorter lines would drag the view sideways; growing only means a narrow
+    /// document never scrolls sideways at all, while a file with one long line
+    /// stays scrollable after you leave it. Reset whenever the drawn width of
+    /// the whole document changes: a new file, a new font size, a new wrap
+    /// width, or entering and leaving CSV columns.
+    private var widestDrawnRowWidth: CGFloat = 0
+
     /// Invoked whenever the scroll position changes, so the scroller can sync.
     var onScrollChange: (() -> Void)?
 
@@ -162,6 +175,7 @@ final class ViewportView: NSView {
             font = NSFont.monospacedSystemFont(ofSize: clamped, weight: .regular)
             lineHeight = ViewportView.lineHeight(for: font)
             characterWidth = ViewportView.characterWidth(for: font)
+            widestDrawnRowWidth = 0
             updateWrapBytes()
             setScrollRow(scrollRow)            // re-clamp: rowsPerPage changed
             window?.invalidateCursorRects(for: self)
@@ -225,6 +239,7 @@ final class ViewportView: NSView {
         self.document = document
         scrollRow = 0
         horizontalOffset = 0
+        widestDrawnRowWidth = 0
         searchScan = nil
         currentMatchOffset = nil
         selection = nil
@@ -248,6 +263,7 @@ final class ViewportView: NSView {
     /// re-wrap on resize. Cheap when there are no long lines.
     private func updateWrapBytes() {
         layout?.setWrapBytes(currentWrapBytes())
+        widestDrawnRowWidth = 0      // rows re-wrap, so their widths change
     }
 
     deinit {
@@ -364,7 +380,7 @@ final class ViewportView: NSView {
         let rowDelta = Double(event.scrollingDeltaY) / Double(lineHeight)
         setScrollRow(scrollRow - rowDelta * multiplier)
 
-        horizontalOffset = max(0, horizontalOffset - event.scrollingDeltaX)
+        setHorizontalOffset(horizontalOffset - event.scrollingDeltaX)
         refreshCSVDividerCursors()
         needsDisplay = true
     }
@@ -658,9 +674,27 @@ final class ViewportView: NSView {
     }
 
     private func shiftHorizontally(by delta: CGFloat) {
-        horizontalOffset = max(0, horizontalOffset + delta)
+        setHorizontalOffset(horizontalOffset + delta)
         refreshCSVDividerCursors()
         needsDisplay = true
+    }
+
+    /// The furthest right the viewport can be scrolled: enough to bring the
+    /// widest drawn row's right-hand edge into view, and no further.
+    private var maximumHorizontalOffset: CGFloat {
+        var result: CGFloat = 0
+        if let layout {
+            let gutter = gutterWidth(for: layout.documentLineCount)
+            let textAreaWidth = max(0, bounds.width - gutter - gutterPadding)
+            result = max(0, widestDrawnRowWidth - textAreaWidth)
+        }
+        return result
+    }
+
+    /// Sets the horizontal scroll offset, clamped to the content. Every change
+    /// goes through here, so scrolling can never run off into empty space.
+    private func setHorizontalOffset(_ offset: CGFloat) {
+        horizontalOffset = min(max(0, offset), maximumHorizontalOffset)
     }
 
     // MARK: - Selection
@@ -1068,6 +1102,7 @@ final class ViewportView: NSView {
     func setCSVRendering(dialect: CSVDialect?, columnLayout: CSVColumnLayout?) {
         csvDialect = dialect
         csvColumnLayout = columnLayout
+        widestDrawnRowWidth = 0
         window?.invalidateCursorRects(for: self)
         needsDisplay = true
     }
@@ -1086,6 +1121,7 @@ final class ViewportView: NSView {
     }
 
     private func drawContent(layout: EditedLayout) {
+        setHorizontalOffset(horizontalOffset)
         let totalRows = layout.visualRowCount
         let firstRow = Int(scrollRow)
         let fraction = CGFloat(scrollRow - Double(firstRow))
@@ -1195,6 +1231,7 @@ final class ViewportView: NSView {
         NSBezierPath(rect: textArea).addClip()
 
         var state = startState
+        var widest: CGFloat = 0
         for (row, visualLine) in rows.enumerated() {
             let y = pinnedHeaderHeight + CGFloat(row) * lineHeight - fraction * lineHeight
             // Search highlights, then selection, then text — each layer above
@@ -1202,10 +1239,12 @@ final class ViewportView: NSView {
             drawMatchHighlights(for: visualLine, rowY: y, textOriginX: textOriginX)
             drawSelectionForRow(visualLine: visualLine, rowY: y, textOriginX: textOriginX)
             let (attributed, nextState) = displayRow(for: visualLine, startState: state)
+            widest = max(widest, attributed.size().width)
             attributed.draw(at: NSPoint(x: textOriginX - horizontalOffset, y: y))
             drawMarkedUnderline(for: visualLine, rowY: y, textOriginX: textOriginX)
             state = nextState
         }
+        widestDrawnRowWidth = max(widestDrawnRowWidth, widest)
 
         NSGraphicsContext.current?.restoreGraphicsState()
     }
