@@ -45,8 +45,6 @@ resize and the horizontal-scroll fix.
       - **Manual IME test pass** (Japanese/Chinese input, dead keys,
         press-and-hold). The `NSTextInputClient` synthetic-range scheme has
         only ever had unit tests, and has now shipped to users twice.
-      - Word/character statistics over the edited document (still computed from
-        the file on disk).
       - Raise the Replace All materialisation cap by moving the layout's prefix
         sums into a balanced tree (same pattern as `PieceTable`).
       - `⌘N` new empty document.
@@ -115,6 +113,9 @@ they are not proposed again.
       right; CSV mode draws aligned columns with delimiter, quote, header,
       pin-header and trim options, and columns resize by dragging their
       trailing edge.
+- [x] **Word/character statistics over the edited document.** The info pane
+      counts what is on screen rather than what is still on disk, by
+      walking a piece snapshot; re-run 300 ms after typing pauses.
 - [x] **Horizontal scrolling is bounded** by the widest row drawn, so no
       document scrolls off into empty space.
 

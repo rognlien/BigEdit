@@ -155,7 +155,6 @@ piece-table search vs naive search. Run with `swift test`.
 - Word boundaries for double-click are ASCII-only.
 - Unsaved edits live in memory only: they are lost on crash or quit-without-saving (the edit-storage API is shaped so an on-disk journal can add recovery later).
 - Editing inside a single multi-GB line re-scans that line's span per splice — no worse than the viewer's own cost profile in a megaline file, but noticeable.
-- Word/character counts in the info pane are computed from the file on disk, not the unsaved edits.
 - CSV column widths are dragged per session and reset whenever a CSV option changes, since changing the delimiter, quote or trim re-measures the columns from scratch.
 - CSV mode is display-only: padding means the drawn text no longer matches the file's bytes, so editing is off, search highlights sit at byte positions rather than padded ones, and column widths come from a bounded head sample (a much wider field further down is truncated). A quoted field containing a newline is not joined across rows.
 - Undo history clears on save (the document re-maps from disk).
