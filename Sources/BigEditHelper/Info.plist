@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Embedded into the helper binary at link time (see Package.swift). SMJobBless
+  requires it, and reads SMAuthorizedClients to decide who may install this
+  helper. The team identifier is not a secret — it is in every signed binary —
+  so it is written out plainly rather than templated, which keeps a plain
+  `swift build` working.
+-->
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>io.maendeleo.BigEdit.helper</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>BigEdit Helper</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+    <key>CFBundleVersion</key>
+    <string>1.0</string>
+    <key>SMAuthorizedClients</key>
+    <array>
+        <string>identifier "io.maendeleo.BigEdit" and anchor apple generic and certificate leaf[subject.OU] = "PDZ5N3HH4K"</string>
+    </array>
+</dict>
+</plist>

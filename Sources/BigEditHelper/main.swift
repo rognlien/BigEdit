@@ -13,14 +13,34 @@ import Security
 final class HelperListenerDelegate: NSObject, NSXPCListenerDelegate,
                                     CommandLineToolHelperProtocol {
 
-    /// Only a copy of BigEdit signed by this team may connect.
-    private static let clientRequirement =
-        "identifier \"io.maendeleo.BigEdit\" and anchor apple generic and "
-        + "certificate leaf[subject.OU] = \"\(teamIdentifier)\""
+    /// Only a copy of BigEdit signed by the same team as this helper may
+    /// connect. The team is read from the helper's own signature rather than
+    /// baked into the source, so there is no placeholder to forget to replace
+    /// and no way for the two to drift apart.
+    private static var clientRequirement: String? {
+        ownTeamIdentifier().map { team in
+            "identifier \"io.maendeleo.BigEdit\" and anchor apple generic and "
+                + "certificate leaf[subject.OU] = \"\(team)\""
+        }
+    }
 
-    /// Baked in at build time by make-app.sh; the placeholder is what a local
-    /// unsigned build gets, and it rejects every client.
-    private static let teamIdentifier = "TEAM_ID_PLACEHOLDER"
+    /// The team identifier from this binary's own signature, or `nil` when it
+    /// is unsigned — in which case every client is refused, which is the right
+    /// answer for a root process that cannot prove who it is talking to.
+    private static func ownTeamIdentifier() -> String? {
+        var team: String?
+        var code: SecCode?
+        var staticCode: SecStaticCode?
+        var information: CFDictionary?
+        if SecCodeCopySelf([], &code) == errSecSuccess, let code,
+           SecCodeCopyStaticCode(code, [], &staticCode) == errSecSuccess, let staticCode,
+           SecCodeCopySigningInformation(staticCode, SecCSFlags(rawValue: kSecCSSigningInformation),
+                                         &information) == errSecSuccess,
+           let details = information as? [String: Any] {
+            team = details[kSecCodeInfoTeamIdentifier as String] as? String
+        }
+        return team
+    }
 
     func listener(_ listener: NSXPCListener,
                   shouldAcceptNewConnection connection: NSXPCConnection) -> Bool {
@@ -50,8 +70,9 @@ final class HelperListenerDelegate: NSObject, NSXPCListenerDelegate,
 
         var code: SecCode?
         var requirement: SecRequirement?
-        if SecCodeCopyGuestWithAttributes(nil, attributes, [], &code) == errSecSuccess,
-           SecRequirementCreateWithString(HelperListenerDelegate.clientRequirement as CFString,
+        if let requirementText = HelperListenerDelegate.clientRequirement,
+           SecCodeCopyGuestWithAttributes(nil, attributes, [], &code) == errSecSuccess,
+           SecRequirementCreateWithString(requirementText as CFString,
                                           [], &requirement) == errSecSuccess,
            let code, let requirement {
             trusted = SecCodeCheckValidity(code, [], requirement) == errSecSuccess

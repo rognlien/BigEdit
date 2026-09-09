@@ -28,7 +28,21 @@ let package = Package(
         .executableTarget(
             name: "BigEditHelper",
             dependencies: ["BigEditHelperKit"],
-            path: "Sources/BigEditHelper"
+            path: "Sources/BigEditHelper",
+            exclude: ["Info.plist", "Launchd.plist"],
+            linkerSettings: [
+                // SMJobBless will not install a helper unless these are
+                // embedded in the binary itself. Paths are relative to the
+                // package root, which is where swift build runs.
+                .unsafeFlags([
+                    "-Xlinker", "-sectcreate",
+                    "-Xlinker", "__TEXT", "-Xlinker", "__info_plist",
+                    "-Xlinker", "Sources/BigEditHelper/Info.plist",
+                    "-Xlinker", "-sectcreate",
+                    "-Xlinker", "__TEXT", "-Xlinker", "__launchd_plist",
+                    "-Xlinker", "Sources/BigEditHelper/Launchd.plist"
+                ])
+            ]
         ),
         .target(
             name: "BigEditCLI",
