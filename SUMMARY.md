@@ -121,6 +121,11 @@ viewport, not the file.
 - `--csv <path> [rows]` — the detected dialect and the first rows as the
   viewport draws them; `scripts/verify-csv.sh` diffs that against an
   independent replay through Python's `csv` module.
+- `--process-lines <op> <in> <out> [pattern] [replacement]` — remove
+  duplicates, remove/keep lines containing a pattern, sort (plain, natural, or
+  by a regex key), or replace within each line;
+  `scripts/verify-process-lines.sh` diffs all six against awk, grep, sort and
+  sed.
 - `--edit-smoke <in> <out>` — deterministic edits through the piece table +
   full undo/redo walk + piece save; `scripts/verify-editing.sh` generates a
   large input, replays the sequence in Python, and compares byte-for-byte.
