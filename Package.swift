@@ -17,9 +17,22 @@ let package = Package(
             ],
             path: "Sources/BigEdit"
         ),
+        .target(
+            name: "BigEditCLI",
+            path: "Sources/BigEditCLI"
+        ),
+        // Named BigEditTool rather than bigedit: the filesystem is
+        // case-insensitive, so a target called "bigedit" collides with
+        // "BigEdit" in .build. make-app.sh installs the built binary into the
+        // bundle under its real name, `bigedit`.
+        .executableTarget(
+            name: "BigEditTool",
+            dependencies: ["BigEditCLI"],
+            path: "Sources/BigEditTool"
+        ),
         .testTarget(
             name: "BigEditTests",
-            dependencies: ["BigEdit"],
+            dependencies: ["BigEdit", "BigEditCLI"],
             path: "Tests/BigEditTests"
         )
     ]
