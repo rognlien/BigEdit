@@ -10,6 +10,11 @@ BUNDLE_ID="${BUNDLE_ID:-io.maendeleo.BigEdit}"
 MARKETING_VERSION="${MARKETING_VERSION:-0.7}"
 BUILD_NUMBER="${BUILD_NUMBER:-7}"
 COPYRIGHT="${COPYRIGHT:-© 2026 Bendik Johansen}"
+# Must match the team in SMAuthorizedClients inside the helper's embedded
+# Info.plist (Sources/BigEditHelper/Info.plist); SMJobBless checks both
+# directions and fails flatly if they disagree.
+TEAM_ID="${TEAM_ID:-PDZ5N3HH4K}"
+HELPER_ID="io.maendeleo.BigEdit.helper"
 SU_FEED_URL="${SU_FEED_URL:-https://maendeleo.io/bigedit/appcast.xml}"
 SU_PUBLIC_ED_KEY="${SU_PUBLIC_ED_KEY:-cBwIeAvJj5h55dQEnOqFvfm9wE8ZkFb5VFI/wgiKTSs=}"
 
@@ -25,6 +30,11 @@ cp .build/release/BigEdit "$APP/Contents/MacOS/BigEdit"
 # user's PATH.
 mkdir -p "$APP/Contents/SharedSupport/bin"
 cp .build/release/BigEditTool "$APP/Contents/SharedSupport/bin/bigedit"
+
+# The privileged helper. SMJobBless looks for it by bundle identifier in
+# Contents/Library/LaunchServices, so the filename is the identifier.
+mkdir -p "$APP/Contents/Library/LaunchServices"
+cp .build/release/BigEditHelper "$APP/Contents/Library/LaunchServices/$HELPER_ID"
 
 # --- Embed Sparkle.framework --------------------------------------------------
 # SwiftPM builds against Sparkle but doesn't bundle it; copy it in and add the
@@ -77,6 +87,11 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>SUPublicEDKey</key><string>${SU_PUBLIC_ED_KEY}</string>
     <key>SUEnableAutomaticChecks</key><true/>
     <key>SUScheduledCheckInterval</key><integer>86400</integer>
+    <key>SMPrivilegedExecutables</key>
+    <dict>
+        <key>${HELPER_ID}</key>
+        <string>identifier "${HELPER_ID}" and anchor apple generic and certificate leaf[subject.OU] = "${TEAM_ID}"</string>
+    </dict>
     <key>LSMinimumSystemVersion</key><string>13.0</string>
     <key>NSHighResolutionCapable</key><true/>
     <key>NSPrincipalClass</key><string>NSApplication</string>
@@ -130,6 +145,8 @@ if [ -n "${SIGN_IDENTITY:-}" ]; then
 
     codesign --force --options runtime --timestamp \
         --sign "$SIGN_IDENTITY" "$APP/Contents/SharedSupport/bin/bigedit"
+    codesign --force --options runtime --timestamp \
+        --sign "$SIGN_IDENTITY" "$APP/Contents/Library/LaunchServices/$HELPER_ID"
     codesign --force --options runtime --timestamp \
         --entitlements "$ENTITLEMENTS" \
         --sign "$SIGN_IDENTITY" "$APP/Contents/MacOS/BigEdit"

@@ -62,6 +62,14 @@ bigedit --help
 It is a symlink rather than a copy, so updating BigEdit updates the command
 with it.
 
+`/usr/local/bin` is owned by root, so the first install asks for authorisation.
+BigEdit does that through a small privileged helper — the supported way for an
+app to do privileged work — and the system's dialog for it accepts **Touch ID**
+as well as a password. You are asked once; later installs and updates need no
+prompt. The helper takes one instruction (link this tool into one of a fixed
+list of directories), runs no shell, and only accepts connections from BigEdit
+itself.
+
 ## Status — steps 1–5 of the plan
 
 | Step | Component | File |

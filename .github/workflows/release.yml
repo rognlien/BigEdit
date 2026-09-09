@@ -77,6 +77,9 @@ jobs:
           BUILD_NUMBER: ${{ github.run_number }}
         run: ./make-app.sh
 
+      - name: Verify the privileged helper
+        run: scripts/verify-helper.sh BigEdit.app
+
       - name: Write notarization key
         env:
           PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
