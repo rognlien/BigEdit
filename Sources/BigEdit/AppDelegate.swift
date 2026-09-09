@@ -642,7 +642,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
                     + "If your shell cannot find it, add "
                     + "\(CommandLineToolInstaller.destinationDirectory) to your PATH."
             )
-        } catch CommandLineToolInstaller.InstallationFailure.authorisationRefused {
+        } catch PrivilegedHelperInstaller.HelperFailure.authorisationRefused {
             // The user dismissed the password prompt; that is an answer, not
             // an error worth an alarming dialog.
             return
