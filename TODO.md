@@ -47,7 +47,6 @@ resize and the horizontal-scroll fix.
         only ever had unit tests, and has now shipped to users twice.
       - Raise the Replace All materialisation cap by moving the layout's prefix
         sums into a balanced tree (same pattern as `PieceTable`).
-      - `⌘N` new empty document.
 - [ ] **CSV.**
       - Make CSV mode editable: padding breaks the byte↔pixel mapping, so the
         mode is display-only. Mapping a click back through the padding would
@@ -118,6 +117,9 @@ they are not proposed again.
 - [x] **Word/character statistics over the edited document.** The info pane
       counts what is on screen rather than what is still on disk, by
       walking a piece snapshot; re-run 300 ms after typing pauses.
+- [x] **`⌘N` new empty document.** File ▸ New asks where to create the
+      file, creates it empty, and opens it — BigEdit reads through mmap,
+      so a document is always a real file.
 - [x] **Horizontal scrolling is bounded** by the widest row drawn, so no
       document scrolls off into empty space.
 

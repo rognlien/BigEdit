@@ -30,6 +30,7 @@ The package opens directly in Xcode (`File ▸ Open…` the `BigEdit` folder).
 
 ## Usage
 
+- **⌘N** — create a new file and open it.
 - **⌘O** — open a file.
 - **Click and type** — edit in place (UTF-8 files). **⌘Z** / **⇧⌘Z** undo and
   redo; **⌘X/⌘C/⌘V** cut, copy, paste. **⌘S** saves atomically via a streaming
