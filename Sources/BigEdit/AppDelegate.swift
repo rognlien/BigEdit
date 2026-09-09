@@ -400,6 +400,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         appMenu.addItem(updatesItem)
 
         appMenu.addItem(NSMenuItem.separator())
+        let installToolItem = NSMenuItem(
+            title: "Install Command Line Tool…",
+            action: #selector(installCommandLineTool),
+            keyEquivalent: ""
+        )
+        installToolItem.target = self
+        appMenu.addItem(installToolItem)
+
+        appMenu.addItem(NSMenuItem.separator())
         appMenu.addItem(
             withTitle: "Quit BigEdit",
             action: #selector(NSApplication.terminate(_:)),
@@ -612,6 +621,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
 
     /// Shows the standard About panel (icon, name, version, copyright from the
     /// Info.plist) with a clickable link to the website in its credits.
+    /// Puts `bigedit` on the user's PATH, reporting what happened either way.
+    /// The symlink points into this bundle, so updating BigEdit updates the
+    /// command with it.
+    @objc private func installCommandLineTool() {
+        if CommandLineToolInstaller.isInstalled {
+            presentInstallResult(
+                title: "Already Installed",
+                message: "The bigedit command is already linked to this copy of "
+                    + "BigEdit at \(CommandLineToolInstaller.destinationURL.path)."
+            )
+            return
+        }
+        do {
+            try CommandLineToolInstaller.install()
+            presentInstallResult(
+                title: "Command Line Tool Installed",
+                message: "You can now run `bigedit file.txt` in a terminal. "
+                    + "It opens the file in BigEdit, creating it if it does not exist.\n\n"
+                    + "If your shell cannot find it, add "
+                    + "\(CommandLineToolInstaller.destinationDirectory) to your PATH."
+            )
+        } catch CommandLineToolInstaller.InstallationFailure.authorisationRefused {
+            // The user dismissed the password prompt; that is an answer, not
+            // an error worth an alarming dialog.
+            return
+        } catch {
+            presentInstallResult(
+                title: "Could Not Install the Command Line Tool",
+                message: "\(error)",
+                isError: true
+            )
+        }
+    }
+
+    private func presentInstallResult(title: String, message: String, isError: Bool = false) {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = message
+        alert.alertStyle = isError ? .warning : .informational
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
+
     @objc private func showAbout() {
         let credits = NSAttributedString(
             string: "maendeleo.io/bigedit",
