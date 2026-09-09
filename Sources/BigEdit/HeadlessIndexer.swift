@@ -211,6 +211,69 @@ enum HeadlessIndexer {
         }
     }
 
+    /// Applies a line operation to a file and writes the result, so the
+    /// transformations can be checked against sort, uniq, grep and sed.
+    ///
+    /// Usage: --process-lines <operation> <in> <out> [pattern] [replacement]
+    /// where operation is dedupe, remove, keep, sort, natural-sort or regex.
+    static func processLines(operation: String, inputPath: String, outputPath: String,
+                             pattern: String?, replacement: String?) -> Int32 {
+        var status: Int32 = 1
+        guard let contents = try? String(contentsOfFile: inputPath, encoding: .utf8) else {
+            FileHandle.standardError.write(Data("error: cannot read \(inputPath)\n".utf8))
+            return status
+        }
+        // A trailing newline means a final empty component, which is not a line.
+        var lines = contents.components(separatedBy: "\n")
+        let endedWithNewline = lines.last == ""
+        if endedWithNewline {
+            lines.removeLast()
+        }
+
+        guard let lineOperation = parseOperation(operation, pattern: pattern,
+                                                 replacement: replacement) else {
+            FileHandle.standardError.write(Data("error: unknown operation \(operation)\n".utf8))
+            return status
+        }
+
+        do {
+            if let processed = try LineProcessor.apply(lineOperation, to: lines) {
+                var output = processed.joined(separator: "\n")
+                if endedWithNewline && !processed.isEmpty {
+                    output += "\n"
+                }
+                try output.write(toFile: outputPath, atomically: true, encoding: .utf8)
+                print("\(lines.count) lines in, \(processed.count) out")
+                status = 0
+            }
+        } catch {
+            FileHandle.standardError.write(Data("error: \(error)\n".utf8))
+        }
+        return status
+    }
+
+    private static func parseOperation(_ name: String, pattern: String?,
+                                       replacement: String?) -> LineOperation? {
+        var operation: LineOperation?
+        switch name {
+        case "dedupe":
+            operation = .removeDuplicateLines
+        case "remove":
+            operation = .removeLinesContaining(pattern: pattern ?? "", caseSensitive: true)
+        case "keep":
+            operation = .keepLinesContaining(pattern: pattern ?? "", caseSensitive: true)
+        case "sort":
+            operation = .sortLines(natural: false, keyPattern: pattern)
+        case "natural-sort":
+            operation = .sortLines(natural: true, keyPattern: pattern)
+        case "regex":
+            operation = .replaceWithinLines(pattern: pattern ?? "", replacement: replacement ?? "")
+        default:
+            operation = nil
+        }
+        return operation
+    }
+
     static func editSmoke(inputPath: String, outputPath: String) -> Int32 {
         var exitCode: Int32 = 0
 
