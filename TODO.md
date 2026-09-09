@@ -63,14 +63,17 @@ resize and the horizontal-scroll fix.
 
 ## Optional
 
-- [ ] **Universal binary (arm64 + x86_64).** `make-app.sh` builds arm64 only.
-      Add `--arch arm64 --arch x86_64`, or build twice and `lipo`. Only matters
-      if you have Intel users.
 - [ ] **Sandboxing.** Required only for the Mac App Store. The
       temp-file-next-to-destination save interacts with sandbox file access and
       would need security-scoped bookmarks for the destination directory.
 - [ ] **Crash reporting.** Apple already collects crashes; integrate
       Sentry/Bugsnag/KSCrash only if you want them yourself.
+
+## Decided against
+
+- **Universal binary (arm64 + x86_64).** Not worth the doubled build and
+  download for an audience that is entirely Apple silicon. `swift build --arch
+  arm64 --arch x86_64` does work if this is ever revisited. Decided 2026-09-09.
 
 ## Done
 
