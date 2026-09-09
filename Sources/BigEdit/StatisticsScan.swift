@@ -45,6 +45,104 @@ final class StatisticsScan {
         lock.unlock()
     }
 
+    /// The running counts, carried across chunk and piece boundaries so a
+    /// word split by a boundary is still counted once.
+    private struct Tally {
+        var words = 0
+        var characters = 0
+        var inWord = false
+
+        mutating func consume(_ byte: UInt8) {
+            let isWhitespace = byte == 0x20 || byte == 0x09 || byte == 0x0A
+                || byte == 0x0D || byte == 0x0B || byte == 0x0C
+            if isWhitespace {
+                inWord = false
+            } else if !inWord {
+                inWord = true
+                words += 1
+            }
+            // A UTF-8 character starts at any byte that is *not* a
+            // continuation byte (0b10xxxxxx).
+            if (byte & 0xC0) != 0x80 {
+                characters += 1
+            }
+        }
+    }
+
+    /// Counts the edited document on a background queue.
+    ///
+    /// Without edits this is the zero-copy mmap scan. With edits it walks a
+    /// snapshot of the piece table, so the counts describe what is on screen
+    /// rather than what is still on disk, and the scan is stable even while
+    /// further edits arrive — the owner cancels and re-runs on each one.
+    func start(in document: EditedDocument, onProgress: @escaping () -> Void) {
+        if document.hasEdits {
+            let pieces = document.pieceTable.pieces(in: 0..<document.length)
+            let length = document.length
+            let file = document.file
+            let added = document.addBuffer
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                self?.scanPieces(pieces: pieces, length: length, file: file, added: added) {
+                    DispatchQueue.main.async(execute: onProgress)
+                }
+            }
+        } else {
+            start(in: document.file, onProgress: onProgress)
+        }
+    }
+
+    /// Piece-walking count on the current thread — used by tests.
+    func runSynchronously(in document: EditedDocument) {
+        if document.hasEdits {
+            scanPieces(pieces: document.pieceTable.pieces(in: 0..<document.length),
+                       length: document.length,
+                       file: document.file,
+                       added: document.addBuffer,
+                       onProgress: {})
+        } else {
+            runSynchronously(in: document.file)
+        }
+    }
+
+    /// Walks the piece snapshot in logical order, counting as it goes.
+    private func scanPieces(pieces: [PieceTable.Piece], length: Int, file: MappedFile,
+                            added: AddedByteStore, onProgress: () -> Void) {
+        lock.lock()
+        totalBytesInternal = length
+        bytesScannedInternal = 0
+        lock.unlock()
+
+        var tally = Tally()
+        var scanned = 0
+        let chunkSize = 4 * 1024 * 1024
+
+        for piece in pieces where !isStopped() {
+            var offset = 0
+            while offset < piece.length && !isStopped() {
+                let take = min(chunkSize, piece.length - offset)
+                let range = (piece.start + offset)..<(piece.start + offset + take)
+                switch piece.source {
+                case .original:
+                    for byte in file.buffer[range] {
+                        tally.consume(byte)
+                    }
+                case .added:
+                    for byte in added.bytes(in: range) {
+                        tally.consume(byte)
+                    }
+                }
+                offset += take
+                scanned += take
+                publish(words: tally.words, chars: tally.characters, bytes: scanned)
+                onProgress()
+            }
+        }
+
+        publish(words: tally.words, chars: tally.characters, bytes: scanned)
+        markComplete()
+        onProgress()
+    }
+
     /// Counts on a background queue; `onProgress` fires on the main queue.
     func start(in file: MappedFile, onProgress: @escaping () -> Void) {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
@@ -77,37 +175,22 @@ final class StatisticsScan {
         let bytePointer = base.assumingMemoryBound(to: UInt8.self)
         let chunkSize = 16 * 1024 * 1024
 
-        var words = 0
-        var chars = 0
-        var inWord = false
+        var tally = Tally()
         var offset = 0
 
         while offset < total && !isStopped() {
             let chunkEnd = min(total, offset + chunkSize)
             var index = offset
             while index < chunkEnd {
-                let byte = bytePointer[index]
-                let isWhitespace = byte == 0x20 || byte == 0x09 || byte == 0x0A
-                    || byte == 0x0D || byte == 0x0B || byte == 0x0C
-                if isWhitespace {
-                    inWord = false
-                } else if !inWord {
-                    inWord = true
-                    words += 1
-                }
-                // A UTF-8 character starts at any byte that is *not* a
-                // continuation byte (0b10xxxxxx).
-                if (byte & 0xC0) != 0x80 {
-                    chars += 1
-                }
+                tally.consume(bytePointer[index])
                 index += 1
             }
             offset = chunkEnd
-            publish(words: words, chars: chars, bytes: offset)
+            publish(words: tally.words, chars: tally.characters, bytes: offset)
             onProgress()
         }
 
-        publish(words: words, chars: chars, bytes: offset)
+        publish(words: tally.words, chars: tally.characters, bytes: offset)
         markComplete()
         onProgress()
     }

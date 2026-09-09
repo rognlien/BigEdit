@@ -43,6 +43,7 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
     private var currentMatchIndex = -1
     private var jumpToFirstMatch = true
     private var searchRefreshTimer: Timer?
+    private var statisticsRefreshTimer: Timer?
     private var replaceAllScan: SearchScan?
 
     private let numberFormatter: NumberFormatter = {
@@ -104,6 +105,7 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
         replaceAllScan = nil
         statisticsScan?.cancel()
         statisticsScan = nil
+        statisticsRefreshTimer?.invalidate()
         window?.isDocumentEdited = false
         viewport.load(document: EditedDocument(file: file, editModel: editModel, lineIndex: index))
         viewport.setSyntaxMode(DocumentView.syntaxMode(for: file))
@@ -113,8 +115,8 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
         formatBar.setMode(.text)
         layoutComponents()
         syncScroller()
-        if infoPaneVisible {
-            startStatisticsScan(in: file)
+        if infoPaneVisible, let document = viewport.document {
+            startStatisticsScan(in: document)
         }
         updateInfoPane()
     }
@@ -160,9 +162,28 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
                 self?.refreshSearchAfterEdit()
             }
         }
+        // Counts describe the edited document, so they go stale on every
+        // keystroke. Re-run them after a pause rather than per character.
+        if infoPaneVisible {
+            statisticsScan?.cancel()
+            statisticsScan = nil
+            statisticsRefreshTimer?.invalidate()
+            statisticsRefreshTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: false) {
+                [weak self] _ in
+                self?.refreshStatisticsAfterEdit()
+            }
+        }
         syncScroller()
         updateStatusBar()
         updateInfoPane()
+    }
+
+    /// Recounts words and characters over the edited document once typing has
+    /// paused.
+    private func refreshStatisticsAfterEdit() {
+        if infoPaneVisible, let document = viewport.document {
+            startStatisticsScan(in: document)
+        }
     }
 
     /// Re-runs the current query over the edited document, without jumping
@@ -182,6 +203,7 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
         replaceAllScan = nil
         statisticsScan?.cancel()
         statisticsScan = nil
+        statisticsRefreshTimer?.invalidate()
         editModel.clear()
     }
 
@@ -578,8 +600,8 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
 
     func showInfoPane() {
         infoPaneVisible = true
-        if statisticsScan == nil, let file = viewport.file {
-            startStatisticsScan(in: file)
+        if statisticsScan == nil, let document = viewport.document {
+            startStatisticsScan(in: document)
         }
         layoutComponents()
         updateInfoPane()
@@ -591,10 +613,10 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
     }
 
     /// Kicks off the background word / character count for `file`.
-    private func startStatisticsScan(in file: MappedFile) {
+    private func startStatisticsScan(in document: EditedDocument) {
         let scan = StatisticsScan()
         statisticsScan = scan
-        scan.start(in: file) { [weak self, weak scan] in
+        scan.start(in: document) { [weak self, weak scan] in
             if let self, let scan, self.statisticsScan === scan {
                 self.updateInfoPane()
             }
