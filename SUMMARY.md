@@ -62,7 +62,7 @@ viewport, not the file.
 - `⌘C` copy · `⌘A` select all. Right-click → Copy. Select All is deliberately absent from the right-click menu (selecting many GB onto the pasteboard would try to materialise it).
 - `⌘I` toggle Info Inspector.
 - **`bigedit` on the command line** — installed from the app menu; `bigedit file.txt` opens the file, creating it if it does not exist.
-- **Text / CSV** selector, top right. In CSV mode rows are drawn as aligned columns, the header is set in bold and can stay pinned to the top while you scroll, and the status bar reads `CSV — read-only`. Columns resize by dragging their trailing edge in the band along the top row.
+- **Text / CSV** selector, top right. In CSV mode rows are drawn as aligned columns, the header is set in bold and can stay pinned to the top while you scroll, and the status bar reads `CSV — read-only`. Columns resize by dragging their trailing edge in the band along the top row, and double-clicking an edge returns that column to its measured width.
 - Click + drag to select (with auto-scroll past the viewport edges). Double-click selects a word, triple-click selects the visual line.
 - I-beam cursor over the text area.
 - Window frame remembered across launches. The full set of open documents (and which one was active) is restored on launch, unless the user launched with a different file from Finder or Open Recent.
