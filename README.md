@@ -45,6 +45,23 @@ The package opens directly in Xcode (`File ▸ Open…` the `BigEdit` folder).
   one. Widths reset when a CSV option changes, since that re-measures the
   columns.
 
+## Command line
+
+BigEdit ships a `bigedit` command inside the app bundle. Install it from
+**BigEdit ▸ Install Command Line Tool…**, which symlinks it into
+`/usr/local/bin` (asking for an administrator password only if that directory
+is not writable).
+
+```sh
+bigedit notes.txt          # open it, creating the file if it does not exist
+bigedit a.csv b.json       # open several at once
+bigedit                    # just bring BigEdit to the front
+bigedit --help
+```
+
+It is a symlink rather than a copy, so updating BigEdit updates the command
+with it.
+
 ## Status — steps 1–5 of the plan
 
 | Step | Component | File |
