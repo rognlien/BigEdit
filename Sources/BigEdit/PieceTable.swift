@@ -19,6 +19,10 @@ final class PieceTable {
         enum Source: Equatable {
             case original
             case added
+            /// A mapping the document has since saved over. The index names
+            /// which one, in the document's list of retired mappings; the
+            /// piece's offsets are into that older file, not the current one.
+            case retired(Int)
         }
 
         var source: Source
@@ -83,7 +87,8 @@ final class PieceTable {
     func bytes(
         in logicalRange: Range<Int>,
         original: UnsafeRawBufferPointer,
-        added: AddedByteStore
+        added: AddedByteStore,
+        retired: [UnsafeRawBufferPointer] = []
     ) -> [UInt8] {
         let clamped = logicalRange.clamped(to: 0..<length)
         var result: [UInt8] = []
@@ -94,6 +99,8 @@ final class PieceTable {
                 result.append(contentsOf: original[piece.start..<piece.end])
             case .added:
                 result.append(contentsOf: added.bytes(in: piece.start..<piece.end))
+            case .retired(let generation):
+                result.append(contentsOf: retired[generation][piece.start..<piece.end])
             }
         }
         return result

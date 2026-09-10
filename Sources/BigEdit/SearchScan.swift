@@ -158,8 +158,10 @@ final class SearchScan {
             let length = document.length
             let file = document.file
             let added = document.addBuffer
+            let retired = document.retiredFiles
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                self?.scanLogical(pieces: pieces, length: length, file: file, added: added) {
+                self?.scanLogical(pieces: pieces, length: length, file: file, added: added,
+                                  retired: retired) {
                     DispatchQueue.main.async(execute: onProgress)
                 }
             }
@@ -173,7 +175,8 @@ final class SearchScan {
         if document.hasEdits {
             let pieces = document.pieceTable.pieces(in: 0..<document.length)
             scanLogical(pieces: pieces, length: document.length,
-                        file: document.file, added: document.addBuffer, onProgress: {})
+                        file: document.file, added: document.addBuffer,
+                        retired: document.retiredFiles, onProgress: {})
         } else {
             runSynchronously(in: document.file)
         }
@@ -310,6 +313,7 @@ final class SearchScan {
         length: Int,
         file: MappedFile,
         added: AddedByteStore,
+        retired: [MappedFile],
         onProgress: () -> Void
     ) {
         let needleLength = queryBytes.count
@@ -344,7 +348,7 @@ final class SearchScan {
             && totalFound < SearchScan.matchLimit {
             let windowEnd = min(length, searchOffset + logicalScanWindow)
             assembleWindow(searchOffset..<windowEnd, pieces: pieces, starts: pieceStarts,
-                           file: file, added: added, into: &window)
+                           file: file, added: added, retired: retired, into: &window)
 
             var cursor = 0
             while cursor + needleLength <= window.count && totalFound < SearchScan.matchLimit {
@@ -415,6 +419,7 @@ final class SearchScan {
         starts: [Int],
         file: MappedFile,
         added: AddedByteStore,
+        retired: [MappedFile],
         into buffer: inout [UInt8]
     ) {
         buffer.removeAll(keepingCapacity: true)
@@ -445,6 +450,8 @@ final class SearchScan {
                 buffer.append(contentsOf: file.buffer[sourceRange])
             case .added:
                 buffer.append(contentsOf: added.bytes(in: sourceRange))
+            case .retired(let generation):
+                buffer.append(contentsOf: retired[generation].buffer[sourceRange])
             }
             cursor += take
             pieceIndex += 1

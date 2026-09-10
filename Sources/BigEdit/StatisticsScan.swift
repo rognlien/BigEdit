@@ -81,8 +81,10 @@ final class StatisticsScan {
             let length = document.length
             let file = document.file
             let added = document.addBuffer
+            let retired = document.retiredFiles
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                self?.scanPieces(pieces: pieces, length: length, file: file, added: added) {
+                self?.scanPieces(pieces: pieces, length: length, file: file, added: added,
+                                 retired: retired) {
                     DispatchQueue.main.async(execute: onProgress)
                 }
             }
@@ -98,6 +100,7 @@ final class StatisticsScan {
                        length: document.length,
                        file: document.file,
                        added: document.addBuffer,
+                       retired: document.retiredFiles,
                        onProgress: {})
         } else {
             runSynchronously(in: document.file)
@@ -106,7 +109,8 @@ final class StatisticsScan {
 
     /// Walks the piece snapshot in logical order, counting as it goes.
     private func scanPieces(pieces: [PieceTable.Piece], length: Int, file: MappedFile,
-                            added: AddedByteStore, onProgress: () -> Void) {
+                            added: AddedByteStore, retired: [MappedFile],
+                            onProgress: () -> Void) {
         lock.lock()
         totalBytesInternal = length
         bytesScannedInternal = 0
@@ -128,6 +132,10 @@ final class StatisticsScan {
                     }
                 case .added:
                     for byte in added.bytes(in: range) {
+                        tally.consume(byte)
+                    }
+                case .retired(let generation):
+                    for byte in retired[generation].buffer[range] {
                         tally.consume(byte)
                     }
                 }
