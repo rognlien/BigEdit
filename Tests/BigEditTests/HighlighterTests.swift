@@ -1,45 +1,70 @@
-import AppKit
 import XCTest
 @testable import BigEdit
 
 final class HighlighterTests: XCTestCase {
 
-    private let font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+    private let inputs = [
+        "<element attr=\"value\">text</element>",
+        "{ \"key\": \"value\", \"n\": 42 }",
+        "# Heading **bold** *italic* `code`",
+        "key: value # comment"
+    ]
 
-    func testHighlightersPreserveExactString() {
-        // The attributed string a highlighter returns must contain the exact
-        // input — colouring is layered as attributes, not by changing glyphs.
-        let inputs = [
-            "<element attr=\"value\">text</element>",
-            "{ \"key\": \"value\", \"n\": 42 }",
-            "# Heading\n**bold** *italic* `code`",
-            "key: value\n- item\n# comment\n"
-        ]
+    func testTokensStayInsideTheRow() {
         for input in inputs {
-            XCTAssertEqual(XMLHighlighter.attributedRow(input, font: font).string, input)
-            XCTAssertEqual(JSONHighlighter.attributedRow(input, font: font).string, input)
-            XCTAssertEqual(MarkdownHighlighter.attributedRow(input, font: font).string, input)
-            XCTAssertEqual(YAMLHighlighter.attributedRow(input, font: font).string, input)
+            let length = (input as NSString).length
+            let all = XMLHighlighter.tokens(input) + JSONHighlighter.tokens(input)
+                + MarkdownHighlighter.tokens(input) + YAMLHighlighter.tokens(input)
+            for token in all {
+                XCTAssertGreaterThanOrEqual(token.range.lowerBound, 0, "\(token) in \(input)")
+                XCTAssertLessThanOrEqual(token.range.upperBound, length, "\(token) in \(input)")
+                XCTAssertFalse(token.range.isEmpty, "\(token) in \(input)")
+            }
         }
     }
 
-    func testXMLTagNameIsColoured() {
-        let result = XMLHighlighter.attributedRow("<book>", font: font)
-        // The "book" range (1..<5) should have a foreground colour applied.
-        var hasColor = false
-        result.enumerateAttribute(.foregroundColor, in: NSRange(location: 1, length: 4)) { value, _, _ in
-            if value != nil { hasColor = true }
-        }
-        XCTAssertTrue(hasColor)
+    func testXMLTagAndAttributes() {
+        XCTAssertEqual(XMLHighlighter.tokens("<book id='1'/>"), [
+            Token(kind: .punctuation, range: 0..<1),
+            Token(kind: .tag, range: 1..<5),
+            Token(kind: .attributeName, range: 6..<8),
+            Token(kind: .punctuation, range: 8..<9),
+            Token(kind: .attributeValue, range: 9..<12),
+            Token(kind: .punctuation, range: 12..<13),
+            Token(kind: .punctuation, range: 13..<14)
+        ])
     }
 
-    func testJSONKeyAndValueGetDifferentColours() {
-        let source = "\"k\":\"v\""
-        let result = JSONHighlighter.attributedRow(source, font: font)
-        let keyAttr = result.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor
-        let valueAttr = result.attribute(.foregroundColor, at: 4, effectiveRange: nil) as? NSColor
-        XCTAssertNotNil(keyAttr)
-        XCTAssertNotNil(valueAttr)
-        XCTAssertNotEqual(keyAttr, valueAttr)
+    func testJSONKeyAndValueAreToldApart() {
+        XCTAssertEqual(JSONHighlighter.tokens("\"k\":\"v\""), [
+            Token(kind: .key, range: 0..<3),
+            Token(kind: .punctuation, range: 3..<4),
+            Token(kind: .string, range: 4..<7)
+        ])
+    }
+
+    func testMarkdownHeadingMarkersOverlapTheHeading() {
+        XCTAssertEqual(MarkdownHighlighter.tokens("## Title"), [
+            Token(kind: .heading, range: 0..<8),
+            Token(kind: .punctuation, range: 0..<2)
+        ])
+    }
+
+    func testYAMLKeyValueAndComment() {
+        XCTAssertEqual(YAMLHighlighter.tokens("port: 8080 # default"), [
+            Token(kind: .key, range: 0..<4),
+            Token(kind: .punctuation, range: 4..<5),
+            Token(kind: .number, range: 6..<10),
+            Token(kind: .comment, range: 11..<20)
+        ])
+    }
+
+    func testBlockCommentContinuationShiftsTheRestOfTheRow() {
+        let (tokens, state) = JSONHighlighter.tokens("end */ 42", startState: .blockComment)
+        XCTAssertEqual(tokens, [
+            Token(kind: .comment, range: 0..<6),
+            Token(kind: .number, range: 7..<9)
+        ])
+        XCTAssertEqual(state, .normal)
     }
 }

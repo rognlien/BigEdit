@@ -38,7 +38,7 @@ file and a 50 KB file cost the same to display and to edit.
 | `SaveProgressSheet` | Window-modal sheet during streaming save. Cancellable. |
 | `AppDelegate` | Window, menu, open flow, Open Recent, state restoration, Dock-click reopen, Finder document-type associations. |
 
-### Syntax highlighters (per-row, stateless)
+### Syntax highlighters (per-row, with a small carried state)
 
 | | Recognises |
 |---|---|
@@ -46,6 +46,12 @@ file and a 50 KB file cost the same to display and to edit.
 | `JSONHighlighter` | keys (string + colon), string values, numbers, `true` / `false` / `null`, `//` and `/* */` comments (JSONC) |
 | `MarkdownHighlighter` | headings (bold blue), bold (font), italic (colour), inline code, links (text teal + URL purple), strikethrough, fences, HR, blockquotes, list markers |
 | `YAMLHighlighter` | keys (bare and quoted), strings, numbers, literals (`true`/`false`/`null`/`yes`/`no`/`on`/`off`/`~`), comments, anchors / aliases / tags, block-scalar indicators, document separators |
+
+Each highlighter turns one row into a list of `Token`s — a `TokenKind` plus a
+UTF-16 range — using the index-based helpers in `RowScanner`; it never touches
+AppKit. `HighlightTheme` maps kinds to colour, weight and decoration and builds
+the attributed row, applying tokens in order so a later token wins where two
+overlap (a heading's `#` markers are punctuation-coloured but stay bold).
 
 Multi-row constructs (XML/JSONC block comments, Markdown fenced code, YAML
 block scalars) are coloured across rows by threading a small carry-state between
