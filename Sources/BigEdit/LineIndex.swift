@@ -70,6 +70,12 @@ final class LineIndex {
     private var stopped = false
     private var longLines: [LongLine] = []
 
+    /// Where the file's final, unterminated line begins — `nil` when the file
+    /// ends with a newline. Kept so an append can rescan that line whole: the
+    /// new bytes may finish it, lengthen it past the long-line threshold, or
+    /// turn it into several lines.
+    private var trailingLineStart: Int?
+
     // Wrap-dependent (rebuilt by `rebuildLayoutsLocked`)
     private var currentWrapBytes = LineIndex.defaultWrapBytes
     private var totalVisualRowsCache = 0
@@ -246,11 +252,20 @@ final class LineIndex {
     /// every `checkpointStride` lines, and a `LongLine` entry whenever a line
     /// is at least `longLineThreshold` bytes long.
     private func scan(file: MappedFile, onProgress: () -> Void) {
+        scanRange(file: file, from: 0, startingAtLine: 0, onProgress: onProgress)
+    }
+
+    /// The serial scan proper: from `start` to the end of the file, with
+    /// `startingAtLine` lines already counted before it. A fresh build starts
+    /// at zero; an append resumes from the old trailing line.
+    private func scanRange(file: MappedFile, from start: Int, startingAtLine: Int,
+                           onProgress: () -> Void) {
         let buffer = file.buffer
         let total = buffer.count
 
-        guard total > 0, let base = buffer.baseAddress else {
-            finish(pendingCheckpoints: [], pendingLongLines: [], lineCount: 0)
+        guard total > start, let base = buffer.baseAddress else {
+            finish(pendingCheckpoints: [], pendingLongLines: [], lineCount: startingAtLine,
+                   trailingLineStart: nil)
             onProgress()
             return
         }
@@ -261,8 +276,8 @@ final class LineIndex {
 
         var pendingCheckpoints: [Checkpoint] = []
         var pendingLongLines: [LongLine] = []
-        var lines = 0
-        var offset = 0
+        var lines = startingAtLine
+        var offset = start
         var sinceLastPublish = 0
         var sinceLastCancelCheck = 0
 
@@ -311,6 +326,7 @@ final class LineIndex {
         }
 
         // Trailing bytes after the final newline form one last line.
+        var trailingStart: Int?
         if offset < total {
             let byteLength = total - offset
             if byteLength >= LineIndex.longLineThreshold {
@@ -321,12 +337,125 @@ final class LineIndex {
                 ))
             }
             lines += 1
+            trailingStart = offset
         }
 
         finish(pendingCheckpoints: pendingCheckpoints,
                pendingLongLines: pendingLongLines,
-               lineCount: lines)
+               lineCount: lines,
+               trailingLineStart: trailingStart)
         onProgress()
+    }
+
+    // MARK: - Extending after an append
+
+    /// Indexes bytes appended to a file that grew in place, continuing from
+    /// where the previous scan stopped instead of starting over.
+    ///
+    /// `previousSize` is the length that was indexed; the caller guarantees
+    /// those bytes are unchanged and only `previousSize..<file.size` is new.
+    ///
+    /// The scan runs off the main thread, but nothing is published by it:
+    /// `completion` runs on the main queue with an `apply` step the caller
+    /// invokes itself, between looking at the view as it is and swapping in
+    /// the grown mapping. Two things depend on that order. Any view still
+    /// drawing the old mapping consults this index, so the row count must not
+    /// reach past that mapping until the swap is about to happen in the same
+    /// turn; and whether the view was scrolled to the end has to be judged
+    /// against the old row count, not the new one.
+    func extend(with file: MappedFile, previousSize: Int,
+                completion: @escaping (_ apply: () -> Void) -> Void) {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self else { return }
+            let result = self.scanAppended(file: file, previousSize: previousSize)
+            DispatchQueue.main.async {
+                completion { self.apply(result) }
+            }
+        }
+    }
+
+    /// Same as `extend`, on the current thread. Used by tests.
+    func extendSynchronously(with file: MappedFile, previousSize: Int) {
+        apply(scanAppended(file: file, previousSize: previousSize))
+    }
+
+    /// Everything an append adds to the index, held until it can be applied.
+    private struct Extension {
+        var checkpoints: [Checkpoint] = []
+        var longLines: [LongLine] = []
+        var lineCount = 0
+        var trailingLineStart: Int?
+        /// Whether the previous trailing line is being rescanned and its old
+        /// long-line entry, if any, has to go.
+        var replacesTrailingLine = false
+    }
+
+    private func scanAppended(file: MappedFile, previousSize: Int) -> Extension {
+        lock.lock()
+        var lines = lineCount
+        var start = previousSize
+        let trailing = trailingLineStart
+        lock.unlock()
+
+        var result = Extension()
+        if let trailing {
+            // The old unterminated line is rescanned whole: uncount it, and
+            // start from where it began rather than where the file ended.
+            lines -= 1
+            start = trailing
+            result.replacesTrailingLine = true
+        }
+
+        let buffer = file.buffer
+        let total = buffer.count
+        let stride = LineIndex.checkpointStride
+        var offset = start
+
+        if let base = buffer.baseAddress {
+            while offset < total {
+                let lineStart = offset
+                guard let newline = memchr(base + offset, 0x0A, total - offset) else {
+                    break
+                }
+                let newlineOffset = base.distance(to: UnsafeRawPointer(newline))
+                let byteLength = newlineOffset - lineStart
+                if byteLength >= LineIndex.longLineThreshold {
+                    result.longLines.append(LongLine(
+                        lineNumber: lines, byteOffset: lineStart, byteLength: byteLength))
+                }
+                lines += 1
+                offset = newlineOffset + 1
+                if lines % stride == 0 {
+                    result.checkpoints.append(Checkpoint(byteOffset: offset, visualRowOffset: 0))
+                }
+            }
+            if offset < total {
+                let byteLength = total - offset
+                if byteLength >= LineIndex.longLineThreshold {
+                    result.longLines.append(LongLine(
+                        lineNumber: lines, byteOffset: offset, byteLength: byteLength))
+                }
+                lines += 1
+                result.trailingLineStart = offset
+            }
+        }
+        result.lineCount = lines
+        return result
+    }
+
+    private func apply(_ growth: Extension) {
+        lock.lock()
+        if growth.replacesTrailingLine, let trailing = trailingLineStart,
+           let last = longLines.last, last.byteOffset == trailing {
+            longLines.removeLast()
+        }
+        checkpoints.append(contentsOf: growth.checkpoints)
+        longLines.append(contentsOf: growth.longLines)
+        lineCount = growth.lineCount
+        trailingLineStart = growth.trailingLineStart
+        indexingComplete = true
+        layoutsValid = false
+        lock.unlock()
     }
 
     // MARK: - Parallel scan
@@ -428,7 +557,8 @@ final class LineIndex {
         let total = buffer.count
 
         guard total > 0, let base = buffer.baseAddress, chunkSize > 0 else {
-            finish(pendingCheckpoints: [], pendingLongLines: [], lineCount: 0)
+            finish(pendingCheckpoints: [], pendingLongLines: [], lineCount: 0,
+                   trailingLineStart: nil)
             onProgress()
             return
         }
@@ -500,6 +630,7 @@ final class LineIndex {
 
         // Trailing bytes after the final newline form one last line.
         var lines = linesSoFar
+        var trailingStart: Int?
         if !isStopped() && openLineStart < total {
             let byteLength = total - openLineStart
             if byteLength >= LineIndex.longLineThreshold {
@@ -507,11 +638,13 @@ final class LineIndex {
                     lineNumber: lines, byteOffset: openLineStart, byteLength: byteLength))
             }
             lines += 1
+            trailingStart = openLineStart
         }
 
         finish(pendingCheckpoints: pendingCheckpoints,
                pendingLongLines: pendingLongLines,
-               lineCount: lines)
+               lineCount: lines,
+               trailingLineStart: trailingStart)
         onProgress()
     }
 
@@ -534,12 +667,14 @@ final class LineIndex {
     private func finish(
         pendingCheckpoints: [Checkpoint],
         pendingLongLines: [LongLine],
-        lineCount lines: Int
+        lineCount lines: Int,
+        trailingLineStart trailing: Int?
     ) {
         lock.lock()
         checkpoints.append(contentsOf: pendingCheckpoints)
         longLines.append(contentsOf: pendingLongLines)
         lineCount = lines
+        trailingLineStart = trailing
         indexingComplete = true
         layoutsValid = false
         lock.unlock()

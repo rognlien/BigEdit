@@ -17,6 +17,10 @@ final class Document {
     /// True when the file changed on disk since it was loaded.
     var hasDiskChanges = false
 
+    /// Whether appends on disk are absorbed as they happen, the way `tail -f`
+    /// follows a log. Only meaningful while the document has no edits.
+    var isFollowing = false
+
     /// Detected encoding / line endings, for the status bar.
     private(set) var format: FileFormat
 
@@ -48,6 +52,13 @@ final class Document {
         file = newFile
         index = newIndex
         format = FileFormat(scanning: newFile)
+    }
+
+    /// Swaps in a larger mapping of the same file after an append. The index
+    /// has already been extended to cover it, so it is kept.
+    func adoptGrownFile(_ grown: MappedFile) {
+        file = grown
+        format = FileFormat(scanning: grown)
     }
 
     /// True while the document has an unsaved deferred-edit rule.
