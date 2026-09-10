@@ -1207,8 +1207,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
     }
 
     /// Re-points a document at the freshly written file and restarts indexing.
+    /// After a save: the document re-maps from what was just written, keeping
+    /// its edit history so ⌘Z still works.
     private func reloadDocument(_ document: Document, from destination: URL) {
-        reload(document, from: destination, preserveScroll: false)
+        reload(document, from: destination, preserveScroll: false, inheritingHistory: true)
         addRecentDocument(destination)
     }
 
@@ -1242,7 +1244,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
 
     /// Swaps a document's contents for a fresh map of `url` and restarts
     /// indexing, optionally keeping the current scroll position.
-    private func reload(_ document: Document, from url: URL, preserveScroll: Bool) {
+    private func reload(_ document: Document, from url: URL, preserveScroll: Bool,
+                        inheritingHistory: Bool = false) {
         guard let file = MappedFile(path: url.path) else {
             presentSaveError("Could not reopen \(url.lastPathComponent).")
             return
@@ -1253,7 +1256,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         document.view.close()
         document.reload(url: url, file: file, index: index)
         document.hasDiskChanges = false
-        document.view.load(file: file, index: index)
+        document.view.load(file: file, index: index, inheritingHistory: inheritingHistory)
         document.view.viewport.setFontSize(editorFontSize)
         document.view.setInfoPaneWidth(infoPaneWidth)
         document.view.setFileFormat(document.format)

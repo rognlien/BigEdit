@@ -216,6 +216,11 @@ enum FileWriter {
                 result = writeRange(fd: fd, base: base, range: piece.start..<piece.end,
                                     cancelToken: cancelToken, progress: pieceProgress)
             }
+        case .retired(let generation):
+            if let base = document.retiredFiles[generation].buffer.baseAddress {
+                result = writeRange(fd: fd, base: base, range: piece.start..<piece.end,
+                                    cancelToken: cancelToken, progress: pieceProgress)
+            }
         case .added:
             result = document.addBuffer.withUnsafeBytes(in: piece.start..<piece.end) { raw in
                 var written: Result<Void, WriteError> = .success(())

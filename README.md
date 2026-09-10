@@ -39,8 +39,8 @@ The package opens directly in Xcode (`File ▸ Open…` the `BigEdit` folder).
   full instead; a document with unsaved edits does not follow.
 - **⌘O** — open a file.
 - **Click and type** — edit in place (UTF-8 files). **⌘Z** / **⇧⌘Z** undo and
-  redo; **⌘X/⌘C/⌘V** cut, copy, paste. **⌘S** saves atomically via a streaming
-  temp-file write.
+  redo, including back across a save; **⌘X/⌘C/⌘V** cut, copy, paste. **⌘S**
+  saves atomically via a streaming temp-file write.
 - **⌘F** — find. Type a query and press Enter to search. **Aa** toggles case
   sensitivity; **.\*** makes the query a regular expression (`^` and `$`
   match at line boundaries, as in `grep`).
