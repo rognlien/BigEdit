@@ -21,6 +21,7 @@ file and a 50 KB file cost the same to display and to edit.
 | `EditedLayout` | Line/row layout of the edited document. The original `LineIndex` is never rebuilt; line-aligned edit *spans* (with their own local line layout, re-derived by scanning just the edit) overlay it, composed through prefix sums — O(log #spans) queries, O(#spans) update per edit. |
 | `UndoStack` | Edit history as piece splices — never copied bytes, so undoing a 10 GB deletion is O(pieces). Typing/deletion runs coalesce; Replace All applies as one grouped step. |
 | `FileWriter` | Streaming save, two paths: the rule save (`memmem` splice over the mmap) and the piece save (walk the piece table in logical order). Both write to a temp file in the destination directory then atomic `rename()`; both preserve permission bits, report progress, and cancel cleanly. |
+| `TextEncoding` | UTF-8, Windows-1252 or Latin-1: decode (never failing), strict decode, encode (nil when a character has no representation — so a search for it has nothing to look for), and the byte length of a scalar, which is what maps a character position back to a byte. |
 | `TextSelection` | Selection range in logical byte offsets. |
 | `BigEditHelper` + `BigEditHelperKit` + `PrivilegedHelperInstaller` | The privileged helper. Creating a symlink in a root-owned directory needs root, and macOS gives an app no supported way to run a command as root itself, so a launchd daemon blessed once via `SMJobBless` does it. That authorisation dialog accepts Touch ID. The helper takes one verb, runs no shell, restricts destinations to a fixed list, and checks its caller against a code-signing requirement. |
 | `CommandLineTool` (`BigEditCLI`) + `CommandLineToolInstaller` | The `bigedit` command. The tool resolves its paths, creates any file that does not exist, and hands them to the app via `open`; it finds its own `.app` by resolving symlinks and walking up, so a link on the PATH still works. The installer symlinks it into `/usr/local/bin`, escalating only when that directory is not writable. |
@@ -157,7 +158,12 @@ piece-table search vs naive search. Run with `swift test`.
 - 64 MB cap on a single copy to the pasteboard.
 - 1,000,000-match cap on the display match list (the save path bypasses this).
 - Multi-row highlighting only looks back a bounded window (~400 rows) above the viewport, so a comment/fence/block-scalar opened further up isn't coloured until scrolled nearer.
-- UTF-8 only for *display and editing*; other encodings (UTF-16 BOM, binary, invalid UTF-8) are detected and labelled in the status bar but not decoded, and stay read-only.
+- Editing is UTF-8 only. A file that is not valid UTF-8 is read as Windows-1252 — decoded for
+  display, copy, search, statistics and CSV detection, with every byte↔character mapping exact
+  because one byte is one character — and stays read-only. UTF-16 and binary are labelled but
+  not decoded: the line index finds newlines by the `0x0A` byte, and UTF-16 would need an
+  indexer that understands two-byte units. `scripts/verify-encodings.sh` checks the decoded
+  rows, searches and character count against `iconv`.
 - No VoiceOver / accessibility yet — the custom-drawn viewport exposes nothing to assistive tech.
 - Word boundaries for double-click are ASCII-only.
 - Unsaved edits live in memory only: they are lost on crash or quit-without-saving (the edit-storage API is shaped so an on-disk journal can add recovery later).
