@@ -14,8 +14,20 @@ final class TextEncodingTests: XCTestCase {
     }
 
     /// "blåbærgrød €" in Windows-1252, where each non-ASCII letter is one byte.
-    private let sample: [UInt8] = Array("bl".utf8) + [0xE5] + Array("b".utf8) + [0xE6]
-        + Array("rgr".utf8) + [0xF8] + Array("d ".utf8) + [0x80] + [0x0A]
+    /// Built step by step: a long chain of `+` between literals is something
+    /// the type checker gives up on.
+    private let sample: [UInt8] = {
+        var bytes: [UInt8] = Array("bl".utf8)
+        bytes.append(0xE5)                          // å
+        bytes.append(contentsOf: Array("b".utf8))
+        bytes.append(0xE6)                          // æ
+        bytes.append(contentsOf: Array("rgr".utf8))
+        bytes.append(0xF8)                          // ø
+        bytes.append(contentsOf: Array("d ".utf8))
+        bytes.append(0x80)                          // €
+        bytes.append(0x0A)
+        return bytes
+    }()
     private let sampleText = "blåbærgrød €\n"
 
     private func mapped(_ bytes: [UInt8]) -> MappedFile {
