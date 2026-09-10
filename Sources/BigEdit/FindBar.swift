@@ -6,6 +6,8 @@ protocol FindBarDelegate: AnyObject {
     func findBarRequestedNext(_ bar: FindBar)
     func findBarRequestedPrevious(_ bar: FindBar)
     func findBarRequestedClose(_ bar: FindBar)
+    /// Show or hide the list of every match.
+    func findBarRequestedResultsToggle(_ bar: FindBar)
     func findBar(_ bar: FindBar, didRequestReplaceAll pattern: String, with replacement: String)
     func findBarRequestedRevert(_ bar: FindBar)
 }
@@ -42,6 +44,7 @@ final class FindBar: NSView, NSSearchFieldDelegate {
     private let previousButton = NSButton()
     private let nextButton = NSButton()
     private let closeButton = NSButton()
+    private let resultsButton = NSButton()
     private let caseToggleButton = NSButton()
     private let regexToggleButton = NSButton()
 
@@ -113,6 +116,9 @@ final class FindBar: NSView, NSSearchFieldDelegate {
         configureButton(previousButton, symbol: "chevron.up", fallback: "<", action: #selector(previousTapped))
         configureButton(nextButton, symbol: "chevron.down", fallback: ">", action: #selector(nextTapped))
         configureButton(closeButton, symbol: "xmark", fallback: "X", action: #selector(closeTapped))
+        configureButton(resultsButton, symbol: "list.bullet", fallback: "≡", action: #selector(resultsTapped))
+        resultsButton.setButtonType(.pushOnPushOff)
+        resultsButton.toolTip = "Show all matches"
 
         caseToggleButton.title = "Aa"
         caseToggleButton.bezelStyle = .rounded
@@ -207,6 +213,8 @@ final class FindBar: NSView, NSSearchFieldDelegate {
         right -= buttonWidth
         previousButton.frame = NSRect(x: right - buttonWidth, y: findRowY, width: buttonWidth, height: controlHeight)
         right -= buttonWidth + gap
+        resultsButton.frame = NSRect(x: right - buttonWidth, y: findRowY, width: buttonWidth, height: controlHeight)
+        right -= buttonWidth + gap
         let caseWidth: CGFloat = 36
         caseToggleButton.frame = NSRect(x: right - caseWidth, y: findRowY, width: caseWidth, height: controlHeight)
         right -= caseWidth
@@ -267,6 +275,15 @@ final class FindBar: NSView, NSSearchFieldDelegate {
 
     @objc private func revertTapped() {
         delegate?.findBarRequestedRevert(self)
+    }
+
+    @objc private func resultsTapped() {
+        delegate?.findBarRequestedResultsToggle(self)
+    }
+
+    /// Reflects whether the results list is showing.
+    func setResultsVisible(_ visible: Bool) {
+        resultsButton.state = visible ? .on : .off
     }
 
     @objc private func regexToggleChanged() {
