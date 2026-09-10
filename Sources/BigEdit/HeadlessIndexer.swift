@@ -34,7 +34,9 @@ enum HeadlessIndexer {
     static func search(pattern: String, path: String) -> Int32 {
         var exitCode: Int32 = 0
 
-        if let file = MappedFile(path: path), let scan = SearchScan(query: pattern) {
+        if let file = MappedFile(path: path),
+           let scan = SearchScan(query: pattern,
+                                 encoding: FileFormat(scanning: file).textEncoding ?? .utf8) {
             let start = Date()
             scan.runSynchronously(in: file)
             let elapsed = Date().timeIntervalSince(start)
@@ -65,7 +67,8 @@ enum HeadlessIndexer {
                                         listAll: Bool = false) -> Int32 {
         var exitCode: Int32 = 0
         if let file = MappedFile(path: path) {
-            if let scan = SearchScan(regularExpression: pattern) {
+            let encoding = FileFormat(scanning: file).textEncoding ?? .utf8
+            if let scan = SearchScan(regularExpression: pattern, encoding: encoding) {
                 let start = Date()
                 scan.runSynchronously(in: file)
                 let elapsed = Date().timeIntervalSince(start)
@@ -94,6 +97,31 @@ enum HeadlessIndexer {
         return exitCode
     }
 
+    /// Prints the first rows decoded exactly as the viewport would show them,
+    /// one per line and nothing else — so the output can be diffed against
+    /// `iconv -f <encoding> -t UTF-8 | head`.
+    static func dump(path: String, rowLimit: Int) -> Int32 {
+        var exitCode: Int32 = 0
+        if let file = MappedFile(path: path) {
+            let format = FileFormat(scanning: file)
+            let encoding = format.textEncoding ?? .utf8
+            let index = LineIndex()
+            index.buildSynchronously(from: file)
+            let rows = index.visualLines(forRows: 0..<min(rowLimit, index.visualRowCount), file: file)
+            for row in rows {
+                var text = encoding.decode(file.buffer[row.byteRange])
+                if text.hasSuffix("\r") {
+                    text.removeLast()
+                }
+                print(text)
+            }
+        } else {
+            FileHandle.standardError.write(Data("BigEdit: cannot open \(path)\n".utf8))
+            exitCode = 1
+        }
+        return exitCode
+    }
+
     static func preview(pattern: String, replacement: String, path: String) -> Int32 {
         var exitCode: Int32 = 0
 
@@ -112,9 +140,10 @@ enum HeadlessIndexer {
             let rowCount = min(20, index.visualRowCount)
             let rows = index.visualLines(forRows: 0..<rowCount, file: file)
             let buffer = file.buffer
+            let encoding = FileFormat(scanning: file).textEncoding ?? .utf8
             for visualLine in rows {
                 let bytes = editModel.transformedBytes(forOriginalRange: visualLine.byteRange, in: buffer)
-                print("\(visualLine.documentLine + 1): \(String(decoding: bytes, as: UTF8.self))")
+                print("\(visualLine.documentLine + 1): \(encoding.decode(bytes))")
             }
         } else {
             FileHandle.standardError.write(
@@ -174,13 +203,15 @@ enum HeadlessIndexer {
         var exitCode: Int32 = 0
 
         if let file = MappedFile(path: path) {
+            let format = FileFormat(scanning: file)
             let index = LineIndex()
-            let stats = StatisticsScan()
+            let stats = StatisticsScan(encoding: format.textEncoding ?? .utf8)
             index.buildSynchronously(from: file)
             stats.runSynchronously(in: file)
 
             print("file:    \(path)")
             print("size:    \(file.size) bytes")
+            print("encoding: \(format.encoding)")
             print("lines:   \(index.count)")
             print("words:   \(stats.wordCount)")
             print("chars:   \(stats.characterCount)")

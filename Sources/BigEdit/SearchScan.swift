@@ -36,6 +36,10 @@ final class SearchScan {
     /// The compiled pattern, in regular-expression mode.
     private let expression: NSRegularExpression?
 
+    /// The document's encoding: a literal query is encoded into it to make
+    /// the needle, and a regular expression's windows are decoded from it.
+    let encoding: TextEncoding
+
     /// Byte length of each match, parallel to `offsets`. Only kept in
     /// regular-expression mode — literal matches are all `queryByteLength`.
     private var lengths: [Int] = []
@@ -72,11 +76,12 @@ final class SearchScan {
     /// shrink it and exercise the window-boundary handling.
     private let logicalScanWindow: Int
 
-    /// Fails if `query` is empty (nothing to search for).
+    /// Fails if `query` is empty, or cannot be written in the document's
+    /// encoding at all — there is then nothing to look for.
     init?(query: String, caseSensitive: Bool = true,
-          logicalScanWindow: Int = 64 * 1024 * 1024) {
-        let bytes = Array(query.utf8)
-        guard !bytes.isEmpty, logicalScanWindow >= bytes.count else {
+          logicalScanWindow: Int = 64 * 1024 * 1024, encoding: TextEncoding = .utf8) {
+        guard let bytes = encoding.encode(query), !bytes.isEmpty,
+              logicalScanWindow >= bytes.count else {
             return nil
         }
         self.queryBytes = bytes
@@ -85,12 +90,13 @@ final class SearchScan {
         self.logicalScanWindow = logicalScanWindow
         self.mode = .literal
         self.expression = nil
+        self.encoding = encoding
     }
 
     /// Fails if `pattern` is empty or is not a valid regular expression.
     /// `^` and `$` match at line boundaries, as they do in `grep`.
     init?(regularExpression pattern: String, caseSensitive: Bool = true,
-          logicalScanWindow: Int = 64 * 1024 * 1024) {
+          logicalScanWindow: Int = 64 * 1024 * 1024, encoding: TextEncoding = .utf8) {
         var options: NSRegularExpression.Options = [.anchorsMatchLines]
         if !caseSensitive {
             options.insert(.caseInsensitive)
@@ -105,6 +111,7 @@ final class SearchScan {
         self.logicalScanWindow = logicalScanWindow
         self.mode = .regularExpression
         self.expression = compiled
+        self.encoding = encoding
     }
 
     var isRegularExpression: Bool {
@@ -659,20 +666,20 @@ final class SearchScan {
 
     private func collectMatches(in bytes: [UInt8], baseOffset: Int, into pending: inout [Int],
                                 lengths pendingLengths: inout [Int], totalFound: inout Int) {
-        if let text = String(bytes: bytes, encoding: .utf8) {
+        if let text = encoding.decodeStrictly(bytes) {
             collectMatches(in: text, baseOffset: baseOffset, into: &pending,
                            lengths: &pendingLengths, totalFound: &totalFound)
         } else {
             var lineStart = 0
             for (position, byte) in bytes.enumerated() where byte == 0x0A {
-                if let line = String(bytes: bytes[lineStart..<position], encoding: .utf8) {
+                if let line = encoding.decodeStrictly(Array(bytes[lineStart..<position])) {
                     collectMatches(in: line, baseOffset: baseOffset + lineStart, into: &pending,
                                    lengths: &pendingLengths, totalFound: &totalFound)
                 }
                 lineStart = position + 1
             }
             if lineStart < bytes.count,
-               let line = String(bytes: bytes[lineStart...], encoding: .utf8) {
+               let line = encoding.decodeStrictly(Array(bytes[lineStart...])) {
                 collectMatches(in: line, baseOffset: baseOffset + lineStart, into: &pending,
                                lengths: &pendingLengths, totalFound: &totalFound)
             }
@@ -692,7 +699,7 @@ final class SearchScan {
         func advance(to target: Int) {
             while utf16Cursor < target, let scalar = scalars.next() {
                 utf16Cursor += scalar.utf16.count
-                byteCursor += scalar.utf8.count
+                byteCursor += encoding.byteLength(of: scalar)
             }
         }
 

@@ -28,6 +28,12 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
         }
     }
 
+    /// The encoding the file is decoded with — UTF-8 until a format is known,
+    /// and for anything the format does not decode at all.
+    private var textEncoding: TextEncoding {
+        fileFormat?.textEncoding ?? .utf8
+    }
+
     /// The mapped file behind the current document, kept so CSV column
     /// widths can be re-measured when an option changes.
     private var mappedFile: MappedFile?
@@ -118,7 +124,8 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
         viewport.setSyntaxMode(DocumentView.syntaxMode(for: file))
         mappedFile = file
         viewport.setCSVRendering(dialect: nil, columnLayout: nil)
-        formatBar.setDetectedDialect(CSVDialect.detect(in: file))
+        let encoding = FileFormat(scanning: file).textEncoding ?? .utf8
+        formatBar.setDetectedDialect(CSVDialect.detect(in: file, encoding: encoding))
         formatBar.setMode(.text)
         layoutComponents()
         syncScroller()
@@ -273,6 +280,7 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
     /// positional edits, and Return inserts the detected line ending.
     func setFileFormat(_ format: FileFormat?) {
         fileFormat = format
+        viewport.setTextEncoding(textEncoding)
         if let document = viewport.document {
             document.isEditable = format?.isUTF8 ?? false
             document.newlineBytes = format?.lineEnding == "CRLF" ? [0x0D, 0x0A] : [0x0A]
@@ -630,7 +638,7 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
 
     /// Kicks off the background word / character count for `file`.
     private func startStatisticsScan(in document: EditedDocument) {
-        let scan = StatisticsScan()
+        let scan = StatisticsScan(encoding: textEncoding)
         statisticsScan = scan
         scan.start(in: document) { [weak self, weak scan] in
             if let self, let scan, self.statisticsScan === scan {
@@ -797,8 +805,9 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
     /// compile.
     private func makeSearchScan(_ query: String, caseSensitive: Bool) -> SearchScan? {
         findBar.isRegularExpression
-            ? SearchScan(regularExpression: query, caseSensitive: caseSensitive)
-            : SearchScan(query: query, caseSensitive: caseSensitive)
+            ? SearchScan(regularExpression: query, caseSensitive: caseSensitive,
+                         encoding: textEncoding)
+            : SearchScan(query: query, caseSensitive: caseSensitive, encoding: textEncoding)
     }
 
     /// Called on the main queue as matches accumulate.
@@ -887,7 +896,8 @@ extension DocumentView {
     private func applyCSVRendering(enabled: Bool, dialect: CSVDialect) {
         var columnLayout: CSVColumnLayout?
         if enabled, let mappedFile {
-            columnLayout = CSVColumnLayout.measure(file: mappedFile, dialect: dialect)
+            columnLayout = CSVColumnLayout.measure(file: mappedFile, dialect: dialect,
+                                                   encoding: textEncoding)
         }
         viewport.setCSVRendering(dialect: enabled ? dialect : nil, columnLayout: columnLayout)
         layoutComponents()

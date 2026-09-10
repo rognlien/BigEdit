@@ -9,6 +9,14 @@ import Foundation
 /// can show progress on long files.
 final class StatisticsScan {
 
+    /// The document's encoding: in a single-byte encoding every byte is a
+    /// character, where UTF-8 counts only the bytes that begin one.
+    private let encoding: TextEncoding
+
+    init(encoding: TextEncoding = .utf8) {
+        self.encoding = encoding
+    }
+
     private let lock = NSLock()
     private var wordCountInternal = 0
     private var characterCountInternal = 0
@@ -51,6 +59,7 @@ final class StatisticsScan {
         var words = 0
         var characters = 0
         var inWord = false
+        var everyByteIsACharacter = false
 
         mutating func consume(_ byte: UInt8) {
             let isWhitespace = byte == 0x20 || byte == 0x09 || byte == 0x0A
@@ -62,11 +71,17 @@ final class StatisticsScan {
                 words += 1
             }
             // A UTF-8 character starts at any byte that is *not* a
-            // continuation byte (0b10xxxxxx).
-            if (byte & 0xC0) != 0x80 {
+            // continuation byte (0b10xxxxxx); elsewhere every byte is one.
+            if everyByteIsACharacter || (byte & 0xC0) != 0x80 {
                 characters += 1
             }
         }
+    }
+
+    private func makeTally() -> Tally {
+        var tally = Tally()
+        tally.everyByteIsACharacter = encoding.isSingleByte
+        return tally
     }
 
     /// Counts the edited document on a background queue.
@@ -112,7 +127,7 @@ final class StatisticsScan {
         bytesScannedInternal = 0
         lock.unlock()
 
-        var tally = Tally()
+        var tally = makeTally()
         var scanned = 0
         let chunkSize = 4 * 1024 * 1024
 
@@ -175,7 +190,7 @@ final class StatisticsScan {
         let bytePointer = base.assumingMemoryBound(to: UInt8.self)
         let chunkSize = 16 * 1024 * 1024
 
-        var tally = Tally()
+        var tally = makeTally()
         var offset = 0
 
         while offset < total && !isStopped() {
