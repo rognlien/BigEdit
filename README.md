@@ -34,7 +34,9 @@ The package opens directly in Xcode (`File ▸ Open…` the `BigEdit` folder).
 - **⌘O** — open a file.
 - **Click and type** — edit in place (UTF-8 files). **⌘Z** / **⇧⌘Z** undo and
   redo; **⌘X/⌘C/⌘V** cut, copy, paste. **⌘S** saves atomically via a streaming
-  temp-file write.
+  temp-file write. Unsaved edits are journaled to disk as you make them, so
+  if BigEdit crashes or is force-quit, opening the file again offers to
+  recover them.
 - **⌘F** — find. Type a query and press Enter to search.
 - **⌘G** / **⇧⌘G** — next / previous match. **Esc** closes the find bar.
 - **Text / CSV** — the selector at the top right of the editor. The CSV side
