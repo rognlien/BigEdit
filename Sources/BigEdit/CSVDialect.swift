@@ -70,9 +70,9 @@ extension CSVDialect {
     /// delimited data.
     ///
     /// Returning `nil` is what keeps the CSV selector hidden for ordinary text.
-    static func detect(in file: MappedFile) -> CSVDialect? {
+    static func detect(in file: MappedFile, encoding: TextEncoding = .utf8) -> CSVDialect? {
         var result: CSVDialect?
-        let lines = sampleLines(of: file)
+        let lines = sampleLines(of: file, encoding: encoding)
         if !lines.isEmpty {
             let declared = declaredDelimiter(for: file)
             let threshold = declared == nil ? requiredAgreement : requiredAgreementWhenDeclared
@@ -152,14 +152,14 @@ extension CSVDialect {
 
     /// Whole lines from the head of `file`, with any trailing partial line
     /// dropped so a row cut by the sample limit cannot skew the field counts.
-    private static func sampleLines(of file: MappedFile) -> [String] {
+    private static func sampleLines(of file: MappedFile, encoding: TextEncoding) -> [String] {
         let buffer = file.buffer
         let count = min(buffer.count, sampleByteLimit)
         var bytes = Array(UnsafeRawBufferPointer(rebasing: buffer[0..<count]))
         if count < buffer.count, let lastNewline = bytes.lastIndex(of: 0x0A) {
             bytes = Array(bytes[0..<lastNewline])
         }
-        let text = String(decoding: bytes, as: UTF8.self)
+        let text = encoding.decode(bytes)
 
         var lines: [String] = []
         for line in text.split(separator: "\n", omittingEmptySubsequences: true) {

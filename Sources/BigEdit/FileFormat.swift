@@ -10,8 +10,12 @@ struct FileFormat {
     let encoding: String
     let lineEnding: String
 
-    /// Whether the content is something other than plain UTF-8 text.
-    var isUTF8: Bool { encoding == "UTF-8" }
+    /// The encoding the bytes are decoded with, or `nil` when they are not
+    /// decoded at all (binary, or UTF-16, which is labelled but not read).
+    let textEncoding: TextEncoding?
+
+    /// Whether the content is UTF-8 — the only encoding edits can be made in.
+    var isUTF8: Bool { textEncoding == .utf8 }
 
     private static let sampleLimit = 64 * 1024
 
@@ -19,18 +23,26 @@ struct FileFormat {
         let buffer = file.buffer
         let count = min(buffer.count, FileFormat.sampleLimit)
 
-        encoding = FileFormat.detectEncoding(buffer, count: count)
+        let detected = FileFormat.detectEncoding(buffer, count: count)
+        encoding = detected.label
+        textEncoding = detected.encoding
         lineEnding = FileFormat.detectLineEnding(buffer, count: count)
     }
 
-    private static func detectEncoding(_ buffer: UnsafeRawBufferPointer, count: Int) -> String {
-        if count >= 2, buffer[0] == 0xFF, buffer[1] == 0xFE { return "UTF-16 LE" }
-        if count >= 2, buffer[0] == 0xFE, buffer[1] == 0xFF { return "UTF-16 BE" }
-        if count >= 3, buffer[0] == 0xEF, buffer[1] == 0xBB, buffer[2] == 0xBF { return "UTF-8" }
+    /// Text that is neither UTF-8 nor binary is read as Windows-1252: the
+    /// superset of Latin-1 that legacy logs and exports on every platform
+    /// actually use, and one in which every byte decodes to something.
+    private static func detectEncoding(_ buffer: UnsafeRawBufferPointer, count: Int)
+        -> (label: String, encoding: TextEncoding?) {
+        if count >= 2, buffer[0] == 0xFF, buffer[1] == 0xFE { return ("UTF-16 LE", nil) }
+        if count >= 2, buffer[0] == 0xFE, buffer[1] == 0xFF { return ("UTF-16 BE", nil) }
+        if count >= 3, buffer[0] == 0xEF, buffer[1] == 0xBB, buffer[2] == 0xBF {
+            return ("UTF-8", .utf8)
+        }
 
         for i in 0..<count where buffer[i] == 0x00 {
             _ = i
-            return "Binary"
+            return ("Binary", nil)
         }
 
         // Validate the sample as UTF-8, trimming any sequence cut at the end.
@@ -47,9 +59,9 @@ struct FileFormat {
         }
         let bytes = Array(UnsafeRawBufferPointer(rebasing: buffer[0..<end]))
         if String(bytes: bytes, encoding: .utf8) != nil {
-            return "UTF-8"
+            return ("UTF-8", .utf8)
         }
-        return "Not UTF-8"
+        return (TextEncoding.windows1252.label, .windows1252)
     }
 
     private static func detectLineEnding(_ buffer: UnsafeRawBufferPointer, count: Int) -> String {
