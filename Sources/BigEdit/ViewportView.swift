@@ -66,6 +66,9 @@ final class ViewportView: NSView {
     /// The syntax-highlighting mode applied when drawing each row.
     private var syntaxMode: SyntaxMode = .plain
 
+    /// Maps the highlighters' tokens to colours and fonts.
+    private let theme = HighlightTheme.standard
+
     /// Set while the document is drawn as aligned CSV columns. The padding this
     /// inserts means the drawn text no longer matches the file's bytes, so the
     /// mode is display-only: editing is off and hit-testing falls back to a
@@ -1337,19 +1340,23 @@ final class ViewportView: NSView {
             string: text, attributes: [.font: rowFont, .foregroundColor: NSColor.textColor])
     }
 
-    /// Dispatches a row to the active highlighter, returning its colouring and
-    /// the carried state at the row's end.
+    /// Tokenizes a row with the active highlighter and styles it with the
+    /// theme, returning its colouring and the carried state at the row's end.
     private func highlightedRow(_ text: String, startState: HighlightState)
         -> (NSAttributedString, HighlightState) {
+        let (tokens, endState) = rowTokens(text, startState: startState)
+        return (theme.attributedRow(text, tokens: tokens, font: font), endState)
+    }
+
+    /// Dispatches a row to the active highlighter for its tokens and the
+    /// carried state at the row's end.
+    private func rowTokens(_ text: String, startState: HighlightState) -> ([Token], HighlightState) {
         switch syntaxMode {
-        case .xml: return XMLHighlighter.attributedRow(text, font: font, startState: startState)
-        case .json: return JSONHighlighter.attributedRow(text, font: font, startState: startState)
-        case .markdown: return MarkdownHighlighter.attributedRow(text, font: font, startState: startState)
-        case .yaml: return YAMLHighlighter.attributedRow(text, font: font, startState: startState)
-        case .plain:
-            let attributed = NSAttributedString(
-                string: text, attributes: [.font: font, .foregroundColor: NSColor.textColor])
-            return (attributed, .normal)
+        case .xml: return XMLHighlighter.tokens(text, startState: startState)
+        case .json: return JSONHighlighter.tokens(text, startState: startState)
+        case .markdown: return MarkdownHighlighter.tokens(text, startState: startState)
+        case .yaml: return YAMLHighlighter.tokens(text, startState: startState)
+        case .plain: return ([], .normal)
         }
     }
 
