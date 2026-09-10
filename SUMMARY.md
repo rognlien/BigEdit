@@ -21,6 +21,7 @@ file and a 50 KB file cost the same to display and to edit.
 | `EditedLayout` | Line/row layout of the edited document. The original `LineIndex` is never rebuilt; line-aligned edit *spans* (with their own local line layout, re-derived by scanning just the edit) overlay it, composed through prefix sums — O(log #spans) queries, O(#spans) update per edit. |
 | `UndoStack` | Edit history as piece splices — never copied bytes, so undoing a 10 GB deletion is O(pieces). Typing/deletion runs coalesce; Replace All applies as one grouped step. |
 | `FileWriter` | Streaming save, two paths: the rule save (`memmem` splice over the mmap) and the piece save (walk the piece table in logical order). Both write to a temp file in the destination directory then atomic `rename()`; both preserve permission bits, report progress, and cancel cleanly. |
+| `FileGrowth` | Tells an append (same inode, larger, tail bytes unchanged) from a replacement. With Follow File on, an append remaps the file and extends `LineIndex` from the old trailing line instead of rebuilding; the extension is computed off-thread and applied on main in the same turn as the file swap, so a draw never sees rows past its mapping. |
 | `TextSelection` | Selection range in logical byte offsets. |
 | `BigEditHelper` + `BigEditHelperKit` + `PrivilegedHelperInstaller` | The privileged helper. Creating a symlink in a root-owned directory needs root, and macOS gives an app no supported way to run a command as root itself, so a launchd daemon blessed once via `SMJobBless` does it. That authorisation dialog accepts Touch ID. The helper takes one verb, runs no shell, restricts destinations to a fixed list, and checks its caller against a code-signing requirement. |
 | `CommandLineTool` (`BigEditCLI`) + `CommandLineToolInstaller` | The `bigedit` command. The tool resolves its paths, creates any file that does not exist, and hands them to the app via `open`; it finds its own `.app` by resolving symlinks and walking up, so a link on the PATH still works. The installer symlinks it into `/usr/local/bin`, escalating only when that directory is not writable. |
@@ -67,6 +68,7 @@ viewport, not the file.
 - `⌘S` save (atomic) · `⇧⌘S` save as. Progress sheet during save.
 - `⌘C` copy · `⌘A` select all. Right-click → Copy. Select All is deliberately absent from the right-click menu (selecting many GB onto the pasteboard would try to materialise it).
 - `⌘I` toggle Info Inspector.
+- **Follow File (⇧⌘T)** — `tail -f` for a log: appends arrive live, pinned to the end.
 - **`bigedit` on the command line** — installed from the app menu; `bigedit file.txt` opens the file, creating it if it does not exist.
 - **Text / CSV** selector, top right. In CSV mode rows are drawn as aligned columns, the header is set in bold and can stay pinned to the top while you scroll, and the status bar reads `CSV — read-only`. Columns resize by dragging their trailing edge in the band along the top row, and double-clicking an edge returns that column to its measured width.
 - Click + drag to select (with auto-scroll past the viewport edges). Double-click selects a word, triple-click selects the visual line.
