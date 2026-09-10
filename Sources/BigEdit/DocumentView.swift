@@ -116,8 +116,11 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
         fatalError("DocumentView is created programmatically")
     }
 
-    /// Attaches a file and starts showing it.
-    func load(file: MappedFile, index: LineIndex) {
+    /// Attaches a file and starts showing it. With `inheritingHistory`, the
+    /// file is the one just saved from the current document, and its edit
+    /// history is carried over so undo reaches back across the save.
+    func load(file: MappedFile, index: LineIndex, inheritingHistory: Bool = false) {
+        let previous = inheritingHistory ? viewport.document : nil
         resetSearch()
         editModel.clear()
         replaceAllScan?.cancel()
@@ -126,7 +129,14 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
         statisticsScan = nil
         statisticsRefreshTimer?.invalidate()
         window?.isDocumentEdited = false
-        viewport.load(document: EditedDocument(file: file, editModel: editModel, lineIndex: index))
+        let document: EditedDocument
+        if let previous {
+            document = EditedDocument(file: file, editModel: editModel, lineIndex: index,
+                                      inheritingHistoryFrom: previous)
+        } else {
+            document = EditedDocument(file: file, editModel: editModel, lineIndex: index)
+        }
+        viewport.load(document: document)
         viewport.setSyntaxMode(DocumentView.syntaxMode(for: file))
         mappedFile = file
         viewport.setCSVRendering(dialect: nil, columnLayout: nil)

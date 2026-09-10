@@ -44,6 +44,9 @@ The package opens directly in Xcode (`File ▸ Open…` the `BigEdit` folder).
 - **⌘F** — find. Type a query and press Enter to search. **Aa** toggles case
   sensitivity; **.\*** makes the query a regular expression (`^` and `$`
   match at line boundaries, as in `grep`).
+  redo, including back across a save; **⌘X/⌘C/⌘V** cut, copy, paste. **⌘S**
+  saves atomically via a streaming temp-file write.
+- **⌘F** — find. Type a query and press Enter to search.
 - **⌘G** / **⇧⌘G** — next / previous match. **Esc** closes the find bar.
 - **⌥⌘L**, or the list button in the find bar — every match as a list below
   the viewport, with its line number and a snippet; click one to jump to it.

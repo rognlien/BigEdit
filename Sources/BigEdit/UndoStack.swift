@@ -5,8 +5,9 @@ import Foundation
 /// 10 GB deletion re-splices a handful of pieces.
 ///
 /// Records stay valid forever because the original file's mmap is immutable
-/// and the add buffer is append-only. The stack clears when the document
-/// re-maps after a save.
+/// and the add buffer is append-only. Across a save the stack is carried into
+/// the new document, with `.original` pieces rewritten to name the retired
+/// mapping they refer to — see `retireOriginalPieces(as:)`.
 final class UndoStack {
 
     /// One history entry. `insertedLength` is the extent the operation
@@ -56,6 +57,48 @@ final class UndoStack {
     /// The number of undoable steps — exposed for tests.
     var depth: Int {
         undoEntries.count
+    }
+
+    var isEmpty: Bool {
+        undoEntries.isEmpty && redoEntries.isEmpty && (openGroup?.isEmpty ?? true)
+    }
+
+    func clear() {
+        undoEntries.removeAll()
+        redoEntries.removeAll()
+        openGroup = nil
+    }
+
+    /// After a save, the file every `.original` piece meant is no longer the
+    /// document's original mapping — it is retired mapping `generation`.
+    /// Rewrites every record accordingly, undo and redo alike.
+    func retireOriginalPieces(as generation: Int) {
+        undoEntries = undoEntries.map { retire($0, as: generation) }
+        redoEntries = redoEntries.map { retire($0, as: generation) }
+        openGroup = openGroup?.map { retire($0, as: generation) }
+    }
+
+    private func retire(_ entry: HistoryEntry, as generation: Int) -> HistoryEntry {
+        var result: HistoryEntry
+        switch entry {
+        case .single(let operation):
+            result = .single(retire(operation, as: generation))
+        case .group(let operations):
+            result = .group(operations.map { retire($0, as: generation) })
+        }
+        return result
+    }
+
+    private func retire(_ operation: Operation, as generation: Int) -> Operation {
+        var result = operation
+        result.removedPieces = operation.removedPieces.map { piece in
+            var retired = piece
+            if piece.source == .original {
+                retired.source = .retired(generation)
+            }
+            return retired
+        }
+        return result
     }
 
     /// Starts collecting subsequent edits into one undoable step.

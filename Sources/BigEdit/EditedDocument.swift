@@ -25,21 +25,67 @@ final class EditedDocument {
     let pieceTable: PieceTable
 
     /// Append-only storage for every inserted byte.
-    let addBuffer = AddBuffer()
+    let addBuffer: AddBuffer
 
     /// Line / visual-row layout of the logical document.
     let layout: EditedLayout
 
-    /// Piece-level edit history. Cleared implicitly when the document
-    /// re-maps after a save (a fresh `EditedDocument` is built).
-    let undoStack = UndoStack()
+    /// Piece-level edit history. Carried across a save into the document
+    /// built over the freshly written file, so ⌘Z still works after ⌘S.
+    let undoStack: UndoStack
 
-    init(file: MappedFile, editModel: EditModel, lineIndex: LineIndex) {
+    /// Mappings that earlier saves wrote over, kept while history still
+    /// refers to them. A save replaces the file by atomic rename, so the old
+    /// inode stays readable for as long as it is mapped — which is what lets
+    /// an undo after a save put back bytes that now exist only there.
+    private(set) var retiredFiles: [MappedFile]
+
+    /// How many retired mappings are kept before the history is let go. Each
+    /// one pins an old inode and its address space, so rather than grow
+    /// without bound across a long run of saves, the history is cleared once
+    /// this many are held.
+    static let maximumRetiredMappings = 8
+
+    init(file: MappedFile, editModel: EditModel, lineIndex: LineIndex,
+         addBuffer: AddBuffer = AddBuffer(), undoStack: UndoStack = UndoStack(),
+         retiredFiles: [MappedFile] = []) {
         self.file = file
         self.editModel = editModel
         self.lineIndex = lineIndex
+        self.addBuffer = addBuffer
+        self.undoStack = undoStack
+        self.retiredFiles = retiredFiles
         self.pieceTable = PieceTable(originalLength: file.size)
         self.layout = EditedLayout(file: file, index: lineIndex)
+    }
+
+    /// Builds the document over a file that has just been saved, carrying
+    /// `previous`'s edit history so undo reaches back across the save.
+    ///
+    /// The saved file's bytes are exactly the previous document's logical
+    /// bytes, so every history record's positions still mean what they meant.
+    /// What no longer holds is that `.original` pieces refer to the current
+    /// file: they meant the file before the save, which is retired here and
+    /// the records rewritten to point at it. The add buffer comes along
+    /// unchanged, since `.added` pieces refer to it directly.
+    convenience init(file: MappedFile, editModel: EditModel, lineIndex: LineIndex,
+                     inheritingHistoryFrom previous: EditedDocument) {
+        let history = previous.undoStack
+        var retired = previous.retiredFiles
+        if history.isEmpty {
+            retired = []                          // nothing refers to any of them
+        } else {
+            if retired.count >= EditedDocument.maximumRetiredMappings {
+                history.clear()
+                retired = []
+            } else {
+                history.retireOriginalPieces(as: retired.count)
+                retired.append(previous.file)
+            }
+        }
+        history.breakCoalescing()                 // a save ends any typing run
+        self.init(file: file, editModel: editModel, lineIndex: lineIndex,
+                  addBuffer: previous.addBuffer, undoStack: history, retiredFiles: retired)
     }
 
     /// Whether the document accepts positional edits. Set from the detected
@@ -101,6 +147,11 @@ final class EditedDocument {
         return result
     }
 
+    /// The retired mappings' bytes, in generation order, for piece reads.
+    var retiredBuffers: [UnsafeRawBufferPointer] {
+        retiredFiles.map(\.buffer)
+    }
+
     /// True once any positional edit has been applied.
     var hasEdits: Bool {
         pieceTable.hasEdits
@@ -119,7 +170,8 @@ final class EditedDocument {
             if pieceTable.hasEdits {
                 result = pieceTable.bytes(in: offset..<(offset + 1),
                                           original: file.buffer,
-                                          added: addBuffer).first
+                                          added: addBuffer,
+                                          retired: retiredBuffers).first
             } else {
                 result = file.buffer[offset]
             }
@@ -134,7 +186,8 @@ final class EditedDocument {
         let clamped = range.clamped(to: 0..<length)
         if !clamped.isEmpty {
             if pieceTable.hasEdits {
-                result = pieceTable.bytes(in: clamped, original: file.buffer, added: addBuffer)
+                result = pieceTable.bytes(in: clamped, original: file.buffer,
+                                          added: addBuffer, retired: retiredBuffers)
             } else {
                 result = Array(UnsafeRawBufferPointer(rebasing: file.buffer[clamped]))
             }
