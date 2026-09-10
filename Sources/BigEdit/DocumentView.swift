@@ -27,6 +27,8 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
     /// and for anything the format does not decode at all.
     private var textEncoding: TextEncoding {
         fileFormat?.textEncoding ?? .utf8
+    }
+
     /// Shown in the status bar while the document follows its file on disk.
     var isFollowing = false {
         didSet {
@@ -136,7 +138,6 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
         } else {
             document = EditedDocument(file: file, editModel: editModel, lineIndex: index)
         }
-        let document = EditedDocument(file: file, editModel: editModel, lineIndex: index)
         document.journal = EditJournal.open(for: file.path)
         viewport.load(document: document)
         viewport.setSyntaxMode(DocumentView.syntaxMode(for: file))
@@ -1098,6 +1099,9 @@ extension DocumentView {
         }
         updateInfoPane()
         updateStatusBar()
+    }
+}
+
 // MARK: - Crash recovery
 
 extension DocumentView {

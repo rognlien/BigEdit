@@ -46,9 +46,6 @@ final class EditedDocument {
     /// this many are held.
     static let maximumRetiredMappings = 8
 
-    init(file: MappedFile, editModel: EditModel, lineIndex: LineIndex,
-         addBuffer: AddBuffer = AddBuffer(), undoStack: UndoStack = UndoStack(),
-         retiredFiles: [MappedFile] = []) {
     /// Where unsaved edits are written so a crash does not lose them. Every
     /// splice and every inserted byte is mirrored here as it happens.
     var journal: EditJournal?
@@ -57,7 +54,9 @@ final class EditedDocument {
     /// replay is not journaled again.
     private var isReplayingJournal = false
 
-    init(file: MappedFile, editModel: EditModel, lineIndex: LineIndex) {
+    init(file: MappedFile, editModel: EditModel, lineIndex: LineIndex,
+         addBuffer: AddBuffer = AddBuffer(), undoStack: UndoStack = UndoStack(),
+         retiredFiles: [MappedFile] = []) {
         self.file = file
         self.editModel = editModel
         self.lineIndex = lineIndex

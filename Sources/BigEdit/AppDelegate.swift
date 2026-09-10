@@ -1247,7 +1247,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
     /// its edit history so ⌘Z still works.
     private func reloadDocument(_ document: Document, from destination: URL) {
         reload(document, from: destination, preserveScroll: false, inheritingHistory: true)
-        reload(document, from: destination, preserveScroll: false)
         document.view.startJournalFromCurrentFile()
         addRecentDocument(destination)
     }

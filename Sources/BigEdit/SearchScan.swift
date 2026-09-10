@@ -456,7 +456,7 @@ final class SearchScan {
         if mode == .regularExpression {
             scanRegularExpression(length: length, onProgress: onProgress) { range in
                 self.assembleWindow(range, pieces: pieces, starts: pieceStarts,
-                                    file: file, added: added, into: &window)
+                                    file: file, added: added, retired: retired, into: &window)
                 return window
             }
             return
