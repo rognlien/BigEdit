@@ -26,6 +26,8 @@ final class PieceTableTests: XCTestCase {
                 result.append(contentsOf: original[piece.start..<piece.end])
             case .added:
                 result.append(contentsOf: added.bytes(in: piece.start..<piece.end))
+            case .retired:
+                XCTFail("a bare table never holds a retired piece; only a save creates them")
             }
         }
         return result
