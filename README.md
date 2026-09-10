@@ -113,7 +113,11 @@ App shell (window, menu, open panel) is in `AppDelegate.swift` / `main.swift`.
 
 ### Measured
 
-- 562 MB / 50M lines indexed in ~1.4 s (~390 MB/s, single background thread).
+- Indexing runs one chunk per core for files of 64 MB and up. A 471 MB /
+  12M-line file (page-cached) indexes in ~0.02 s on an 18-core machine, against
+  ~0.13 s single-threaded; a cold file is bound by the disk either way. The
+  parallel scan is tested to be indistinguishable from the serial one.
+- 562 MB / 50M lines indexed in ~1.4 s single-threaded (~390 MB/s) before that.
 - A 100 MB single-line file indexes in ~0.17 s — and is now 102,400 navigable
   visual rows.
 - Searching the 562 MB file took ~1.3 s; the match count matched `grep -o`

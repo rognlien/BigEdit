@@ -206,7 +206,7 @@ final class LineIndex {
     /// queue each time more of the file has been indexed.
     func build(from file: MappedFile, onProgress: @escaping () -> Void) {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            self?.scan(file: file) {
+            self?.scanChoosingStrategy(file: file) {
                 DispatchQueue.main.async(execute: onProgress)
             }
         }
@@ -215,7 +215,31 @@ final class LineIndex {
     /// Scans `file` on the current thread and returns once indexing is done.
     /// Used by the headless `--index` mode.
     func buildSynchronously(from file: MappedFile) {
-        scan(file: file, onProgress: {})
+        scanChoosingStrategy(file: file, onProgress: {})
+    }
+
+    /// Scans on the current thread using the parallel strategy with the given
+    /// chunk size regardless of file size. Tests use tiny chunks so that chunk
+    /// boundaries fall inside lines, between them, and on newlines.
+    func buildSynchronously(from file: MappedFile, forcingParallelChunkSize chunkSize: Int) {
+        scanParallel(file: file, chunkSize: chunkSize, onProgress: {})
+    }
+
+    /// Files at least this large are scanned in parallel. Below it the serial
+    /// scan wins: it finishes in milliseconds anyway, and it stays the simpler
+    /// reference the parallel scan is tested against.
+    static let parallelScanThreshold = 64 * 1024 * 1024
+
+    /// How much of the file one core takes at a time.
+    static let parallelChunkSize = 32 * 1024 * 1024
+
+    private func scanChoosingStrategy(file: MappedFile, onProgress: () -> Void) {
+        let cores = ProcessInfo.processInfo.activeProcessorCount
+        if file.buffer.count >= LineIndex.parallelScanThreshold && cores > 1 {
+            scanParallel(file: file, chunkSize: LineIndex.parallelChunkSize, onProgress: onProgress)
+        } else {
+            scan(file: file, onProgress: onProgress)
+        }
     }
 
     /// Walks the mapped bytes looking for newlines, recording a checkpoint
@@ -295,6 +319,192 @@ final class LineIndex {
                     byteOffset: offset,
                     byteLength: byteLength
                 ))
+            }
+            lines += 1
+        }
+
+        finish(pendingCheckpoints: pendingCheckpoints,
+               pendingLongLines: pendingLongLines,
+               lineCount: lines)
+        onProgress()
+    }
+
+    // MARK: - Parallel scan
+
+    /// One sampled newline offset per this many newlines. Enough to reach any
+    /// exact newline with a walk of at most this many lines, at a memory cost
+    /// of eight bytes per sixty-four lines.
+    private static let sampleStride = 64
+
+    /// What one chunk learns about its own bytes, independently of every other
+    /// chunk. Everything that needs to know how many lines came *before* the
+    /// chunk — line numbers, checkpoint alignment, a line straddling the chunk's
+    /// start — is deferred to the stitching step.
+    private struct ChunkScan {
+        let start: Int
+        let end: Int
+        var newlineCount = 0
+        /// Absolute offset of every `sampleStride`-th newline, the first included.
+        var sampledNewlines: [Int] = []
+        var firstNewline: Int?
+        var lastNewline: Int?
+        /// Long lines that both begin and end inside the chunk, keyed by the
+        /// chunk-local index of the newline that ends them. The line ending at
+        /// the chunk's *first* newline is not here: it may have begun in an
+        /// earlier chunk, so only the stitcher can measure it.
+        var internalLongLines: [(endsAtLocalNewline: Int, byteOffset: Int, byteLength: Int)] = []
+    }
+
+    /// Finds every newline in `start..<end`, with no reference to anything
+    /// outside the chunk, so any number of these can run at once.
+    private static func scanChunk(base: UnsafeRawPointer, start: Int, end: Int,
+                                  isStopped: () -> Bool) -> ChunkScan {
+        var result = ChunkScan(start: start, end: end)
+        var cursor = start
+        var previousNewline: Int?
+        var untilCancelCheck = 1 << 14
+
+        while cursor < end, let found = memchr(base + cursor, 0x0A, end - cursor) {
+            let newline = base.distance(to: UnsafeRawPointer(found))
+            let index = result.newlineCount
+            if index % sampleStride == 0 {
+                result.sampledNewlines.append(newline)
+            }
+            if result.firstNewline == nil {
+                result.firstNewline = newline
+            }
+            if let previous = previousNewline {
+                let lineStart = previous + 1
+                let length = newline - lineStart
+                if length >= longLineThreshold {
+                    result.internalLongLines.append((index, lineStart, length))
+                }
+            }
+            previousNewline = newline
+            result.newlineCount += 1
+            cursor = newline + 1
+
+            untilCancelCheck -= 1
+            if untilCancelCheck == 0 {
+                untilCancelCheck = 1 << 14
+                if isStopped() {
+                    break
+                }
+            }
+        }
+        result.lastNewline = previousNewline
+        return result
+    }
+
+    /// The absolute offset of the chunk's `localIndex`-th newline: jump to the
+    /// nearest sample at or before it, then walk forward at most
+    /// `sampleStride - 1` lines.
+    private static func newlineOffset(inChunk chunk: ChunkScan, localIndex: Int,
+                                      base: UnsafeRawPointer) -> Int {
+        var cursor = chunk.sampledNewlines[localIndex / sampleStride]
+        var remaining = localIndex % sampleStride
+        while remaining > 0 {
+            guard let found = memchr(base + cursor + 1, 0x0A, chunk.end - cursor - 1) else {
+                break
+            }
+            cursor = base.distance(to: UnsafeRawPointer(found))
+            remaining -= 1
+        }
+        return cursor
+    }
+
+    /// Scans the file one group of chunks at a time — one chunk per core, run
+    /// concurrently — then stitches each group in file order and publishes it.
+    ///
+    /// Newline scanning is embarrassingly parallel; only three things depend on
+    /// what came before a chunk, and the stitch handles all of them: the line
+    /// number of each long line, which newlines fall on a checkpoint (every
+    /// `checkpointStride`-th line, counted from the start of the file), and a
+    /// line that straddles a chunk boundary. Publishing per group keeps the
+    /// line count and scroller growing while a large file is still indexing,
+    /// as the serial scan does.
+    private func scanParallel(file: MappedFile, chunkSize: Int, onProgress: () -> Void) {
+        let buffer = file.buffer
+        let total = buffer.count
+
+        guard total > 0, let base = buffer.baseAddress, chunkSize > 0 else {
+            finish(pendingCheckpoints: [], pendingLongLines: [], lineCount: 0)
+            onProgress()
+            return
+        }
+
+        let stride = LineIndex.checkpointStride
+        let chunkCount = (total + chunkSize - 1) / chunkSize
+        let groupSize = max(1, ProcessInfo.processInfo.activeProcessorCount)
+
+        var pendingCheckpoints: [Checkpoint] = []
+        var pendingLongLines: [LongLine] = []
+        var linesSoFar = 0            // newlines before the chunk being stitched
+        var openLineStart = 0         // where the not-yet-terminated line began
+        var firstChunk = 0
+
+        while firstChunk < chunkCount && !isStopped() {
+            let lastChunk = min(chunkCount, firstChunk + groupSize)
+            var scans = [ChunkScan?](repeating: nil, count: lastChunk - firstChunk)
+            scans.withUnsafeMutableBufferPointer { slots in
+                DispatchQueue.concurrentPerform(iterations: slots.count) { position in
+                    let start = (firstChunk + position) * chunkSize
+                    let end = min(total, start + chunkSize)
+                    slots[position] = LineIndex.scanChunk(base: base, start: start, end: end,
+                                                          isStopped: { self.isStopped() })
+                }
+            }
+            if isStopped() {
+                break            // a chunk may have stopped early; do not stitch it
+            }
+
+            for case let chunk? in scans {
+                guard let first = chunk.firstNewline, let last = chunk.lastNewline else {
+                    continue     // no newline here: the open line runs on
+                }
+
+                // The line ending at this chunk's first newline began at
+                // openLineStart — possibly chunks ago.
+                let firstLength = first - openLineStart
+                if firstLength >= LineIndex.longLineThreshold {
+                    pendingLongLines.append(LongLine(
+                        lineNumber: linesSoFar, byteOffset: openLineStart, byteLength: firstLength))
+                }
+                for longLine in chunk.internalLongLines {
+                    pendingLongLines.append(LongLine(
+                        lineNumber: linesSoFar + longLine.endsAtLocalNewline,
+                        byteOffset: longLine.byteOffset,
+                        byteLength: longLine.byteLength))
+                }
+
+                // Checkpoint k marks the start of line k·stride, i.e. the byte
+                // after newline number k·stride − 1 (counting from 0).
+                var checkpoint = linesSoFar / stride + 1
+                while checkpoint * stride - 1 < linesSoFar + chunk.newlineCount {
+                    let local = checkpoint * stride - 1 - linesSoFar
+                    let newline = LineIndex.newlineOffset(inChunk: chunk, localIndex: local, base: base)
+                    pendingCheckpoints.append(Checkpoint(byteOffset: newline + 1, visualRowOffset: 0))
+                    checkpoint += 1
+                }
+
+                linesSoFar += chunk.newlineCount
+                openLineStart = last + 1
+            }
+
+            publish(pendingCheckpoints: &pendingCheckpoints,
+                    pendingLongLines: &pendingLongLines,
+                    lineCount: linesSoFar)
+            onProgress()
+            firstChunk = lastChunk
+        }
+
+        // Trailing bytes after the final newline form one last line.
+        var lines = linesSoFar
+        if !isStopped() && openLineStart < total {
+            let byteLength = total - openLineStart
+            if byteLength >= LineIndex.longLineThreshold {
+                pendingLongLines.append(LongLine(
+                    lineNumber: lines, byteOffset: openLineStart, byteLength: byteLength))
             }
             lines += 1
         }
