@@ -244,6 +244,21 @@ final class ViewportView: NSView {
     // MARK: - Document
 
     /// Attaches a document (whose line index may still be building).
+    /// Swaps in a document over a grown mapping of the same file, keeping the
+    /// scroll position and selection: every offset that was valid still is.
+    func replaceDocumentKeepingPosition(_ document: EditedDocument) {
+        self.document = document
+        updateWrapBytes()
+        setScrollRow(scrollRow)          // re-clamp against the new row count
+        needsDisplay = true
+    }
+
+    /// Whether the last row is in view — what following a growing file uses
+    /// to decide whether to stay pinned to the end.
+    var isScrolledToEnd: Bool {
+        scrollRow >= maxScrollRow - 0.5
+    }
+
     func load(document: EditedDocument) {
         self.document = document
         scrollRow = 0
