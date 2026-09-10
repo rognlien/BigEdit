@@ -137,7 +137,8 @@ App shell (window, menu, open panel) is in `AppDelegate.swift` / `main.swift`.
   match cannot span more than ~8 MB of lines. Matches beyond the 1,000,000th
   are not collected (shown as `N+`), and Replace All with a pattern only
   works under the materialisation cap — there is no streaming form of it.
-- No syntax highlighting yet (**step 6**).
+- Syntax highlighting covers XML, JSON, Markdown, and YAML; other files draw
+  as plain text.
 - Encoding is assumed UTF-8; CRLF line endings are handled.
 - **CSV mode is display-only.** Padding fields into columns means the drawn
   text no longer matches the file's bytes, so editing is off and search
