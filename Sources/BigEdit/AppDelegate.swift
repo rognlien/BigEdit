@@ -218,7 +218,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
             alert.alertStyle = .warning
             if alert.runModal() != .alertFirstButtonReturn {
                 reply = .terminateCancel
+            } else {
+                // Quit Anyway is an explicit choice to lose them.
+                documents.filter(\.isEdited).forEach { $0.view.discardJournal() }
             }
+        }
+        if reply == .terminateNow {
+            // Clean documents leave nothing worth keeping on disk.
+            documents.filter { !$0.isEdited }.forEach { $0.view.discardJournal() }
         }
         return reply
     }
@@ -862,6 +869,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
             self?.setInfoPaneWidth(width)
         }
         view.setFileFormat(document.format)
+        offerRecoveryIfPending(for: document)
         document.watcher = FileWatcher(path: url.path) { [weak self, weak document] in
             if let self, let document {
                 self.fileDidChangeOnDisk(document)
@@ -873,6 +881,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
             }
         }
         return document
+    }
+
+    /// If an earlier run left unsaved edits for this file, asks whether to
+    /// bring them back; otherwise the journal starts fresh from the file.
+    private func offerRecoveryIfPending(for document: Document) {
+        let view = document.view
+        var recovered = false
+        if view.hasRecoverableEdits {
+            let alert = NSAlert()
+            alert.messageText = "Recover unsaved changes to \(document.fileName)?"
+            alert.informativeText = "BigEdit did not quit normally the last time this file was "
+                + "open, and the changes made then were not saved. They can be restored now."
+            alert.addButton(withTitle: "Recover")
+            alert.addButton(withTitle: "Discard")
+            alert.alertStyle = .warning
+            if alert.runModal() == .alertFirstButtonReturn {
+                recovered = view.recoverEdits()
+                if !recovered {
+                    presentError("The unsaved changes to \(document.fileName) could not be recovered.")
+                }
+            }
+        }
+        if !recovered {
+            view.startJournalFromCurrentFile()
+        }
     }
 
     /// Marks a document as changed on disk and surfaces it (sidebar + title).
@@ -968,10 +1001,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
             presentClosePrompt(for: document) { [weak self] shouldClose in
                 if shouldClose, let self,
                    let position = self.documents.firstIndex(where: { $0 === document }) {
+                    // Saved, or Don't Save: either way nothing is left to recover.
+                    document.view.discardJournal()
                     self.tearDownDocument(at: position)
                 }
             }
         } else {
+            document.view.discardJournal()
             tearDownDocument(at: index)
         }
     }
@@ -1211,6 +1247,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
     /// its edit history so ⌘Z still works.
     private func reloadDocument(_ document: Document, from destination: URL) {
         reload(document, from: destination, preserveScroll: false, inheritingHistory: true)
+        reload(document, from: destination, preserveScroll: false)
+        document.view.startJournalFromCurrentFile()
         addRecentDocument(destination)
     }
 
@@ -1233,7 +1271,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
                 alert.alertStyle = .warning
                 alert.beginSheetModal(for: window) { [weak self] response in
                     if response == .alertFirstButtonReturn {
+                        document.view.discardJournal()
                         self?.reload(document, from: document.url, preserveScroll: true)
+                        document.view.startJournalFromCurrentFile()
                     }
                 }
             } else {

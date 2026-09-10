@@ -49,6 +49,15 @@ final class EditedDocument {
     init(file: MappedFile, editModel: EditModel, lineIndex: LineIndex,
          addBuffer: AddBuffer = AddBuffer(), undoStack: UndoStack = UndoStack(),
          retiredFiles: [MappedFile] = []) {
+    /// Where unsaved edits are written so a crash does not lose them. Every
+    /// splice and every inserted byte is mirrored here as it happens.
+    var journal: EditJournal?
+
+    /// True while a journal is being replayed into this document, so the
+    /// replay is not journaled again.
+    private var isReplayingJournal = false
+
+    init(file: MappedFile, editModel: EditModel, lineIndex: LineIndex) {
         self.file = file
         self.editModel = editModel
         self.lineIndex = lineIndex
@@ -113,6 +122,12 @@ final class EditedDocument {
         layout.applyReplacement(logicalRange, insertedLength: bytes.count) { range in
             self.bytes(in: range)
         }
+        if let journal, !isReplayingJournal {
+            journal.recordAppend(bytes)
+            journal.recordSplice(logicalRange, pieces: [
+                PieceTable.Piece(source: .added, start: addedRange.lowerBound, length: bytes.count)
+            ])
+        }
         undoStack.recordEdit(
             position: logicalRange.lowerBound,
             insertedLength: bytes.count,
@@ -134,7 +149,37 @@ final class EditedDocument {
         layout.applyReplacement(logicalRange, insertedLength: insertedLength) { range in
             self.bytes(in: range)
         }
+        if !isReplayingJournal {
+            journal?.recordSplice(logicalRange, pieces: pieces)
+        }
         return removed
+    }
+
+    /// Rebuilds the unsaved edits recorded in `journal` over this document,
+    /// which must be over the journal's baseline file. Returns false, leaving
+    /// the document untouched, if the journal cannot be replayed.
+    @discardableResult
+    func recover(from journal: EditJournal) -> Bool {
+        guard !hasEdits, let operations = journal.readOperations() else {
+            return false
+        }
+        var applied = true
+        isReplayingJournal = true
+        addBuffer.append(journal.loadBytes())
+        for operation in operations where applied {
+            let addedCount = addBuffer.count
+            let fits = operation.range.upperBound <= length && operation.pieces.allSatisfy { piece in
+                piece.source == .original ? piece.end <= file.size : piece.end <= addedCount
+            }
+            if fits {
+                replaceForHistory(operation.range, withPieces: operation.pieces)
+            } else {
+                applied = false
+            }
+        }
+        isReplayingJournal = false
+        self.journal = journal
+        return applied
     }
 
     /// Whether `range` covers a newline. Small ranges are checked exactly;
