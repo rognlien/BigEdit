@@ -13,6 +13,8 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
     let viewport = ViewportView(frame: .zero)
     private let scroller = NSScroller(frame: NSRect(x: 0, y: 0, width: 16, height: 100))
     private let findBar = FindBar(frame: .zero)
+    private let resultsPanel = SearchResultsPanel(frame: .zero)
+    private var resultsVisible = false
     private let formatBar = FormatBar(frame: .zero)
     private let infoPane = InfoPane(frame: .zero)
     private let infoDivider = InfoPaneDivider(frame: .zero)
@@ -71,6 +73,12 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
         findBar.delegate = self
         findBar.isHidden = true
         addSubview(findBar)
+
+        resultsPanel.isHidden = true
+        resultsPanel.rowProvider = { [weak self] index in self?.resultRow(at: index) }
+        resultsPanel.onSelect = { [weak self] index in self?.moveToMatch(index: index) }
+        resultsPanel.onClose = { [weak self] in self?.setResultsVisible(false) }
+        addSubview(resultsPanel)
 
         formatBar.delegate = self
         addSubview(formatBar)
@@ -225,19 +233,23 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
     private func layoutComponents() {
         let scrollerWidth = NSScroller.scrollerWidth(for: .regular, scrollerStyle: .legacy)
         let findHeight = findBarVisible ? findBar.preferredHeight : 0
+        let resultsHeight = resultsVisible ? SearchResultsPanel.preferredHeight : 0
         let formatHeight = formatBar.preferredHeight
         let infoWidth = infoPaneVisible ? clampedInfoWidth() : 0
         let statusHeight = StatusBar.preferredHeight
         let documentWidth = max(0, bounds.width - infoWidth)
-        let contentHeight = max(0, bounds.height - findHeight - formatHeight - statusHeight)
+        let contentHeight = max(0, bounds.height - findHeight - resultsHeight - formatHeight - statusHeight)
         let viewportWidth = max(0, documentWidth - scrollerWidth)
+        let contentBottom = statusHeight + resultsHeight
 
         statusBar.frame = NSRect(x: 0, y: 0, width: documentWidth, height: statusHeight)
-        viewport.frame = NSRect(x: 0, y: statusHeight, width: viewportWidth, height: contentHeight)
-        scroller.frame = NSRect(x: viewportWidth, y: statusHeight, width: scrollerWidth, height: contentHeight)
+        resultsPanel.isHidden = !resultsVisible
+        resultsPanel.frame = NSRect(x: 0, y: statusHeight, width: documentWidth, height: resultsHeight)
+        viewport.frame = NSRect(x: 0, y: contentBottom, width: viewportWidth, height: contentHeight)
+        scroller.frame = NSRect(x: viewportWidth, y: contentBottom, width: scrollerWidth, height: contentHeight)
         findBar.isHidden = !findBarVisible
-        findBar.frame = NSRect(x: 0, y: statusHeight + contentHeight, width: documentWidth, height: findHeight)
-        formatBar.frame = NSRect(x: 0, y: statusHeight + contentHeight + findHeight,
+        findBar.frame = NSRect(x: 0, y: contentBottom + contentHeight, width: documentWidth, height: findHeight)
+        formatBar.frame = NSRect(x: 0, y: contentBottom + contentHeight + findHeight,
                                  width: documentWidth, height: formatHeight)
         infoPane.isHidden = !infoPaneVisible
         infoPane.frame = NSRect(x: documentWidth, y: 0, width: infoWidth, height: bounds.height)
@@ -379,8 +391,10 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
 
     /// Hides the find bar and clears the active search.
     func hideFindBar() {
-        if findBarVisible {
+        if findBarVisible || resultsVisible {
             findBarVisible = false
+            resultsVisible = false
+            findBar.setResultsVisible(false)
             layoutComponents()
         }
         resetSearch()
@@ -435,6 +449,51 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
 
     func findBarRequestedClose(_ bar: FindBar) {
         hideFindBar()
+    }
+
+    func findBarRequestedResultsToggle(_ bar: FindBar) {
+        setResultsVisible(!resultsVisible)
+    }
+
+    // MARK: - Search results panel
+
+    /// Shows or hides the list of every match below the viewport.
+    func setResultsVisible(_ visible: Bool) {
+        if visible != resultsVisible {
+            resultsVisible = visible
+            findBar.setResultsVisible(visible)
+            layoutComponents()
+            refreshResultsPanel()
+            if visible && currentMatchIndex >= 0 {
+                resultsPanel.select(index: currentMatchIndex)
+            }
+        }
+    }
+
+    func toggleSearchResults() {
+        if !findBarVisible {
+            showFindBar(replace: false)
+        }
+        setResultsVisible(!resultsVisible)
+    }
+
+    private func refreshResultsPanel() {
+        if resultsVisible {
+            resultsPanel.update(matchCount: searchScan?.matchCount ?? 0,
+                                isComplete: searchScan?.isComplete ?? true,
+                                isTruncated: searchScan?.isTruncated ?? false)
+        }
+    }
+
+    /// The row for match `index`, built on demand as the table scrolls.
+    private func resultRow(at index: Int) -> SearchResultRow? {
+        var result: SearchResultRow?
+        if let scan = searchScan, let document = viewport.document,
+           let offset = scan.matchOffset(at: index) {
+            let range = offset..<(offset + scan.matchLength(at: index))
+            result = SearchResultRow.make(match: range, in: document, encoding: textEncoding)
+        }
+        return result
     }
 
     /// Matches at or below this count are applied as real (undoable) edits;
@@ -761,6 +820,7 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
         currentMatchIndex = -1
         viewport.setSearch(scan: nil, currentMatchOffset: nil)
         findBar.updateStatus("")
+        refreshResultsPanel()
     }
 
     /// Starts a fresh background search for `query` over the logical
@@ -808,6 +868,7 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
             viewport.needsDisplay = true
             updateMatchStatus()
         }
+        refreshResultsPanel()
     }
 
     /// Selects match `index`, scrolls it into view, and emphasises it.
@@ -820,6 +881,9 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
             viewport.setSearch(scan: scan, currentMatchOffset: offset)
             viewport.scrollToRow(row)
             updateMatchStatus()
+            if resultsVisible {
+                resultsPanel.select(index: index)
+            }
         }
     }
 

@@ -41,6 +41,10 @@ The package opens directly in Xcode (`File ▸ Open…` the `BigEdit` folder).
   sensitivity; **.\*** makes the query a regular expression (`^` and `$`
   match at line boundaries, as in `grep`).
 - **⌘G** / **⇧⌘G** — next / previous match. **Esc** closes the find bar.
+- **⌥⌘L**, or the list button in the find bar — every match as a list below
+  the viewport, with its line number and a snippet; click one to jump to it.
+  The list is built row by row as you scroll it, so a million matches cost
+  nothing until they are looked at; the first 100,000 are listed.
 - **Text / CSV** — the selector at the top right of the editor. The CSV side
   becomes available when the file is detected as delimited data, and turns it
   into aligned columns with options for the delimiter, quote character,

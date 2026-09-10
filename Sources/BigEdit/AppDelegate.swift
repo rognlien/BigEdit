@@ -585,6 +585,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         previousItem.target = self
         findMenu.addItem(previousItem)
 
+        let resultsItem = NSMenuItem(title: "Search Results", action: #selector(toggleSearchResults),
+                                     keyEquivalent: "l")
+        resultsItem.keyEquivalentModifierMask = [.command, .option]
+        resultsItem.target = self
+        findMenu.addItem(resultsItem)
+
         findMenu.addItem(NSMenuItem.separator())
 
         let goToLineItem = NSMenuItem(
@@ -600,6 +606,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
 
     @objc private func performFind() {
         activeView?.showFindBar(replace: false)
+    }
+
+    /// Lists every match of the current search below the viewport.
+    @objc private func toggleSearchResults() {
+        activeView?.toggleSearchResults()
     }
 
     @objc private func performFindReplace() {
@@ -1225,6 +1236,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
             enabled = activeDocument != nil
         case #selector(toggleInfoPane):
             menuItem.state = (activeView?.isInfoPaneVisible ?? false) ? .on : .off
+            enabled = activeDocument != nil
+        case #selector(toggleSearchResults):
             enabled = activeDocument != nil
         case #selector(performGoToLine), #selector(performFind),
              #selector(performFindReplace), #selector(findNext), #selector(findPrevious),
