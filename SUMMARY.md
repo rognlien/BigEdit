@@ -34,6 +34,7 @@ file and a 50 KB file cost the same to display and to edit.
 | `ViewportView` | Custom `NSView`. Renders ~60 visible rows; never builds a view as tall as the document. Click+drag selection, auto-scroll past edges, double-click word / triple-click line, copy to pasteboard, I-beam cursor, right-click → Copy. Layers search highlights, selection rect, replacement-rule preview, and per-row syntax colouring. |
 | `DocumentView` | Container. Drives a custom `NSScroller` directly over `0…visualRowCount` rather than using `NSScrollView` — sidesteps the coordinate-precision breakdown a billion-point-tall document view would hit. Hosts the find bar and info pane. |
 | `FormatBar` | The thin strip across the top of the document. Two-segment Text / CSV radio selector at the right-hand end, with the CSV side disabled until detection finds delimited data; choosing CSV reveals the delimiter, quote, header, pin-header and trim options. |
+| `SearchResultsPanel` | Every match of the current search as a list below the viewport — line number and a snippet with the match in bold — built row by row on demand from the match array, so nothing is materialised for matches never scrolled into view. Clicking a row jumps to it; ⌘G keeps the list's selection in step. Listed rows are capped at 100,000. |
 | `FindBar` | Find + find-&-replace UI. Replace mode adds a second row with replacement field, Replace All, Revert. **Aa** toggle for case sensitivity. |
 | `InfoPane` | Right-side inspector with name / type / size / lines / words / characters. Lines update live during indexing; words / characters update during the stats scan with a `(N%)` suffix. |
 | `SaveProgressSheet` | Window-modal sheet during streaming save. Cancellable. |
@@ -58,7 +59,7 @@ viewport, not the file.
 ## What the user gets
 
 - `⌘O` open · `⌘L` go to line.
-- `⌘F` find · `⌥⌘F` find & replace · `⌘G` / `⇧⌘G` next / previous. **Aa** toggles case sensitivity. Status shows `Searching… 23%` so long scans don't look frozen.
+- `⌘F` find · `⌥⌘F` find & replace · `⌘G` / `⇧⌘G` next / previous · `⌥⌘L` list every match. **Aa** toggles case sensitivity. Status shows `Searching… 23%` so long scans don't look frozen.
 - `⌘S` save (atomic) · `⇧⌘S` save as. Progress sheet during save.
 - `⌘C` copy · `⌘A` select all. Right-click → Copy. Select All is deliberately absent from the right-click menu (selecting many GB onto the pasteboard would try to materialise it).
 - `⌘I` toggle Info Inspector.
