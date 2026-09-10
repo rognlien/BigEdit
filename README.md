@@ -32,6 +32,10 @@ The package opens directly in Xcode (`File ▸ Open…` the `BigEdit` folder).
 ## Usage
 
 - **⌘N** — create a new file and open it.
+- **⇧⌘T** — View ▸ Follow File: like `tail -f`. Bytes appended on disk are
+  indexed incrementally and shown as they arrive, and the view stays pinned
+  to the end if it was there. A file that shrinks or is replaced reloads in
+  full instead; a document with unsaved edits does not follow.
 - **⌘O** — open a file.
 - **Click and type** — edit in place (UTF-8 files). **⌘Z** / **⇧⌘Z** undo and
   redo; **⌘X/⌘C/⌘V** cut, copy, paste. **⌘S** saves atomically via a streaming
