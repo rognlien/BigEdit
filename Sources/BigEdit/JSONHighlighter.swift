@@ -1,20 +1,13 @@
-import AppKit
+import Foundation
 
-/// A small, stateless JSON syntax highlighter. Like the XML one it colours
-/// one row at a time with no carried context; a string or block comment that
-/// spans multiple rows is only coloured on the row where it begins.
+/// A small JSON syntax highlighter. Like the XML one it tokenizes one row at
+/// a time, carrying only whether a `/* */` comment is still open; a string
+/// broken across rows is coloured on the row where it begins.
 ///
-/// Recognises strings (keys and values are coloured differently), numbers,
-/// the literals `true` / `false` / `null`, structural punctuation, and `//`
-/// or `/* */` comments (a JSONC convenience).
+/// Recognises strings (keys and values are told apart), numbers, the literals
+/// `true` / `false` / `null`, structural punctuation, and `//` or `/* */`
+/// comments (a JSONC convenience).
 enum JSONHighlighter {
-
-    private static let stringColor = NSColor.systemRed
-    private static let keyColor = NSColor.systemBlue
-    private static let numberColor = NSColor.systemPurple
-    private static let literalColor = NSColor.systemTeal
-    private static let commentColor = NSColor.systemGreen
-    private static let punctuationColor = NSColor.secondaryLabelColor
 
     private static let openBrace = unichar(UInt8(ascii: "{"))
     private static let closeBrace = unichar(UInt8(ascii: "}"))
@@ -30,29 +23,25 @@ enum JSONHighlighter {
     private static let literals = ["true", "false", "null"]
 
     /// Stateful entry: when `startState` is `.blockComment` the row begins inside
-    /// a `/* */` comment. Returns the row's colouring and the state at its end.
-    static func attributedRow(_ text: String, font: NSFont,
-                              startState: HighlightState) -> (NSAttributedString, HighlightState) {
+    /// a `/* */` comment. Returns the row's tokens and the state at its end.
+    static func tokens(_ text: String, startState: HighlightState) -> ([Token], HighlightState) {
         if startState == .blockComment {
             let scanner = RowScanner(text)
-            let result = NSMutableAttributedString.plainRow(text, font: font)
+            var tokens: [Token] = []
             if let closeEnd = scanner.indexAfter("*/", from: 0) {
-                result.setColor(commentColor, in: 0..<closeEnd)
+                tokens.add(.comment, 0..<closeEnd)
                 let rest = scanner.source.substring(from: closeEnd)
-                let restAttr = attributedRow(rest, font: font)
-                result.replaceCharacters(
-                    in: NSRange(location: closeEnd, length: scanner.length - closeEnd),
-                    with: restAttr)
-                return (result, endState(rest, start: .normal))
+                tokens += self.tokens(rest).map { $0.shifted(by: closeEnd) }
+                return (tokens, endState(rest, start: .normal))
             }
-            result.setColor(commentColor, in: 0..<scanner.length)
-            return (result, .blockComment)
+            tokens.add(.comment, 0..<scanner.length)
+            return (tokens, .blockComment)
         }
-        return (attributedRow(text, font: font), endState(text, start: .normal))
+        return (tokens(text), endState(text, start: .normal))
     }
 
     /// Computes the comment state at the end of `text`, given the state at its
-    /// start. Mirrors the comment/string handling in `attributedRow`.
+    /// start. Mirrors the comment/string handling in `tokens`.
     static func endState(_ text: String, start: HighlightState) -> HighlightState {
         let scanner = RowScanner(text)
         let length = scanner.length
@@ -83,92 +72,93 @@ enum JSONHighlighter {
         return .normal
     }
 
-    static func attributedRow(_ text: String, font: NSFont) -> NSAttributedString {
-        let result = NSMutableAttributedString.plainRow(text, font: font)
+    /// The JSON tokens of a row that starts outside any comment.
+    static func tokens(_ text: String) -> [Token] {
+        var tokens: [Token] = []
         let scanner = RowScanner(text)
         var index = 0
         while index < scanner.length {
             let character = scanner.character(at: index)
             if character == quote {
-                index = colorString(scanner, from: index, into: result)
+                index = scanString(scanner, from: index, into: &tokens)
             } else if isPunctuation(character) {
-                result.setColor(punctuationColor, in: index..<(index + 1))
+                tokens.add(.punctuation, index..<(index + 1))
                 index += 1
             } else if character == slash {
-                index = colorComment(scanner, from: index, into: result)
+                index = scanComment(scanner, from: index, into: &tokens)
             } else if character == minus || RowScanner.isDigit(character) {
-                index = colorNumber(scanner, from: index, into: result)
+                index = scanNumber(scanner, from: index, into: &tokens)
             } else if RowScanner.isLowercaseLetter(character) {
-                index = colorLiteralKeyword(scanner, from: index, into: result)
+                index = scanLiteralKeyword(scanner, from: index, into: &tokens)
             } else {
                 index += 1
             }
         }
-        return result
+        return tokens
     }
 
-    /// Colours a `"..."` string. The string is coloured as a *key* when it is
-    /// immediately followed (after whitespace) by `:`, otherwise as a value.
-    private static func colorString(
+    /// Tokenizes a `"..."` string. The string is a *key* when it is
+    /// immediately followed (after whitespace) by `:`, otherwise a value.
+    private static func scanString(
         _ scanner: RowScanner,
         from start: Int,
-        into result: NSMutableAttributedString
+        into tokens: inout [Token]
     ) -> Int {
         let stringEnd = scanner.endOfQuotedString(from: start, quote: quote, escaping: true)
         let lookahead = scanner.skipWhitespace(from: stringEnd)
         let isKey = scanner.has(colon, at: lookahead)
-        result.setColor(isKey ? keyColor : stringColor, in: start..<stringEnd)
+        tokens.add(isKey ? .key : .string, start..<stringEnd)
         return stringEnd
     }
 
-    /// Colours a `//` or `/* */` comment; a lone `/` is left as plain text.
-    private static func colorComment(
+    /// Tokenizes a `//` or `/* */` comment; a lone `/` is left as plain text.
+    private static func scanComment(
         _ scanner: RowScanner,
         from start: Int,
-        into result: NSMutableAttributedString
+        into tokens: inout [Token]
     ) -> Int {
         let length = scanner.length
         if start + 1 < length {
             let next = scanner.character(at: start + 1)
             if next == slash {
-                result.setColor(commentColor, in: start..<length)
+                tokens.add(.comment, start..<length)
                 return length
             }
             if next == star {
                 let end = scanner.indexAfter("*/", from: start + 2) ?? length
-                result.setColor(commentColor, in: start..<end)
+                tokens.add(.comment, start..<end)
                 return end
             }
         }
         return start + 1
     }
 
-    /// Colours a numeric literal — a permissive sweep that accepts digits,
+    /// Tokenizes a numeric literal — a permissive sweep that accepts digits,
     /// `.`, `e`/`E`, and signs. Visually right for valid JSON, slightly loose
     /// on malformed input (acceptable for a highlighter).
-    private static func colorNumber(
+    private static func scanNumber(
         _ scanner: RowScanner,
         from start: Int,
-        into result: NSMutableAttributedString
+        into tokens: inout [Token]
     ) -> Int {
         let end = scanner.endOfNumber(from: start)
         if end > start {
-            result.setColor(numberColor, in: start..<end)
+            tokens.add(.number, start..<end)
             return end
         }
         return start + 1
     }
 
-    /// Colours `true` / `false` / `null` when the run is not part of a longer
+    /// Tokenizes `true` / `false` / `null` when the run is not part of a longer
     /// identifier (so `truer` would not be coloured).
-    private static func colorLiteralKeyword(
+    private static func scanLiteralKeyword(
         _ scanner: RowScanner,
         from start: Int,
-        into result: NSMutableAttributedString
+        into tokens: inout [Token]
     ) -> Int {
         let boundary: (unichar) -> Bool = { !RowScanner.isIdentifierCharacter($0) }
         if let end = scanner.endOfLiteral(in: literals, at: start, isBoundary: boundary) {
-            result.setColor(literalColor, in: start..<end)
+            tokens.add(.literal, start..<end)
             return end
         }
         return start + 1

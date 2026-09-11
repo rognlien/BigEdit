@@ -128,7 +128,8 @@ App shell (window, menu, open panel) is in `AppDelegate.swift` / `main.swift`.
   replacement glyph at the seam (rare in ASCII-dominant JSON/XML).
 - Search is **literal and case-sensitive**; no regex. Matches beyond the
   1,000,000th are not collected (shown as `N+`).
-- No syntax highlighting yet (**step 6**).
+- Syntax highlighting covers XML, JSON, Markdown, and YAML; other files draw
+  as plain text.
 - Encoding is assumed UTF-8; CRLF line endings are handled.
 - **CSV mode is display-only.** Padding fields into columns means the drawn
   text no longer matches the file's bytes, so editing is off and search

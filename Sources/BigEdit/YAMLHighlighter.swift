@@ -1,8 +1,8 @@
-import AppKit
+import Foundation
 
-/// A small, stateless YAML syntax highlighter. Per-row tokenization with no
-/// carried context, which fits YAML reasonably well since most of its syntax
-/// is line-oriented.
+/// A small YAML syntax highlighter. It tokenizes one row at a time, which
+/// fits YAML well since most of its syntax is line-oriented; the only thing
+/// carried between rows is the indent of an open `|` / `>` block scalar.
 ///
 /// Recognises document separators, list markers, bare and quoted keys, single
 /// and double quoted strings, numbers, the common literals (`true` / `false`
@@ -10,14 +10,6 @@ import AppKit
 /// (`&name` / `*name`), tags (`!tag` / `!!tag`), block-scalar indicators
 /// (`|` / `>`), and `#` comments.
 enum YAMLHighlighter {
-
-    private static let keyColor = NSColor.systemBlue
-    private static let stringColor = NSColor.systemRed
-    private static let numberColor = NSColor.systemPurple
-    private static let literalColor = NSColor.systemTeal
-    private static let commentColor = NSColor.systemGreen
-    private static let anchorColor = NSColor.systemOrange
-    private static let punctuationColor = NSColor.secondaryLabelColor
 
     private static let hash = unichar(UInt8(ascii: "#"))
     private static let colon = unichar(UInt8(ascii: ":"))
@@ -39,17 +31,17 @@ enum YAMLHighlighter {
     private static let literals = ["true", "false", "null", "yes", "no", "on", "off"]
 
     /// Stateful entry: when `startState` is `.blockScalar` the row may be a
-    /// continuation line of a `|` / `>` block scalar (coloured as a string).
-    static func attributedRow(_ text: String, font: NSFont,
-                              startState: HighlightState) -> (NSAttributedString, HighlightState) {
+    /// continuation line of a `|` / `>` block scalar (a string). Returns the
+    /// row's tokens and the state at its end.
+    static func tokens(_ text: String, startState: HighlightState) -> ([Token], HighlightState) {
         let scanner = RowScanner(text)
         if case .blockScalar(let parentIndent) = startState,
            continuesBlockScalar(scanner, parentIndent: parentIndent) {
-            let result = NSMutableAttributedString.plainRow(text, font: font)
-            result.setColor(stringColor, in: 0..<scanner.length)
-            return (result, .blockScalar(indent: parentIndent))
+            var tokens: [Token] = []
+            tokens.add(.string, 0..<scanner.length)
+            return (tokens, .blockScalar(indent: parentIndent))
         }
-        return (attributedRow(text, font: font), endState(text, start: startState))
+        return (tokens(text), endState(text, start: startState))
     }
 
     /// Computes the block-scalar state at the end of `text`. A `key: |` (or `>`)
@@ -111,15 +103,16 @@ enum YAMLHighlighter {
         return true
     }
 
-    static func attributedRow(_ text: String, font: NSFont) -> NSAttributedString {
-        let result = NSMutableAttributedString.plainRow(text, font: font)
+    /// The YAML tokens of a row that is not a block-scalar continuation.
+    static func tokens(_ text: String) -> [Token] {
+        var tokens: [Token] = []
         let scanner = RowScanner(text)
         let length = scanner.length
 
         // Document separator (`---` or `...`) takes the whole row.
         if isDocumentSeparator(scanner) {
-            result.setColor(punctuationColor, in: 0..<length)
-            return result
+            tokens.add(.punctuation, 0..<length)
+            return tokens
         }
 
         // Skip indent; recognise a leading list marker.
@@ -129,7 +122,7 @@ enum YAMLHighlighter {
                 || scanner.has(space, at: index + 1)
                 || scanner.has(tab, at: index + 1)
             if isMarker {
-                result.setColor(punctuationColor, in: index..<(index + 1))
+                tokens.add(.punctuation, index..<(index + 1))
                 index = scanner.endOfRun(from: index + 1) { $0 == space || $0 == tab }
             }
         }
@@ -139,47 +132,47 @@ enum YAMLHighlighter {
             let character = scanner.character(at: index)
 
             if character == hash && (index == 0 || RowScanner.isWhitespace(scanner.character(at: index - 1))) {
-                result.setColor(commentColor, in: index..<length)
-                return result
+                tokens.add(.comment, index..<length)
+                return tokens
             }
             if character == doubleQuote {
-                index = colorQuotedString(scanner, from: index, quote: doubleQuote, escaping: true, into: result)
+                index = scanQuotedString(scanner, from: index, quote: doubleQuote, escaping: true, into: &tokens)
                 continue
             }
             if character == singleQuote {
-                index = colorQuotedString(scanner, from: index, quote: singleQuote, escaping: false, into: result)
+                index = scanQuotedString(scanner, from: index, quote: singleQuote, escaping: false, into: &tokens)
                 continue
             }
             if character == colon && isAtKeyTerminator(scanner, at: index) {
-                colorKey(scanner, before: index, into: result)
-                result.setColor(punctuationColor, in: index..<(index + 1))
+                scanKey(scanner, before: index, into: &tokens)
+                tokens.add(.punctuation, index..<(index + 1))
                 index += 1
                 continue
             }
             if character == ampersand || character == asterisk || character == bang {
-                index = colorAnchorOrTag(scanner, from: index, into: result)
+                index = scanAnchorOrTag(scanner, from: index, into: &tokens)
                 continue
             }
             if character == pipe || character == greaterThan {
-                result.setColor(punctuationColor, in: index..<(index + 1))
+                tokens.add(.punctuation, index..<(index + 1))
                 index += 1
                 continue
             }
             if RowScanner.isLowercaseLetter(character) || character == tilde {
                 if let end = matchLiteral(scanner, from: index) {
-                    result.setColor(literalColor, in: index..<end)
+                    tokens.add(.literal, index..<end)
                     index = end
                     continue
                 }
             }
             if RowScanner.isDigit(character)
                 || (character == dash && RowScanner.isDigit(scanner.character(at: index + 1))) {
-                index = colorNumber(scanner, from: index, into: result)
+                index = scanNumber(scanner, from: index, into: &tokens)
                 continue
             }
             index += 1
         }
-        return result
+        return tokens
     }
 
     // MARK: - Line shape
@@ -200,12 +193,12 @@ enum YAMLHighlighter {
     // MARK: - Tokens
 
     /// Walks back from `before` (the index of `:`) to find where the key begins
-    /// and colours it. Quoted keys are recoloured by walking back to the
-    /// matching opening quote.
-    private static func colorKey(
+    /// and emits it. Quoted keys are found by walking back to the matching
+    /// opening quote.
+    private static func scanKey(
         _ scanner: RowScanner,
         before: Int,
-        into result: NSMutableAttributedString
+        into tokens: inout [Token]
     ) {
         if before == 0 {
             return
@@ -220,7 +213,7 @@ enum YAMLHighlighter {
                 openIndex -= 1
             }
             if openIndex >= 0 {
-                result.setColor(keyColor, in: openIndex..<before)
+                tokens.add(.key, openIndex..<before)
                 return
             }
         }
@@ -233,42 +226,42 @@ enum YAMLHighlighter {
             keyStart -= 1
         }
         if keyStart < before {
-            result.setColor(keyColor, in: keyStart..<before)
+            tokens.add(.key, keyStart..<before)
         }
     }
 
-    private static func colorQuotedString(
+    private static func scanQuotedString(
         _ scanner: RowScanner,
         from start: Int,
         quote: unichar,
         escaping: Bool,
-        into result: NSMutableAttributedString
+        into tokens: inout [Token]
     ) -> Int {
         let end = scanner.endOfQuotedString(from: start, quote: quote, escaping: escaping)
-        result.setColor(stringColor, in: start..<end)
+        tokens.add(.string, start..<end)
         return end
     }
 
-    private static func colorAnchorOrTag(
+    private static func scanAnchorOrTag(
         _ scanner: RowScanner,
         from start: Int,
-        into result: NSMutableAttributedString
+        into tokens: inout [Token]
     ) -> Int {
         let end = scanner.endOfRun(from: start + 1) { !RowScanner.isWhitespace($0) && $0 != colon }
-        result.setColor(anchorColor, in: start..<end)
+        tokens.add(.anchor, start..<end)
         return end
     }
 
-    /// Colours a number starting at `start`. Callers only get here when the
+    /// Tokenizes a number starting at `start`. Callers only get here when the
     /// run begins with a digit or a `-` followed by one, so the sweep always
     /// covers at least one digit.
-    private static func colorNumber(
+    private static func scanNumber(
         _ scanner: RowScanner,
         from start: Int,
-        into result: NSMutableAttributedString
+        into tokens: inout [Token]
     ) -> Int {
         let end = scanner.endOfNumber(from: start)
-        result.setColor(numberColor, in: start..<end)
+        tokens.add(.number, start..<end)
         return end
     }
 

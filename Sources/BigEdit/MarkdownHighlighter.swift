@@ -1,21 +1,13 @@
-import AppKit
+import Foundation
 
-/// A small, stateless Markdown syntax highlighter. Per-row tokenization with
-/// no carried context — so a fenced code block colours its `\`\`\`` opener but
-/// not the lines in between (those would need state).
+/// A small Markdown syntax highlighter. It tokenizes one row at a time,
+/// carrying only whether a fenced code block is open so the lines inside a
+/// fence are coloured as code.
 ///
 /// Recognises headings, horizontal rules, fence markers, blockquote and list
 /// prefixes, and the inline tokens: inline code, bold, italic, links, and
-/// strikethrough. Bold uses the font's bold variant; italic uses a colour.
+/// strikethrough.
 enum MarkdownHighlighter {
-
-    private static let headingColor = NSColor.systemBlue
-    private static let codeColor = NSColor.systemBrown
-    private static let linkTextColor = NSColor.systemTeal
-    private static let urlColor = NSColor.systemPurple
-    private static let italicColor = NSColor.systemOrange
-    private static let punctuationColor = NSColor.secondaryLabelColor
-    private static let mutedColor = NSColor.secondaryLabelColor
 
     private static let space = RowScanner.space
     private static let hash = unichar(UInt8(ascii: "#"))
@@ -33,20 +25,19 @@ enum MarkdownHighlighter {
     private static let dot = unichar(UInt8(ascii: "."))
 
     /// Stateful entry: when `startState` is `.fencedCode` the row is inside a
-    /// ``` / ~~~ code block. Returns the colouring and the state at the end.
-    static func attributedRow(_ text: String, font: NSFont,
-                              startState: HighlightState) -> (NSAttributedString, HighlightState) {
+    /// ``` / ~~~ code block. Returns the row's tokens and the state at its end.
+    static func tokens(_ text: String, startState: HighlightState) -> ([Token], HighlightState) {
         if startState == .fencedCode {
             let scanner = RowScanner(text)
-            let result = NSMutableAttributedString.plainRow(text, font: font)
+            var tokens: [Token] = []
             if isFenceLine(scanner) {
-                result.setColor(punctuationColor, in: 0..<scanner.length)   // closing fence
-                return (result, .normal)
+                tokens.add(.punctuation, 0..<scanner.length)   // closing fence
+                return (tokens, .normal)
             }
-            result.setColor(codeColor, in: 0..<scanner.length)
-            return (result, .fencedCode)
+            tokens.add(.code, 0..<scanner.length)
+            return (tokens, .fencedCode)
         }
-        return (attributedRow(text, font: font), endState(text, start: .normal))
+        return (tokens(text), endState(text, start: .normal))
     }
 
     /// Computes the fenced-code state at the end of `text` (line-based).
@@ -73,30 +64,30 @@ enum MarkdownHighlighter {
         return result
     }
 
-    static func attributedRow(_ text: String, font: NSFont) -> NSAttributedString {
-        let result = NSMutableAttributedString.plainRow(text, font: font)
+    /// The Markdown tokens of a row outside any fenced code block.
+    static func tokens(_ text: String) -> [Token] {
+        var tokens: [Token] = []
         let scanner = RowScanner(text)
 
         // Whole-line constructs first. Each returns true if it claimed the row.
-        if colorHeading(scanner, font: font, into: result) { return result }
-        if colorHorizontalRule(scanner, into: result) { return result }
-        if colorFence(scanner, into: result) { return result }
+        if scanHeading(scanner, into: &tokens) { return tokens }
+        if scanHorizontalRule(scanner, into: &tokens) { return tokens }
+        if scanFence(scanner, into: &tokens) { return tokens }
 
         // Line prefixes that don't preempt inline scanning.
-        colorBlockquote(scanner, into: result)
-        colorListMarker(scanner, into: result)
+        scanBlockquote(scanner, into: &tokens)
+        scanListMarker(scanner, into: &tokens)
 
         // Inline tokens.
-        colorInline(scanner, font: font, into: result)
-        return result
+        scanInline(scanner, into: &tokens)
+        return tokens
     }
 
     // MARK: - Block-level
 
-    private static func colorHeading(
+    private static func scanHeading(
         _ scanner: RowScanner,
-        font: NSFont,
-        into result: NSMutableAttributedString
+        into tokens: inout [Token]
     ) -> Bool {
         let length = scanner.length
         let indent = scanner.leadingSpaceCount
@@ -111,15 +102,14 @@ enum MarkdownHighlighter {
         if hashEnd < length && scanner.character(at: hashEnd) != space {
             return false
         }
-        result.setColor(headingColor, in: indent..<length)
-        result.setFont(boldFont(from: font), in: indent..<length)
-        result.setColor(punctuationColor, in: indent..<hashEnd)
+        tokens.add(.heading, indent..<length)
+        tokens.add(.punctuation, indent..<hashEnd)
         return true
     }
 
-    private static func colorHorizontalRule(
+    private static func scanHorizontalRule(
         _ scanner: RowScanner,
-        into result: NSMutableAttributedString
+        into tokens: inout [Token]
     ) -> Bool {
         let length = scanner.length
         let indent = scanner.leadingSpaceCount
@@ -144,24 +134,24 @@ enum MarkdownHighlighter {
         if count < 3 {
             return false
         }
-        result.setColor(punctuationColor, in: 0..<length)
+        tokens.add(.punctuation, 0..<length)
         return true
     }
 
-    private static func colorFence(
+    private static func scanFence(
         _ scanner: RowScanner,
-        into result: NSMutableAttributedString
+        into tokens: inout [Token]
     ) -> Bool {
         let isFence = isFenceLine(scanner)
         if isFence {
-            result.setColor(punctuationColor, in: 0..<scanner.length)
+            tokens.add(.punctuation, 0..<scanner.length)
         }
         return isFence
     }
 
-    private static func colorBlockquote(
+    private static func scanBlockquote(
         _ scanner: RowScanner,
-        into result: NSMutableAttributedString
+        into tokens: inout [Token]
     ) {
         let length = scanner.length
         let indent = scanner.leadingSpaceCount
@@ -171,12 +161,12 @@ enum MarkdownHighlighter {
         if scanner.character(at: indent) != greaterThan {
             return
         }
-        result.setColor(mutedColor, in: indent..<length)
+        tokens.add(.blockquote, indent..<length)
     }
 
-    private static func colorListMarker(
+    private static func scanListMarker(
         _ scanner: RowScanner,
-        into result: NSMutableAttributedString
+        into tokens: inout [Token]
     ) {
         let indent = scanner.leadingSpaceCount
         if indent >= scanner.length {
@@ -186,7 +176,7 @@ enum MarkdownHighlighter {
         // Bullet markers — `-`, `*`, `+` followed by space.
         if firstChar == dash || firstChar == star || firstChar == plus {
             if scanner.has(space, at: indent + 1) {
-                result.setColor(punctuationColor, in: indent..<(indent + 1))
+                tokens.add(.punctuation, indent..<(indent + 1))
             }
             return
         }
@@ -196,7 +186,7 @@ enum MarkdownHighlighter {
             let terminator = scanner.character(at: endIndex)
             if terminator == dot || terminator == closeParen {
                 if scanner.has(space, at: endIndex + 1) {
-                    result.setColor(punctuationColor, in: indent..<(endIndex + 1))
+                    tokens.add(.punctuation, indent..<(endIndex + 1))
                 }
             }
         }
@@ -204,71 +194,69 @@ enum MarkdownHighlighter {
 
     // MARK: - Inline
 
-    private static func colorInline(
+    private static func scanInline(
         _ scanner: RowScanner,
-        font: NSFont,
-        into result: NSMutableAttributedString
+        into tokens: inout [Token]
     ) {
         let length = scanner.length
         var index = 0
         while index < length {
             let character = scanner.character(at: index)
             if character == backtick {
-                index = colorInlineCode(scanner, from: index, into: result)
+                index = scanInlineCode(scanner, from: index, into: &tokens)
             } else if character == star || character == underscore {
-                index = colorEmphasis(scanner, from: index, marker: character, font: font, into: result)
+                index = scanEmphasis(scanner, from: index, marker: character, into: &tokens)
             } else if character == openBracket {
-                index = colorLink(scanner, from: index, into: result)
+                index = scanLink(scanner, from: index, into: &tokens)
             } else if character == tilde {
-                index = colorStrikethrough(scanner, from: index, into: result)
+                index = scanStrikethrough(scanner, from: index, into: &tokens)
             } else {
                 index += 1
             }
         }
     }
 
-    private static func colorInlineCode(
+    private static func scanInlineCode(
         _ scanner: RowScanner,
         from start: Int,
-        into result: NSMutableAttributedString
+        into tokens: inout [Token]
     ) -> Int {
         let closeIndex = scanner.endOfRun(from: start + 1) { $0 != backtick }
         if closeIndex < scanner.length {
-            result.setColor(codeColor, in: start..<(closeIndex + 1))
+            tokens.add(.code, start..<(closeIndex + 1))
             return closeIndex + 1
         }
         return start + 1
     }
 
-    /// Two markers in a row are treated as **bold**; a single marker as
-    /// *italic*. Bold uses the font's bold variant; italic uses a colour.
-    private static func colorEmphasis(
+    /// Two markers in a row are treated as **strong**; a single marker as
+    /// *emphasis*.
+    private static func scanEmphasis(
         _ scanner: RowScanner,
         from start: Int,
         marker: unichar,
-        font: NSFont,
-        into result: NSMutableAttributedString
+        into tokens: inout [Token]
     ) -> Int {
         let length = scanner.length
-        let isBold = scanner.has(marker, at: start + 1)
-        let openLength = isBold ? 2 : 1
+        let isStrong = scanner.has(marker, at: start + 1)
+        let openLength = isStrong ? 2 : 1
         var index = start + openLength
 
         while index < length {
             if scanner.character(at: index) == marker {
-                if isBold {
+                if isStrong {
                     if scanner.has(marker, at: index + 1) {
                         let end = index + 2
-                        result.setFont(boldFont(from: font), in: start..<end)
-                        result.setColor(punctuationColor, in: start..<(start + 2))
-                        result.setColor(punctuationColor, in: index..<end)
+                        tokens.add(.strong, start..<end)
+                        tokens.add(.punctuation, start..<(start + 2))
+                        tokens.add(.punctuation, index..<end)
                         return end
                     }
                 } else {
                     let end = index + 1
-                    result.setColor(italicColor, in: start..<end)
-                    result.setColor(punctuationColor, in: start..<(start + 1))
-                    result.setColor(punctuationColor, in: index..<end)
+                    tokens.add(.emphasis, start..<end)
+                    tokens.add(.punctuation, start..<(start + 1))
+                    tokens.add(.punctuation, index..<end)
                     return end
                 }
             }
@@ -279,10 +267,10 @@ enum MarkdownHighlighter {
         return start + openLength
     }
 
-    private static func colorLink(
+    private static func scanLink(
         _ scanner: RowScanner,
         from start: Int,
-        into result: NSMutableAttributedString
+        into tokens: inout [Token]
     ) -> Int {
         let length = scanner.length
         let bracketEnd = scanner.endOfRun(from: start + 1) { $0 != closeBracket }
@@ -293,18 +281,18 @@ enum MarkdownHighlighter {
         if parenEnd >= length {
             return start + 1
         }
-        result.setColor(linkTextColor, in: (start + 1)..<bracketEnd)
-        result.setColor(urlColor, in: (bracketEnd + 2)..<parenEnd)
-        result.setColor(punctuationColor, in: start..<(start + 1))
-        result.setColor(punctuationColor, in: bracketEnd..<(bracketEnd + 2))
-        result.setColor(punctuationColor, in: parenEnd..<(parenEnd + 1))
+        tokens.add(.linkText, (start + 1)..<bracketEnd)
+        tokens.add(.url, (bracketEnd + 2)..<parenEnd)
+        tokens.add(.punctuation, start..<(start + 1))
+        tokens.add(.punctuation, bracketEnd..<(bracketEnd + 2))
+        tokens.add(.punctuation, parenEnd..<(parenEnd + 1))
         return parenEnd + 1
     }
 
-    private static func colorStrikethrough(
+    private static func scanStrikethrough(
         _ scanner: RowScanner,
         from start: Int,
-        into result: NSMutableAttributedString
+        into tokens: inout [Token]
     ) -> Int {
         let length = scanner.length
         if !scanner.has(tilde, at: start + 1) {
@@ -314,23 +302,13 @@ enum MarkdownHighlighter {
         while index + 1 < length {
             if scanner.character(at: index) == tilde && scanner.character(at: index + 1) == tilde {
                 let end = index + 2
-                result.addAttribute(
-                    .strikethroughStyle,
-                    value: NSUnderlineStyle.single.rawValue,
-                    range: NSRange(location: start + 2, length: index - (start + 2))
-                )
-                result.setColor(punctuationColor, in: start..<(start + 2))
-                result.setColor(punctuationColor, in: index..<end)
+                tokens.add(.strikethrough, (start + 2)..<index)
+                tokens.add(.punctuation, start..<(start + 2))
+                tokens.add(.punctuation, index..<end)
                 return end
             }
             index += 1
         }
         return start + 2
-    }
-
-    // MARK: - Helpers
-
-    private static func boldFont(from font: NSFont) -> NSFont {
-        return NSFontManager.shared.convert(font, toHaveTrait: .boldFontMask)
     }
 }

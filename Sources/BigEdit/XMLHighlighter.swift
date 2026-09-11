@@ -1,4 +1,4 @@
-import AppKit
+import Foundation
 
 /// The syntax-highlighting mode for a document.
 enum SyntaxMode {
@@ -9,20 +9,11 @@ enum SyntaxMode {
     case yaml
 }
 
-/// A small, stateless XML syntax highlighter. It colours one row of text at a
-/// time, with no carried context, which keeps it viewport-cheap.
-///
-/// The trade-off of being stateless: a construct that spans rows — a comment
-/// broken across several lines — is only coloured on the row where it begins.
-/// That is acceptable for a viewer and avoids any per-row state in the index.
+/// A small XML syntax highlighter. It tokenizes one row of text at a time,
+/// which keeps it viewport-cheap; the only thing carried between rows is
+/// whether a `<!-- -->` comment is still open, so a comment broken across
+/// several lines is coloured on every one of them.
 enum XMLHighlighter {
-
-    private static let tagColor = NSColor.systemBlue
-    private static let attributeNameColor = NSColor.systemPurple
-    private static let attributeValueColor = NSColor.systemRed
-    private static let commentColor = NSColor.systemGreen
-    private static let declarationColor = NSColor.systemTeal
-    private static let punctuationColor = NSColor.secondaryLabelColor
 
     private static let lessThan = unichar(UInt8(ascii: "<"))
     private static let greaterThan = unichar(UInt8(ascii: ">"))
@@ -35,25 +26,21 @@ enum XMLHighlighter {
     private static let apostrophe = unichar(UInt8(ascii: "'"))
 
     /// Stateful entry: when `startState` is `.blockComment` the row begins inside
-    /// an `<!-- -->` comment. Returns the colouring and the state at the end.
-    static func attributedRow(_ text: String, font: NSFont,
-                              startState: HighlightState) -> (NSAttributedString, HighlightState) {
+    /// an `<!-- -->` comment. Returns the row's tokens and the state at its end.
+    static func tokens(_ text: String, startState: HighlightState) -> ([Token], HighlightState) {
         if startState == .blockComment {
             let scanner = RowScanner(text)
-            let result = NSMutableAttributedString.plainRow(text, font: font)
+            var tokens: [Token] = []
             if let closeEnd = scanner.indexAfter("-->", from: 0) {
-                result.setColor(commentColor, in: 0..<closeEnd)
+                tokens.add(.comment, 0..<closeEnd)
                 let rest = scanner.source.substring(from: closeEnd)
-                let restAttr = attributedRow(rest, font: font)
-                result.replaceCharacters(
-                    in: NSRange(location: closeEnd, length: scanner.length - closeEnd),
-                    with: restAttr)
-                return (result, endState(rest, start: .normal))
+                tokens += self.tokens(rest).map { $0.shifted(by: closeEnd) }
+                return (tokens, endState(rest, start: .normal))
             }
-            result.setColor(commentColor, in: 0..<scanner.length)
-            return (result, .blockComment)
+            tokens.add(.comment, 0..<scanner.length)
+            return (tokens, .blockComment)
         }
-        return (attributedRow(text, font: font), endState(text, start: .normal))
+        return (tokens(text), endState(text, start: .normal))
     }
 
     /// Computes the comment state at the end of `text`. XML comments can't nest
@@ -72,27 +59,27 @@ enum XMLHighlighter {
         return .normal
     }
 
-    /// Returns `text` as an attributed string with XML tokens coloured.
-    static func attributedRow(_ text: String, font: NSFont) -> NSAttributedString {
-        let result = NSMutableAttributedString.plainRow(text, font: font)
+    /// The XML tokens of a row that starts outside any comment.
+    static func tokens(_ text: String) -> [Token] {
+        var tokens: [Token] = []
         let scanner = RowScanner(text)
         var index = 0
         while index < scanner.length {
             if scanner.character(at: index) == lessThan {
-                index = colorMarkup(scanner, from: index, into: result)
+                index = scanMarkup(scanner, from: index, into: &tokens)
             } else {
                 index += 1  // Text content keeps the default colour.
             }
         }
-        return result
+        return tokens
     }
 
-    /// Colours one markup construct beginning at `start` (`<`); returns the
+    /// Tokenizes one markup construct beginning at `start` (`<`); returns the
     /// index just past it. Always advances by at least one.
-    private static func colorMarkup(
+    private static func scanMarkup(
         _ scanner: RowScanner,
         from start: Int,
-        into result: NSMutableAttributedString
+        into tokens: inout [Token]
     ) -> Int {
         let length = scanner.length
         let secondChar = scanner.character(at: start + 1)
@@ -100,85 +87,85 @@ enum XMLHighlighter {
         if secondChar == bang {
             if scanner.character(at: start + 2) == dash && scanner.character(at: start + 3) == dash {
                 let end = scanner.indexAfter("-->", from: start + 4) ?? length
-                result.setColor(commentColor, in: start..<end)
+                tokens.add(.comment, start..<end)
                 return end
             }
             let end = scanner.indexAfter(">", from: start + 2) ?? length
-            result.setColor(declarationColor, in: start..<end)
+            tokens.add(.declaration, start..<end)
             return end
         }
 
         if secondChar == question {
             let end = scanner.indexAfter("?>", from: start + 2) ?? length
-            result.setColor(declarationColor, in: start..<end)
+            tokens.add(.declaration, start..<end)
             return end
         }
 
-        return colorTag(scanner, from: start, into: result)
+        return scanTag(scanner, from: start, into: &tokens)
     }
 
-    /// Colours an element tag and its attributes; returns the index past it.
-    private static func colorTag(
+    /// Tokenizes an element tag and its attributes; returns the index past it.
+    private static func scanTag(
         _ scanner: RowScanner,
         from start: Int,
-        into result: NSMutableAttributedString
+        into tokens: inout [Token]
     ) -> Int {
         let length = scanner.length
         var index = start
 
-        result.setColor(punctuationColor, in: index..<(index + 1))  // '<'
+        tokens.add(.punctuation, index..<(index + 1))  // '<'
         index += 1
         if scanner.has(slash, at: index) {
-            result.setColor(punctuationColor, in: index..<(index + 1))
+            tokens.add(.punctuation, index..<(index + 1))
             index += 1
         }
 
         let nameStart = index
         index = scanner.endOfRun(from: index, while: isNameCharacter)
-        result.setColor(tagColor, in: nameStart..<index)
+        tokens.add(.tag, nameStart..<index)
 
         var tagClosed = false
         while index < length && !tagClosed {
             let character = scanner.character(at: index)
             if character == greaterThan {
-                result.setColor(punctuationColor, in: index..<(index + 1))
+                tokens.add(.punctuation, index..<(index + 1))
                 index += 1
                 tagClosed = true
             } else if character == slash || character == equals {
-                result.setColor(punctuationColor, in: index..<(index + 1))
+                tokens.add(.punctuation, index..<(index + 1))
                 index += 1
             } else if RowScanner.isWhitespace(character) {
                 index += 1
             } else if character == quote || character == apostrophe {
-                index = colorString(scanner, from: index, quote: character, into: result)
+                index = scanString(scanner, from: index, quote: character, into: &tokens)
             } else {
-                index = colorAttributeName(scanner, from: index, into: result)
+                index = scanAttributeName(scanner, from: index, into: &tokens)
             }
         }
         return max(index, start + 1)
     }
 
-    /// Colours a quoted attribute value; returns the index past the close quote.
-    private static func colorString(
+    /// Tokenizes a quoted attribute value; returns the index past the close quote.
+    private static func scanString(
         _ scanner: RowScanner,
         from start: Int,
         quote: unichar,
-        into result: NSMutableAttributedString
+        into tokens: inout [Token]
     ) -> Int {
         let end = scanner.endOfQuotedString(from: start, quote: quote, escaping: false)
-        result.setColor(attributeValueColor, in: start..<end)
+        tokens.add(.attributeValue, start..<end)
         return end
     }
 
-    /// Colours an attribute name; returns the index past it (always advances).
-    private static func colorAttributeName(
+    /// Tokenizes an attribute name; returns the index past it (always advances).
+    private static func scanAttributeName(
         _ scanner: RowScanner,
         from start: Int,
-        into result: NSMutableAttributedString
+        into tokens: inout [Token]
     ) -> Int {
         var index = scanner.endOfRun(from: start) { !isAttributeNameDelimiter($0) }
         if index > start {
-            result.setColor(attributeNameColor, in: start..<index)
+            tokens.add(.attributeName, start..<index)
         } else {
             index = start + 1  // Safety: never stall the caller's loop.
         }
