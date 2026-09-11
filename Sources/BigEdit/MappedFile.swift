@@ -14,6 +14,11 @@ final class MappedFile {
     /// The size of the file in bytes.
     let size: Int
 
+    /// The file's inode, so a later look at the same path can tell an append
+    /// (same inode, larger) from a replacement (a new inode, as an atomic save
+    /// or a log rotation produces).
+    let inode: UInt64
+
     private let descriptor: Int32
     private let base: UnsafeMutableRawPointer?
 
@@ -34,6 +39,7 @@ final class MappedFile {
         self.path = path
         self.descriptor = openedDescriptor
         self.size = fileSize
+        self.inode = UInt64(fileInfo.st_ino)
 
         // An empty file cannot be mapped, but it is still a valid (empty) document.
         if fileSize == 0 {
