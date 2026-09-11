@@ -51,12 +51,14 @@ extension ViewportView {
         NSBezierPath(rect: textArea).addClip()
         NSColor.gridColor.setStroke()
         let grid = NSBezierPath()
+        let dividers = csvDividerPositions()
+        let tableRight = min(textArea.maxX, dividers.last ?? textArea.maxX)  // no grid past the last column
         for row in 0..<rowCount {
             let y = pinnedHeaderHeight + CGFloat(row + 1) * lineHeight - fraction * lineHeight - 0.5
             grid.move(to: NSPoint(x: textArea.minX, y: y))
-            grid.line(to: NSPoint(x: textArea.maxX, y: y))
+            grid.line(to: NSPoint(x: tableRight, y: y))
         }
-        for x in csvDividerPositions() where x >= textArea.minX && x <= textArea.maxX {
+        for x in dividers where x >= textArea.minX && x <= textArea.maxX {
             grid.move(to: NSPoint(x: x + 0.5, y: textArea.minY))
             grid.line(to: NSPoint(x: x + 0.5, y: textArea.maxY))
         }
