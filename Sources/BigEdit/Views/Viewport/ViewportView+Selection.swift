@@ -41,6 +41,7 @@ extension ViewportView {
         // because selecting and copying many GB would try to build a huge
         // string on the pasteboard.
         let menu = NSMenu()
+        addCSVSortItems(to: menu, at: convert(event.locationInWindow, from: nil))
         menu.addItem(NSMenuItem(
             title: "Cut",
             action: #selector(NSText.cut(_:)),
@@ -67,6 +68,14 @@ extension ViewportView {
                 sizeCSVColumnToContent(column)
             } else {
                 columnDrag = (column, downPoint.x, csvColumnLayout.columnWidths[column])
+            }
+            return
+        }
+        if let column = csvHeaderColumn(at: downPoint) {
+            // A click on a column header sorts by it; the second click of a
+            // double-click is ignored rather than sorting back again.
+            if event.clickCount == 1 {
+                onCSVSortRequest?(column, nil)
             }
             return
         }
@@ -103,6 +112,30 @@ extension ViewportView {
         }
         lastDragLocationInWindow = event.locationInWindow
         updateSelectionForDrag()
+    }
+
+    /// "Sort Ascending by Name" / "Sort Descending by Name" for the column
+    /// under `point`, when the table is drawn as columns.
+    private func addCSVSortItems(to menu: NSMenu, at point: NSPoint) {
+        if isCSVRenderingActive, let column = csvColumn(atX: point.x) {
+            let title = csvColumnTitle(column)
+            for (label, action) in [("Sort Ascending by “\(title)”", #selector(sortColumnAscending(_:))),
+                                    ("Sort Descending by “\(title)”", #selector(sortColumnDescending(_:)))] {
+                let item = NSMenuItem(title: label, action: action, keyEquivalent: "")
+                item.target = self
+                item.tag = column
+                menu.addItem(item)
+            }
+            menu.addItem(NSMenuItem.separator())
+        }
+    }
+
+    @objc private func sortColumnAscending(_ sender: NSMenuItem) {
+        onCSVSortRequest?(sender.tag, false)
+    }
+
+    @objc private func sortColumnDescending(_ sender: NSMenuItem) {
+        onCSVSortRequest?(sender.tag, true)
     }
 
     override func mouseUp(with event: NSEvent) {

@@ -28,7 +28,22 @@ extension DocumentView {
     /// with no change.
     func processLines(_ operation: LineOperation,
                       completion: @escaping (Result<Int, Error>) -> Void) {
-        guard let document = viewport.document, viewport.isEditingAllowed else {
+        if viewport.isEditingAllowed {
+            rewriteLines(title: "Processing lines…", completion: completion) { lines, isCancelled in
+                try LineProcessor.apply(operation, to: lines, isCancelled: isCancelled)
+            }
+        } else {
+            completion(.failure(ProcessLinesRefusal.notEditable))
+        }
+    }
+
+    /// Runs `transform` over every line of the document off the main thread,
+    /// behind a cancellable progress sheet, and applies its result as one
+    /// undoable edit. A nil result means the run was cancelled.
+    func rewriteLines(title: String,
+                      completion: @escaping (Result<Int, Error>) -> Void,
+                      transform: @escaping ([String], _ isCancelled: () -> Bool) throws -> [String]?) {
+        guard let document = viewport.document, viewport.isWholeDocumentReplacementAllowed else {
             completion(.failure(ProcessLinesRefusal.notEditable))
             return
         }
@@ -38,7 +53,7 @@ extension DocumentView {
             return
         }
 
-        let sheet = SaveProgressSheet(title: "Processing lines…")
+        let sheet = SaveProgressSheet(title: title)
         let cancelled = CancelToken()
         sheet.onCancel = { cancelled.cancel() }
         sheet.setProgress(0)
@@ -51,8 +66,7 @@ extension DocumentView {
             let lineDocument = LineDocument(bytes: bytes, newline: newline)
             var outcome: Result<[UInt8]?, Error>
             do {
-                let processed = try LineProcessor.apply(operation, to: lineDocument.lines,
-                                                        isCancelled: { cancelled.isCancelled })
+                let processed = try transform(lineDocument.lines, { cancelled.isCancelled })
                 outcome = .success(processed.map { lineDocument.bytes(from: $0) })
             } catch {
                 outcome = .failure(error)

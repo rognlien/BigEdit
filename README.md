@@ -57,6 +57,11 @@ The package opens directly in Xcode (`File ▸ Open…` the `BigEdit` folder).
   becomes available when the file is detected as delimited data, and turns it
   into aligned columns on a faint grid, with options for the delimiter, quote character,
   header row, pinning the header while scrolling, and trimming field spaces.
+- **Click a column header** to sort the table by that column — naturally, so
+  `9` comes before `10`; click again for descending. Right-click any cell
+  for Sort Ascending / Descending by that column. The sort is one undoable
+  edit (⌘Z puts the rows back) and, like Process Lines, holds every line in
+  memory, so it is limited to files of 32 MB.
 - **Drag a column edge** — the ticks along the top row mark each column's
   trailing edge; the pointer becomes a resize cursor within a few pixels of
   one. **Double-click an edge** to put that column back to the width its own
