@@ -1,0 +1,172 @@
+import AppKit
+import CoreText
+
+/// Positional editing: typing, deletion, cut and paste, undo and redo.
+extension ViewportView {
+
+    /// Positional edits are possible when the format allows it and nothing is
+    /// transforming the drawn text — neither a deferred replacement rule nor
+    /// aligned CSV columns, since under either the caret's screen position no
+    /// longer identifies a byte.
+    var isEditingAllowed: Bool {
+        document?.isEditable == true && document?.hasDisplayTransform != true
+            && !isCSVRenderingActive
+    }
+
+    /// Replaces the whole document in one undoable step.
+    ///
+    /// The line operations rewrite every line, so they land as a single edit
+    /// rather than as thousands — one ⌘Z puts the document back.
+    func replaceEntireDocument(with bytes: [UInt8]) {
+        if let document {
+            performEdit(replacing: 0..<document.length, with: bytes)
+        }
+    }
+
+    /// Replaces `range` with `bytes`, collapses the caret to the end of the
+    /// insertion, and refreshes everything that depends on the content.
+    func performEdit(replacing range: Range<Int>, with bytes: [UInt8]) {
+        guard let document, isEditingAllowed else {
+            NSSound.beep()
+            return
+        }
+        document.replace(range, with: bytes, selectionBefore: selection)
+        let caret = range.lowerBound + bytes.count
+        selection = TextSelection(anchorOffset: caret, activeOffset: caret)
+        desiredCaretX = nil
+        onEdit?()
+        scrollByteIntoView(caret)
+        needsDisplay = true
+    }
+
+    /// Call after the document was edited outside the keyboard path (Replace
+    /// All): clamps the selection to the new length and re-clamps the scroll.
+    func documentDidChangeProgrammatically() {
+        if let selection, let document {
+            let length = document.length
+            self.selection = TextSelection(
+                anchorOffset: min(selection.anchorOffset, length),
+                activeOffset: min(selection.activeOffset, length)
+            )
+        }
+        setScrollRow(scrollRow)
+        needsDisplay = true
+    }
+
+    @objc func undo(_ sender: Any?) {
+        replayHistory { document in document.undoStack.undo(in: document) }
+    }
+
+    @objc func redo(_ sender: Any?) {
+        replayHistory { document in document.undoStack.redo(in: document) }
+    }
+
+    private func replayHistory(_ action: (EditedDocument) -> TextSelection?) {
+        guard let document, isEditingAllowed else {
+            NSSound.beep()
+            return
+        }
+        if hasMarkedText() {
+            inputContext?.discardMarkedText()
+            unmarkText()
+        }
+        if let restored = action(document) {
+            selection = restored
+            desiredCaretX = nil
+            onEdit?()
+            scrollByteIntoView(restored.activeOffset)
+            needsDisplay = true
+        } else {
+            NSSound.beep()
+        }
+    }
+
+    /// Inserts `bytes` at the selection. Typing without a caret does nothing
+    /// (click to place one first) — arrows keep their browse-first behaviour.
+    private func insertBytesAtSelection(_ bytes: [UInt8]) {
+        if let selection {
+            performEdit(replacing: selection.range, with: bytes)
+        } else {
+            NSSound.beep()
+        }
+    }
+
+    override func deleteBackward(_ sender: Any?) {
+        guard let document, let selection else {
+            NSSound.beep()
+            return
+        }
+        if !selection.isEmpty {
+            performEdit(replacing: selection.range, with: [])
+        } else if selection.activeOffset > 0 {
+            let caret = selection.activeOffset
+            var start = document.previousCharacterOffset(before: caret)
+            // A CRLF pair deletes as one unit.
+            if document.byte(at: start) == 0x0A, start > 0,
+               document.byte(at: start - 1) == 0x0D {
+                start -= 1
+            }
+            performEdit(replacing: start..<caret, with: [])
+        }
+    }
+
+    override func deleteForward(_ sender: Any?) {
+        guard let document, let selection else {
+            NSSound.beep()
+            return
+        }
+        if !selection.isEmpty {
+            performEdit(replacing: selection.range, with: [])
+        } else if selection.activeOffset < document.length {
+            let caret = selection.activeOffset
+            var end = document.nextCharacterOffset(after: caret)
+            // A CRLF pair deletes as one unit.
+            if document.byte(at: caret) == 0x0D, document.byte(at: end) == 0x0A {
+                end += 1
+            }
+            performEdit(replacing: caret..<end, with: [])
+        }
+    }
+
+    override func insertNewline(_ sender: Any?) {
+        insertBytesAtSelection(document?.newlineBytes ?? [0x0A])
+    }
+
+    override func insertTab(_ sender: Any?) {
+        insertBytesAtSelection([0x09])
+    }
+
+    @objc func cut(_ sender: Any?) {
+        let cap = 64 * 1024 * 1024
+        if let selection, !selection.isEmpty, isEditingAllowed {
+            if selection.range.count > cap {
+                presentSelectionTooLarge()
+            } else {
+                copy(sender)
+                performEdit(replacing: selection.range, with: [])
+            }
+        } else {
+            NSSound.beep()
+        }
+    }
+
+    @objc func paste(_ sender: Any?) {
+        if isEditingAllowed, selection != nil,
+           let text = NSPasteboard.general.string(forType: .string) {
+            insertBytesAtSelection(pasteBytes(from: text))
+        } else {
+            NSSound.beep()
+        }
+    }
+
+    /// Pasted text normalised to the document's detected line ending, as
+    /// UTF-8 bytes.
+    private func pasteBytes(from text: String) -> [UInt8] {
+        var normalized = text.replacingOccurrences(of: "\r\n", with: "\n")
+        normalized = normalized.replacingOccurrences(of: "\r", with: "\n")
+        if document?.newlineBytes == [0x0D, 0x0A] {
+            normalized = normalized.replacingOccurrences(of: "\n", with: "\r\n")
+        }
+        return Array(normalized.utf8)
+    }
+}
