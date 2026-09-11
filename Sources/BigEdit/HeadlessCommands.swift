@@ -1,12 +1,78 @@
 import Foundation
 
-/// A headless mode for testing the line indexer without the GUI.
+/// The headless modes, for testing and cross-checking without the GUI:
 ///
-/// Run with `swift run BigEdit --index <path>` to map a file, index it on the
-/// calling thread, and print the line count and elapsed time.
-enum HeadlessIndexer {
+///     swift run BigEdit --index <path>
+///     swift run BigEdit --search <pattern> <path>
+///     swift run BigEdit --search-regex <pattern> <path> [all]
+///     swift run BigEdit --dump <path> [rows]
+///     swift run BigEdit --preview <pattern> <replacement> <path>
+///     swift run BigEdit --replace <pattern> <replacement> <in> <out>
+///     swift run BigEdit --stats <path>
+///     swift run BigEdit --edit-smoke <in> <out>
+///     swift run BigEdit --csv <path> [rows]
+///     swift run BigEdit --process-lines <op> <in> <out> [pattern] [replacement]
+///
+/// Each prints what the verification scripts under `scripts/` compare against
+/// their POSIX or Python equivalents.
+enum HeadlessCommands {
 
-    static func run(path: String) -> Int32 {
+    /// The exit code of the headless command named in `arguments`, or nil
+    /// when there is none and the app should start its GUI.
+    static func exitCode(for arguments: [String]) -> Int32? {
+        var exitCode: Int32?
+        if let flagIndex = arguments.firstIndex(of: "--index"), flagIndex + 1 < arguments.count {
+            exitCode = index(path: arguments[flagIndex + 1])
+        } else if let flagIndex = arguments.firstIndex(of: "--search"), flagIndex + 2 < arguments.count {
+            exitCode = search(pattern: arguments[flagIndex + 1], path: arguments[flagIndex + 2])
+        } else if let flagIndex = arguments.firstIndex(of: "--search-regex"), flagIndex + 2 < arguments.count {
+            let listAll = flagIndex + 3 < arguments.count && arguments[flagIndex + 3] == "all"
+            exitCode = searchRegularExpression(pattern: arguments[flagIndex + 1],
+                                               path: arguments[flagIndex + 2],
+                                               listAll: listAll)
+        } else if let flagIndex = arguments.firstIndex(of: "--dump"), flagIndex + 1 < arguments.count {
+            let rows = flagIndex + 2 < arguments.count ? Int(arguments[flagIndex + 2]) : nil
+            exitCode = dump(path: arguments[flagIndex + 1], rowLimit: rows ?? 20)
+        } else if let flagIndex = arguments.firstIndex(of: "--preview"), flagIndex + 3 < arguments.count {
+            exitCode = preview(
+                pattern: arguments[flagIndex + 1],
+                replacement: arguments[flagIndex + 2],
+                path: arguments[flagIndex + 3]
+            )
+        } else if let flagIndex = arguments.firstIndex(of: "--replace"), flagIndex + 4 < arguments.count {
+            exitCode = replace(
+                pattern: arguments[flagIndex + 1],
+                replacement: arguments[flagIndex + 2],
+                inputPath: arguments[flagIndex + 3],
+                outputPath: arguments[flagIndex + 4]
+            )
+        } else if let flagIndex = arguments.firstIndex(of: "--stats"), flagIndex + 1 < arguments.count {
+            exitCode = stats(path: arguments[flagIndex + 1])
+        } else if let flagIndex = arguments.firstIndex(of: "--edit-smoke"), flagIndex + 2 < arguments.count {
+            exitCode = editSmoke(
+                inputPath: arguments[flagIndex + 1],
+                outputPath: arguments[flagIndex + 2]
+            )
+        } else if let flagIndex = arguments.firstIndex(of: "--csv"), flagIndex + 1 < arguments.count {
+            let rowArgument = flagIndex + 2 < arguments.count ? Int(arguments[flagIndex + 2]) : nil
+            exitCode = csv(path: arguments[flagIndex + 1], rowLimit: rowArgument ?? 10)
+        } else if let flagIndex = arguments.firstIndex(of: "--process-lines"), flagIndex + 3 < arguments.count {
+            let pattern = flagIndex + 4 < arguments.count ? arguments[flagIndex + 4] : nil
+            let replacement = flagIndex + 5 < arguments.count ? arguments[flagIndex + 5] : nil
+            exitCode = processLines(
+                operation: arguments[flagIndex + 1],
+                inputPath: arguments[flagIndex + 2],
+                outputPath: arguments[flagIndex + 3],
+                pattern: pattern,
+                replacement: replacement
+            )
+        }
+        return exitCode
+    }
+
+    /// Maps a file, indexes it on the calling thread, and prints the line
+    /// count and elapsed time.
+    static func index(path: String) -> Int32 {
         var exitCode: Int32 = 0
 
         if let file = MappedFile(path: path) {
