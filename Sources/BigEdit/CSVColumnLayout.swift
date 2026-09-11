@@ -25,9 +25,10 @@ struct CSVColumnLayout: Equatable {
     private static let sampleRowLimit = 2000
 
     /// Column widths for `file` under `dialect`, measured from its head.
-    static func measure(file: MappedFile, dialect: CSVDialect) -> CSVColumnLayout {
+    static func measure(file: MappedFile, dialect: CSVDialect,
+                        encoding: TextEncoding = .utf8) -> CSVColumnLayout {
         var widths: [Int] = []
-        for line in sampleLines(of: file) {
+        for line in sampleLines(of: file, encoding: encoding) {
             let fields = CSVParser.fields(in: line, dialect: dialect)
             for (column, field) in fields.enumerated() {
                 let width = min(field.count, maximumColumnWidth)
@@ -94,14 +95,14 @@ struct CSVColumnLayout: Equatable {
 
     /// Whole lines from the head of `file`, with any trailing partial line
     /// dropped so a cut row cannot understate a column's width.
-    private static func sampleLines(of file: MappedFile) -> [String] {
+    private static func sampleLines(of file: MappedFile, encoding: TextEncoding) -> [String] {
         let buffer = file.buffer
         let count = min(buffer.count, sampleByteLimit)
         var bytes = Array(UnsafeRawBufferPointer(rebasing: buffer[0..<count]))
         if count < buffer.count, let lastNewline = bytes.lastIndex(of: 0x0A) {
             bytes = Array(bytes[0..<lastNewline])
         }
-        let text = String(decoding: bytes, as: UTF8.self)
+        let text = encoding.decode(bytes)
 
         var lines: [String] = []
         for line in text.split(separator: "\n", omittingEmptySubsequences: true) {

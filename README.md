@@ -24,6 +24,7 @@ dies when the shell or `swift run` is interrupted — handy for quick tests only
 swift run -c release BigEdit --index /path/to/file
 swift run -c release BigEdit --search <pattern> /path/to/file
 swift run -c release BigEdit --search-regex <pattern> /path/to/file
+swift run -c release BigEdit --dump /path/to/file [rows]   # rows decoded as shown
 swift run -c release BigEdit --csv /path/to/file [rows]
 ```
 
@@ -138,7 +139,11 @@ App shell (window, menu, open panel) is in `AppDelegate.swift` / `main.swift`.
   are not collected (shown as `N+`), and Replace All with a pattern only
   works under the materialisation cap — there is no streaming form of it.
 - No syntax highlighting yet (**step 6**).
-- Encoding is assumed UTF-8; CRLF line endings are handled.
+- Files are read as UTF-8, or as Windows-1252 when they are not valid UTF-8
+  (the status bar says which). A Windows-1252 file reads, copies, searches
+  and counts correctly but stays read-only, since edits are made in UTF-8.
+  UTF-16 and binary files are labelled but not decoded. CRLF line endings
+  are handled.
 - **CSV mode is display-only.** Padding fields into columns means the drawn
   text no longer matches the file's bytes, so editing is off and search
   highlights sit at byte positions rather than at the padded ones. Column

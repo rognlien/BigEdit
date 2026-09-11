@@ -40,9 +40,9 @@ final class FileFormatTests: XCTestCase {
         XCTAssertEqual(f?.encoding, "Binary")
     }
 
-    func testInvalidUTF8IsLabelledNotUTF8() {
+    func testInvalidUTF8IsReadAsWindows1252() {
         // 0xFF mid-stream (not a BOM at the very start before text) is invalid.
         let f = format(Data([0x61, 0x62, 0xFF, 0x63]))
-        XCTAssertEqual(f?.encoding, "Not UTF-8")
+        XCTAssertEqual(f?.encoding, "Windows-1252", "not UTF-8 is read as Windows-1252 now")
     }
 }

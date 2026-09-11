@@ -66,6 +66,10 @@ final class ViewportView: NSView {
     /// The syntax-highlighting mode applied when drawing each row.
     private var syntaxMode: SyntaxMode = .plain
 
+    /// How the document's bytes are decoded for drawing, measuring, copying
+    /// and mapping a click back to a byte. Set from the detected file format.
+    private var textEncoding: TextEncoding = .utf8
+
     /// Set while the document is drawn as aligned CSV columns. The padding this
     /// inserts means the drawn text no longer matches the file's bytes, so the
     /// mode is display-only: editing is off and hit-testing falls back to a
@@ -1018,8 +1022,7 @@ final class ViewportView: NSView {
                 break
             }
             consumedUTF16 += width
-            let value = scalar.value
-            consumedBytes += value < 0x80 ? 1 : (value < 0x800 ? 2 : (value < 0x10000 ? 3 : 4))
+            consumedBytes += textEncoding.byteLength(of: scalar)
         }
         return min(startByte + consumedBytes, re)
     }
@@ -1050,7 +1053,7 @@ final class ViewportView: NSView {
                 presentSelectionTooLarge()
             } else {
                 let bytes = document.displayBytes(in: range)
-                let text = ViewportView.pasteboardText(fromUTF8: bytes)
+                let text = ViewportView.pasteboardText(from: bytes, encoding: textEncoding)
                 let pasteboard = NSPasteboard.general
                 pasteboard.clearContents()
                 pasteboard.setString(text, forType: .string)
@@ -1067,7 +1070,11 @@ final class ViewportView: NSView {
     /// paste stray characters that look inserted. Dropping CR everywhere also
     /// turns CRLF into LF, matching the displayed lines.
     static func pasteboardText(fromUTF8 bytes: [UInt8]) -> String {
-        var text = String(decoding: bytes, as: UTF8.self)
+        pasteboardText(from: bytes, encoding: .utf8)
+    }
+
+    static func pasteboardText(from bytes: [UInt8], encoding: TextEncoding) -> String {
+        var text = encoding.decode(bytes)
         if text.unicodeScalars.contains(where: ViewportView.isHiddenControl) {
             text.unicodeScalars.removeAll(where: ViewportView.isHiddenControl)
         }
@@ -1116,6 +1123,14 @@ final class ViewportView: NSView {
         self.searchScan = scan
         self.currentMatchOffset = currentMatchOffset
         needsDisplay = true
+    }
+
+    /// Sets the encoding rows are decoded with.
+    func setTextEncoding(_ encoding: TextEncoding) {
+        if encoding != textEncoding {
+            textEncoding = encoding
+            needsDisplay = true
+        }
     }
 
     /// Sets the syntax-highlighting mode for the current document.
@@ -1563,7 +1578,7 @@ final class ViewportView: NSView {
             // drop any leading continuation bytes so decoding starts cleanly.
             let range = chunkStartByte(visualLine)..<visualLine.byteRange.upperBound
             if !range.isEmpty {
-                text = String(decoding: document.displayBytes(in: range), as: UTF8.self)
+                text = textEncoding.decode(document.displayBytes(in: range))
             }
 
             // Strip the CR of a CRLF ending, but only on the line's final chunk.
@@ -1580,7 +1595,7 @@ final class ViewportView: NSView {
     private func textWidth(ofBytes range: Range<Int>) -> CGFloat {
         var width: CGFloat = 0
         if let document, !range.isEmpty {
-            let text = String(decoding: document.bytes(in: range), as: UTF8.self) as NSString
+            let text = textEncoding.decode(document.bytes(in: range)) as NSString
             width = text.size(withAttributes: [.font: font]).width
         }
         return width
@@ -1728,7 +1743,11 @@ extension ViewportView: NSTextInputClient {
     }
 
     /// Converts a UTF-16 index within `text` to a UTF-8 byte offset, clamped.
-    private static func byteOffset(forUTF16Index target: Int, in text: String) -> Int {
+    /// The byte offset within `text`'s bytes — in `encoding` — of the
+    /// character at UTF-16 index `target`. For UTF-8 that walks the variable
+    /// widths; in a single-byte encoding one character is one byte.
+    static func byteOffset(forUTF16Index target: Int, in text: String,
+                           encoding: TextEncoding = .utf8) -> Int {
         var consumedUTF16 = 0
         var consumedBytes = 0
         for scalar in text.unicodeScalars {
@@ -1736,7 +1755,7 @@ extension ViewportView: NSTextInputClient {
                 break
             }
             consumedUTF16 += scalar.value > 0xFFFF ? 2 : 1
-            consumedBytes += UTF8.width(scalar)
+            consumedBytes += encoding.byteLength(of: scalar)
         }
         return consumedBytes
     }
