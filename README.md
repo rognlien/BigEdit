@@ -43,12 +43,14 @@ The package opens directly in Xcode (`File ▸ Open…` the `BigEdit` folder).
   saves atomically via a streaming temp-file write. Unsaved edits are
   journaled to disk as you make them, so if BigEdit crashes or is
   force-quit, opening the file again offers to recover them.
-- **⌘F** — find. Type a query and press Enter to search. **Aa** toggles case
-  sensitivity; **.\*** makes the query a regular expression (`^` and `$`
-  match at line boundaries, as in `grep`).
-- **⌘G** / **⇧⌘G** — next / previous match. **Esc** closes the find bar.
-- **⌥⌘L**, or the list button in the find bar — every match as a list below
-  the viewport, with its line number and a snippet; click one to jump to it.
+- **⌘F** — find. Type a query and press Enter to search. The magnifier menu
+  in the search field holds **Match Case** and **Regular Expression** (`^`
+  and `$` match at line boundaries, as in `grep`).
+- **⌘G** / **⇧⌘G** — next / previous match. **Esc** or **Done** closes the
+  find bar.
+- **⌥⌘L**, or **Show All Matches** in the magnifier menu — every match as a
+  list below the viewport, with its line number and a snippet; click one to
+  jump to it.
   The list is built row by row as you scroll it, so a million matches cost
   nothing until they are looked at; the first 100,000 are listed.
 - **Text / CSV** — the selector at the top right of the editor. The CSV side
