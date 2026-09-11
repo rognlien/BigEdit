@@ -52,6 +52,26 @@ extension ViewportView {
 
     /// Draws the CSV header row in the strip reserved at the top, so the column
     /// names stay readable however far down the file you scroll.
+    /// An arrow in the gap after the sorted column's header cell.
+    private func drawCSVSortIndicator(rowY: CGFloat) {
+        guard let csvSortIndicator, csvDialect?.hasHeaderRow == true else {
+            return
+        }
+        let positions = csvDividerPositions()
+        guard csvSortIndicator.column < positions.count else {
+            return
+        }
+        let arrow = csvSortIndicator.descending ? "▼" : "▲"
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: fontSize * 0.7),
+            .foregroundColor: NSColor.secondaryLabelColor
+        ]
+        let size = arrow.size(withAttributes: attributes)
+        let origin = NSPoint(x: positions[csvSortIndicator.column] + (characterWidth * 2 - size.width) / 2,
+                             y: rowY + (lineHeight - size.height) / 2)
+        arrow.draw(at: origin, withAttributes: attributes)
+    }
+
     private func drawPinnedCSVHeader(layout: EditedLayout, gutterWidth: CGFloat) {
         guard isPinnedHeaderVisible,
               let headerLine = layout.visualLines(forRows: 0..<1).first,
@@ -70,6 +90,7 @@ extension ViewportView {
                                   height: lineHeight)).addClip()
         csvAttributedRow(headerText, documentLine: 0)
             .draw(at: NSPoint(x: textOriginX - horizontalOffset, y: 0))
+        drawCSVSortIndicator(rowY: 0)
         NSGraphicsContext.current?.restoreGraphicsState()
 
         NSColor.separatorColor.setStroke()
@@ -136,6 +157,9 @@ extension ViewportView {
             let (attributed, nextState) = displayRow(for: visualLine, startState: state)
             widest = max(widest, attributed.size().width)
             attributed.draw(at: NSPoint(x: textOriginX - horizontalOffset, y: y))
+            if visualLine.documentLine == 0 && !isPinnedHeaderVisible {
+                drawCSVSortIndicator(rowY: y)
+            }
             drawMarkedUnderline(for: visualLine, rowY: y, textOriginX: textOriginX)
             state = nextState
         }

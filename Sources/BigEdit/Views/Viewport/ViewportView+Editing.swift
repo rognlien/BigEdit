@@ -13,23 +13,36 @@ extension ViewportView {
             && !isCSVRenderingActive
     }
 
+    /// A rewrite of the whole document needs no caret, so it is possible
+    /// under aligned CSV columns too; the only bar is a format that cannot be
+    /// edited at all, or a deferred replacement rule already transforming it.
+    var isWholeDocumentReplacementAllowed: Bool {
+        document?.isEditable == true && document?.hasDisplayTransform != true
+    }
+
     /// Replaces the whole document in one undoable step.
     ///
     /// The line operations rewrite every line, so they land as a single edit
     /// rather than as thousands — one ⌘Z puts the document back.
     func replaceEntireDocument(with bytes: [UInt8]) {
-        if let document {
-            performEdit(replacing: 0..<document.length, with: bytes)
+        if let document, isWholeDocumentReplacementAllowed {
+            applyEdit(replacing: 0..<document.length, with: bytes, in: document)
+        } else {
+            NSSound.beep()
         }
     }
 
     /// Replaces `range` with `bytes`, collapses the caret to the end of the
     /// insertion, and refreshes everything that depends on the content.
     func performEdit(replacing range: Range<Int>, with bytes: [UInt8]) {
-        guard let document, isEditingAllowed else {
+        if let document, isEditingAllowed {
+            applyEdit(replacing: range, with: bytes, in: document)
+        } else {
             NSSound.beep()
-            return
         }
+    }
+
+    private func applyEdit(replacing range: Range<Int>, with bytes: [UInt8], in document: EditedDocument) {
         document.replace(range, with: bytes, selectionBefore: selection)
         let caret = range.lowerBound + bytes.count
         selection = TextSelection(anchorOffset: caret, activeOffset: caret)

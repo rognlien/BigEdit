@@ -58,6 +58,14 @@ final class ViewportView: NSView {
     /// and mapping a click back to a byte. Set from the detected file format.
     var textEncoding: TextEncoding = .utf8
 
+    /// Asks the container to sort the table by a column: `descending` is nil
+    /// for a header click, which toggles the direction on the sorted column.
+    var onCSVSortRequest: ((_ column: Int, _ descending: Bool?) -> Void)?
+
+    /// The column the table was last sorted by, drawn as an arrow in its
+    /// header until the mode or document changes.
+    private(set) var csvSortIndicator: (column: Int, descending: Bool)?
+
     /// Set while the document is drawn as aligned CSV columns. The padding this
     /// inserts means the drawn text no longer matches the file's bytes, so the
     /// mode is display-only: editing is off and hit-testing falls back to a
@@ -344,6 +352,50 @@ final class ViewportView: NSView {
         return result
     }
 
+    /// The column under `x`, by the dividers that end each column.
+    func csvColumn(atX x: CGFloat) -> Int? {
+        csvDividerPositions().firstIndex { x < $0 }
+    }
+
+    /// The header column under `point` — on the pinned header, or on the
+    /// header row itself while it is scrolled into view — or nil.
+    func csvHeaderColumn(at point: NSPoint) -> Int? {
+        var column: Int?
+        if isCSVRenderingActive, csvDialect?.hasHeaderRow == true, let layout {
+            let isOnHeader: Bool
+            if isPinnedHeaderVisible {
+                isOnHeader = point.y < lineHeight
+            } else {
+                isOnHeader = layout.visualLines(forRows: rowAt(y: point.y)..<(rowAt(y: point.y) + 1))
+                    .first?.documentLine == 0
+            }
+            if isOnHeader, point.x >= gutterWidth(for: layout.gutterLineCount) {
+                column = csvColumn(atX: point.x)
+            }
+        }
+        return column
+    }
+
+    /// The visual row drawn at `y`: row `r` sits at
+    /// `pinnedHeaderHeight + (r - scrollRow) * lineHeight`.
+    private func rowAt(y: CGFloat) -> Int {
+        let fraction = CGFloat(scrollRow - Double(Int(scrollRow)))
+        return Int(scrollRow) + Int(((y - pinnedHeaderHeight) / lineHeight + fraction).rounded(.down))
+    }
+
+    /// The header row's text for `column`, or a positional name without one.
+    func csvColumnTitle(_ column: Int) -> String {
+        var title = "Column \(column + 1)"
+        if csvDialect?.hasHeaderRow == true, let csvDialect, let layout,
+           let headerLine = layout.visualLines(forRows: 0..<1).first {
+            let fields = CSVParser.fields(in: decodeChunk(headerLine), dialect: csvDialect)
+            if column < fields.count, !fields[column].isEmpty {
+                title = fields[column]
+            }
+        }
+        return title
+    }
+
     /// True when a CSV header row is being held at the top of the viewport.
     ///
     /// Only once scrolled past it: at the very top the header is simply the
@@ -498,8 +550,15 @@ final class ViewportView: NSView {
         csvDialect = dialect
         csvColumnLayout = columnLayout
         csvMeasuredColumnLayout = columnLayout
+        csvSortIndicator = nil
         widestDrawnRowWidth = 0
         window?.invalidateCursorRects(for: self)
+        needsDisplay = true
+    }
+
+    /// Marks `column` as the one the table is sorted by.
+    func setCSVSortIndicator(column: Int, descending: Bool) {
+        csvSortIndicator = (column, descending)
         needsDisplay = true
     }
 
