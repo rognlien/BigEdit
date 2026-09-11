@@ -3,11 +3,10 @@
 What is actually left. Everything above the "Done" section is open work;
 `[x]` items in Done are recorded so this file stops re-proposing them.
 
-Last audited against the code on 2026-09-11, at v0.1.18 plus the Process
-Lines interface, Dock drop of any file, the highlighter refactor (steps 1–2),
-and the seven improvements: parallel indexing, regular-expression search,
-Follow File, undo across save, the edit journal, Windows-1252/Latin-1 decoding
-and the search results list.
+Last audited against the code on 2026-09-11, at v0.1.20: the seven
+improvements, the source split into folders and per-concern files, the
+system-style find bar and toolbar, CSV sorting, grid and exact cell mapping,
+the MIT license, and CI on demand only.
 
 ## Syntax highlighting — making it extendable
 
@@ -74,9 +73,14 @@ the streaming rule above it.
       since the edits were made, and journals of files that were never
       reopened are not cleaned up.
 - [ ] **CSV.**
-      - Make CSV mode editable: padding breaks the byte↔pixel mapping, so the
-        mode is display-only. Mapping a click back through the padding would
-        restore editing and exact search highlights.
+      - Make CSV mode editable. `CSVRowMap` now maps clicks and highlights
+        through the padding exactly, so the caret can be placed; what is
+        left is letting typing through (`isEditingAllowed`) and re-measuring
+        the edited row's columns.
+      - Sorting rewrites the file under the 32 MB Process Lines ceiling. A
+        view-only sort (a permutation over the line index) would lift the
+        ceiling and leave the file clean, at the cost of a new layer between
+        rows and lines.
       - Column widths come from a bounded head sample, so a wider field further
         down is truncated. Widening on demand as rows scroll into view needs
         the same care that kept the layout viewport-bound.
@@ -88,9 +92,15 @@ the streaming rule above it.
 
 ## Optional
 
-- [ ] **Sandboxing.** Required only for the Mac App Store. The
-      temp-file-next-to-destination save interacts with sandbox file access and
-      would need security-scoped bookmarks for the destination directory.
+- [ ] **Mac App Store.** Wanted at some point; MIT keeps it open. Two things
+      stand in the way:
+      - **Sandboxing.** The temp-file-next-to-destination save interacts with
+        sandbox file access and would need security-scoped bookmarks for the
+        destination directory.
+      - **The privileged helper.** `SMJobBless` and a root helper are not
+        allowed in a sandboxed app, so the `bigedit` command's installer would
+        have to become a user-run script (or a symlink the user creates from a
+        sheet's instructions) in the App Store build.
 - [ ] **Crash reporting.** Apple already collects crashes; integrate
       Sentry/Bugsnag/KSCrash only if you want them yourself.
 
@@ -125,8 +135,10 @@ they are not proposed again.
 - [x] **Dock-click reopen** (`applicationShouldHandleReopen`).
 - [x] **Cancel `LineIndex` indexing** when the file changes — `LineIndex` has
       `cancel()` alongside `SearchScan` and `StatisticsScan`.
-- [x] **Unit tests.** 285 XCTests, run in CI on every PR, plus the headless
-      cross-checks below.
+- [x] **Unit tests.** 309 XCTests, run by the release workflow and on demand
+      from the Actions tab (CI no longer runs per push: macOS minutes are
+      billed 10× for a private repository), plus the headless cross-checks
+      below.
 - [x] **Word-width hit testing** via `CTLineGetStringIndexForPosition`.
 - [x] **Cursor refinement** — the I-beam stops at the gutter.
 - [x] **Carry lexer state across rows** — `HighlightState` threads through
@@ -179,6 +191,20 @@ they are not proposed again.
       snippet, built row by row on demand; click to jump.
 - [x] **Highlighter refactor, steps 1–2** — `RowScanner`, then tokens and a
       theme; both proved byte-identical by a parity harness.
+- [x] **Sources grouped by layer** and the three largest files split into
+      one file per concern (`ViewportView`, `AppDelegate`, `DocumentView`);
+      `HeadlessCommands` owns the command table.
+- [x] **Find bar laid out like the system's** — options in the search field's
+      magnifier menu, one segmented control for previous / next, Done, aligned
+      replace field; Tab moves between the fields.
+- [x] **Toolbar** — Find, Find & Replace and Info in a unified title bar,
+      with the native proxy icon replacing the hand-drawn centred title.
+- [x] **CSV sorting** — click a header (again for descending) or right-click
+      a cell; natural order, header kept first, one undoable edit.
+- [x] **CSV grid and cell geometry** — a faint grid under the table, a
+      character of padding each side of a cell, and `CSVRowMap` so clicks,
+      selection and search highlights land on the cell text they show.
+- [x] **MIT license.**
 
 ## Verification scripts to keep around
 
