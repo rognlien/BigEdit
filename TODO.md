@@ -3,20 +3,27 @@
 What is actually left. Everything above the "Done" section is open work;
 `[x]` items in Done are recorded so this file stops re-proposing them.
 
-Last audited against the code on 2026-09-09, at v0.1.17 plus the CSV column
-resize, the horizontal-scroll fix, the command line tool, the line-processing
-engine, and the two Return fixes.
+Last audited against the code on 2026-09-11, at v0.1.18 plus the Process
+Lines interface, Dock drop of any file, the highlighter refactor (steps 1–2),
+and the seven improvements: parallel indexing, regular-expression search,
+Follow File, undo across save, the edit journal, Windows-1252/Latin-1 decoding
+and the search results list.
 
-## New features
+## Syntax highlighting — making it extendable
 
-- [ ] **Process lines — the user interface.** The engine is done
-      (`LineProcessor`, reachable as `--process-lines`); what is missing is the
-      way to reach it from the app: a sheet to pick the operation and its
-      pattern, run it off the main thread with progress and a cancel, and
-      decide how the result lands. That last part is still open — materialised
-      as one undoable edit through the piece table (like Replace All under its
-      cap), or streamed into a new document above it. Sorting and deduplication
-      cannot be viewport-bounded, so whichever is chosen needs a stated ceiling.
+Steps 1–2 of the agreed refactor have landed (`RowScanner`, then
+`Token`/`TokenKind` + `HighlightTheme`). Each remaining step is its own
+pure-refactor PR with no functional change.
+
+- [ ] **Step 3: `Highlighter` protocol + `LanguageRegistry`** (extensions,
+      sniff, display name) replacing the two `switch` statements in
+      `ViewportView` and the extension tables in `DocumentView`; make
+      `HighlightState` opaque per language.
+- [ ] **Step 4: state checkpoints every N rows** to replace the 400-row
+      lookback in `seedState`.
+- [ ] **Step 5: per-row token cache** keyed by row identity, start state and
+      mode.
+- [ ] **Step 6: user-facing language override** (View menu + status bar).
 
 ## Beta polish
 
@@ -41,19 +48,31 @@ the streaming rule above it.
       above the viewport, so a construct opened far above is coloured.
 - [ ] **Exact CSV column widths** measured from the whole file rather than a
       head sample, so a wider field further down is not truncated.
-- [ ] **No 1,000,000-match display cap** on search.
+- [ ] **No 1,000,000-match display cap** on search, and no 100,000-row cap on
+      the search results list.
 
 ## Follow-ups from shipped work
 
 - [ ] **Editing (from Stage 2).**
-      - On-disk edit journal behind `AddedByteStore`: crash/quit recovery for
-        unsaved edits, and disk-backed storage for huge pastes.
-      - Undo across save (retain the retired `MappedFile` in old records).
+      - Disk-backed storage for huge pastes. The journal mirrors the add
+        buffer to disk already, but the buffer itself is still in memory.
       - **Manual IME test pass** (Japanese/Chinese input, dead keys,
         press-and-hold). The `NSTextInputClient` synthetic-range scheme has
         only ever had unit tests, and has now shipped to users twice.
       - Raise the Replace All materialisation cap by moving the layout's prefix
         sums into a balanced tree (same pattern as `PieceTable`).
+- [ ] **Regular-expression search.** One match cannot span more than one
+      scan window (~8 MB of lines), and Replace All with a pattern works only
+      under the materialisation cap — there is no streaming form of it.
+- [ ] **Follow File.** Only a clean document follows; an append to a file
+      with unsaved edits would have to be spliced in behind every edit.
+- [ ] **Windows-1252 / Latin-1 files are read-only**, since edits are made in
+      UTF-8. Writing back in the file's own encoding needs `TextEncoding.encode`
+      on the save path and a decision for characters it cannot represent.
+- [ ] **Edit journal.** Recovery replays into a document opened over the same
+      file; it does not yet offer recovery when the file has changed on disk
+      since the edits were made, and journals of files that were never
+      reopened are not cleaned up.
 - [ ] **CSV.**
       - Make CSV mode editable: padding breaks the byte↔pixel mapping, so the
         mode is display-only. Mapping a click back through the padding would
@@ -106,7 +125,7 @@ they are not proposed again.
 - [x] **Dock-click reopen** (`applicationShouldHandleReopen`).
 - [x] **Cancel `LineIndex` indexing** when the file changes — `LineIndex` has
       `cancel()` alongside `SearchScan` and `StatisticsScan`.
-- [x] **Unit tests.** 192 XCTests, run in CI on every PR, plus the headless
+- [x] **Unit tests.** 285 XCTests, run in CI on every PR, plus the headless
       cross-checks below.
 - [x] **Word-width hit testing** via `CTLineGetStringIndexForPosition`.
 - [x] **Cursor refinement** — the I-beam stops at the gutter.
@@ -137,6 +156,29 @@ they are not proposed again.
       shift the previous line.
 - [x] **Horizontal scrolling is bounded** by the widest row drawn, so no
       document scrolls off into empty space.
+- [x] **Process lines — the user interface.** A sheet picks the operation and
+      pattern, runs it off the main thread with progress and cancel, and lands
+      the result as one undoable edit.
+- [x] **Drop any file on the Dock icon** to open it.
+- [x] **Parallel line indexing** — one chunk per core for files of 64 MB and
+      up, stitched in order (471 MB: 0.134 s → 0.020 s).
+- [x] **Regular-expression search** — the **.\*** toggle in the find bar;
+      windows cut at line boundaries and scanned concurrently. Cross-checked
+      against `grep -oE` by `scripts/verify-search-regex.sh`.
+- [x] **Follow File (⇧⌘T)** — an append remaps the file and extends the line
+      index from the old trailing line instead of rebuilding; pinned to the
+      end when the view was there.
+- [x] **Undo across save** — the mapping a save replaced is retired, not
+      dropped, so ⌘Z reaches back through ⌘S (up to 8 retired mappings).
+- [x] **Edit journal** — unsaved edits mirrored to disk as they happen;
+      reopening the file after a crash offers to recover them.
+- [x] **Windows-1252 / Latin-1 decoding** — files that are not valid UTF-8
+      read, copy, search and count correctly, labelled in the status bar.
+      Cross-checked against `iconv` by `scripts/verify-encodings.sh`.
+- [x] **Search results list (⌥⌘L)** — every match with line number and
+      snippet, built row by row on demand; click to jump.
+- [x] **Highlighter refactor, steps 1–2** — `RowScanner`, then tokens and a
+      theme; both proved byte-identical by a parity harness.
 
 ## Verification scripts to keep around
 
@@ -154,3 +196,9 @@ independent implementation.
   `scripts/verify-csv.sh` diffs them against Python's `csv` module.
 - `scripts/verify-editing.sh` — edits, undo/redo walk and piece save against an
   independent Python replay.
+- `scripts/verify-process-lines.sh` — every line operation against awk, grep,
+  sort and sed.
+- `scripts/verify-search-regex.sh` — regular-expression match counts against
+  `grep -oE`.
+- `scripts/verify-encodings.sh` — Windows-1252 and Latin-1 decoding against
+  `iconv`.
