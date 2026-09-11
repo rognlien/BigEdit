@@ -15,9 +15,11 @@ extension DocumentView {
         case tooLarge(size: Int, limit: Int)
     }
 
-    /// Whether Process Lines can run on this document at all.
+    /// Whether Process Lines can run on this document at all. It rewrites
+    /// the whole document, which needs no caret, so aligned CSV columns are
+    /// no obstacle — a sort by column is the same operation.
     var canProcessLines: Bool {
-        viewport.isEditingAllowed && viewport.document != nil
+        viewport.isWholeDocumentReplacementAllowed && viewport.document != nil
     }
 
     /// Runs `operation` over the whole document and applies the result as one
@@ -28,7 +30,7 @@ extension DocumentView {
     /// with no change.
     func processLines(_ operation: LineOperation,
                       completion: @escaping (Result<Int, Error>) -> Void) {
-        if viewport.isEditingAllowed {
+        if canProcessLines {
             rewriteLines(title: "Processing lines…", completion: completion) { lines, isCancelled in
                 try LineProcessor.apply(operation, to: lines, isCancelled: isCancelled)
             }
