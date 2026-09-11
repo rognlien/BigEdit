@@ -305,12 +305,12 @@ extension AppDelegate {
     }
 
     private func updateTitle() {
-        // Just the file name, drawn by the centered title label. Size, line
+        // Just the file name, with the file as the window's represented URL so
+        // the title bar gets the proxy icon and ⌘-click path menu. Size, line
         // count, encoding, and disk-change state live in the info pane / status
         // bar / sidebar instead.
-        let name = activeDocument?.fileName ?? "BigEdit"
-        window?.title = name          // keeps the Window menu / app switcher correct
-        titleLabel.stringValue = name
+        window?.title = activeDocument?.fileName ?? "BigEdit"
+        window?.representedURL = activeDocument?.url
     }
 
     private func presentError(_ message: String) {

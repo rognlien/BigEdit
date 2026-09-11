@@ -127,74 +127,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         }
 
         window.contentView = splitView
-        installCenteredTitle()
+        installToolbar()
         window.center()
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
-    }
-
-    /// Hides the native (leading) title and draws a centered label in the title
-    /// bar instead, so the file name sits in the middle of the window.
-    private func installCenteredTitle() {
-        window.titleVisibility = .hidden
-        guard let titlebar = window.standardWindowButton(.closeButton)?.superview else {
-            return
-        }
-        titleLabel.translatesAutoresizingMaskIntoConstraints = false
-        titleLabel.alignment = .center
-        titleLabel.font = NSFont.titleBarFont(ofSize: NSFont.systemFontSize)
-        titleLabel.textColor = .secondaryLabelColor
-        titleLabel.lineBreakMode = .byTruncatingMiddle
-        // ⌘-click the title to see the file's path, like a native proxy title.
-        titleLabel.toolTip = "⌘-click to show the file path"
-        let click = NSClickGestureRecognizer(target: self, action: #selector(titleClicked(_:)))
-        titleLabel.addGestureRecognizer(click)
-        titlebar.addSubview(titleLabel)
-        NSLayoutConstraint.activate([
-            titleLabel.centerXAnchor.constraint(equalTo: titlebar.centerXAnchor),
-            titleLabel.centerYAnchor.constraint(equalTo: titlebar.centerYAnchor),
-            titleLabel.widthAnchor.constraint(lessThanOrEqualTo: titlebar.widthAnchor, multiplier: 0.6)
-        ])
-    }
-
-    /// On ⌘-click, shows the file's path as a menu of folders (file at top down
-    /// to the volume); choosing one reveals it in Finder — mirroring the native
-    /// title-bar path popup.
-    @objc private func titleClicked(_ sender: NSClickGestureRecognizer) {
-        guard NSApp.currentEvent?.modifierFlags.contains(.command) == true,
-              let url = activeDocument?.url else {
-            return
-        }
-        let menu = NSMenu()
-        var current = url
-        var safety = 0
-        while safety < 256 {
-            safety += 1
-            let name = current.lastPathComponent.isEmpty ? "/" : current.lastPathComponent
-            let item = NSMenuItem(title: name, action: #selector(revealPathComponent(_:)),
-                                  keyEquivalent: "")
-            let icon = NSWorkspace.shared.icon(forFile: current.path)
-            icon.size = NSSize(width: 16, height: 16)
-            item.image = icon
-            item.representedObject = current
-            item.target = self
-            menu.addItem(item)
-            let parent = current.deletingLastPathComponent()
-            if parent.path == current.path { break }
-            current = parent
-        }
-        // Show the menu after this event finishes: popping a modal menu
-        // synchronously from inside the title bar's click handling deadlocks.
-        let label = titleLabel
-        DispatchQueue.main.async {
-            menu.popUp(positioning: nil, at: NSPoint(x: 0, y: label.bounds.maxY), in: label)
-        }
-    }
-
-    @objc private func revealPathComponent(_ sender: NSMenuItem) {
-        if let url = sender.representedObject as? URL {
-            NSWorkspace.shared.activateFileViewerSelecting([url])
-        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
