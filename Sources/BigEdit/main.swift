@@ -3,6 +3,7 @@ import AppKit
 // Headless modes, for testing without the GUI:
 //   swift run BigEdit --index <path>
 //   swift run BigEdit --search <pattern> <path>
+//   swift run BigEdit --search-regex <pattern> <path>
 //   swift run BigEdit --preview <pattern> <replacement> <path>
 //   swift run BigEdit --csv <path> [rows]
 //   swift run BigEdit --process-lines <op> <in> <out> [pattern] [replacement]
@@ -12,6 +13,12 @@ if let flagIndex = arguments.firstIndex(of: "--index"), flagIndex + 1 < argument
 }
 if let flagIndex = arguments.firstIndex(of: "--search"), flagIndex + 2 < arguments.count {
     exit(HeadlessIndexer.search(pattern: arguments[flagIndex + 1], path: arguments[flagIndex + 2]))
+}
+if let flagIndex = arguments.firstIndex(of: "--search-regex"), flagIndex + 2 < arguments.count {
+    let listAll = flagIndex + 3 < arguments.count && arguments[flagIndex + 3] == "all"
+    exit(HeadlessIndexer.searchRegularExpression(pattern: arguments[flagIndex + 1],
+                                                 path: arguments[flagIndex + 2],
+                                                 listAll: listAll))
 }
 if let flagIndex = arguments.firstIndex(of: "--preview"), flagIndex + 3 < arguments.count {
     exit(HeadlessIndexer.preview(

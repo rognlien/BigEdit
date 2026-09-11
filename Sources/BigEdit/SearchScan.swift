@@ -1,11 +1,14 @@
 import Foundation
 
-/// A background literal (byte-for-byte) search over a `MappedFile`.
+/// A background search over a `MappedFile`: literal bytes, or a regular
+/// expression.
 ///
-/// The scan uses `memmem`, which is fast enough to sweep many gigabytes in a
-/// few seconds. Match byte offsets are collected into a sorted array (capped at
-/// `matchLimit`), so navigation is array indexing and highlighting is a binary
-/// search — both independent of file size.
+/// The literal scan uses `memmem`, which is fast enough to sweep many gigabytes
+/// in a few seconds. The regular-expression scan hands `NSRegularExpression`
+/// one window of lines at a time. Either way, match byte offsets are collected
+/// into a sorted array (capped at `matchLimit`), so navigation is array
+/// indexing and highlighting is a binary search — both independent of file
+/// size.
 ///
 /// A scan can be cancelled when the query changes; the owner discards a stale
 /// scan's progress callbacks by identity.
@@ -14,11 +17,45 @@ final class SearchScan {
     /// Upper bound on collected matches, to keep memory and time bounded.
     static let matchLimit = 1_000_000
 
-    /// The query encoded as UTF-8 bytes — the needle passed to `memmem`.
+    /// How the query is interpreted.
+    enum Mode {
+        case literal
+        case regularExpression
+    }
+
+    let mode: Mode
+
+    /// The query encoded as UTF-8 bytes — the needle passed to `memmem`, or
+    /// the pattern's text in regular-expression mode.
     let queryBytes: [UInt8]
 
-    /// Whether matching distinguishes upper- and lower-case ASCII letters.
+    /// Whether matching distinguishes upper- and lower-case letters. Literal
+    /// matching folds ASCII only; the regular-expression engine folds Unicode.
     let caseSensitive: Bool
+
+    /// The compiled pattern, in regular-expression mode.
+    private let expression: NSRegularExpression?
+
+    /// Byte length of each match, parallel to `offsets`. Only kept in
+    /// regular-expression mode — literal matches are all `queryByteLength`.
+    private var lengths: [Int] = []
+    private var longestLength = 0
+
+    /// Regular-expression windows are cut at a line boundary below this size.
+    /// A match cannot span two windows, so a pattern can only match across
+    /// this many bytes of lines — not a limit anyone meets in practice.
+    static let regularExpressionWindow = 4 * 1024 * 1024
+
+    /// Windows are searched concurrently, this many at a time. Each holds its
+    /// bytes and their decoded string while in flight, so this also bounds the
+    /// scan's memory to a few tens of megabytes.
+    static let regularExpressionWorkers = 8
+
+    /// A window with no newline in it at all is one very long line; it grows
+    /// until it finds one, so a match inside a long line is never cut in two,
+    /// but only up to this size. A single line longer than this is searched in
+    /// pieces, and a match straddling a piece boundary is missed.
+    static let longestUnbrokenLine = 256 * 1024 * 1024
 
     /// The query with ASCII letters folded to lowercase, used by the
     /// case-insensitive scan.
@@ -46,6 +83,32 @@ final class SearchScan {
         self.caseSensitive = caseSensitive
         self.foldedQueryBytes = bytes.map(SearchScan.foldByte)
         self.logicalScanWindow = logicalScanWindow
+        self.mode = .literal
+        self.expression = nil
+    }
+
+    /// Fails if `pattern` is empty or is not a valid regular expression.
+    /// `^` and `$` match at line boundaries, as they do in `grep`.
+    init?(regularExpression pattern: String, caseSensitive: Bool = true,
+          logicalScanWindow: Int = 64 * 1024 * 1024) {
+        var options: NSRegularExpression.Options = [.anchorsMatchLines]
+        if !caseSensitive {
+            options.insert(.caseInsensitive)
+        }
+        guard !pattern.isEmpty, logicalScanWindow > 0,
+              let compiled = try? NSRegularExpression(pattern: pattern, options: options) else {
+            return nil
+        }
+        self.queryBytes = Array(pattern.utf8)
+        self.caseSensitive = caseSensitive
+        self.foldedQueryBytes = []
+        self.logicalScanWindow = logicalScanWindow
+        self.mode = .regularExpression
+        self.expression = compiled
+    }
+
+    var isRegularExpression: Bool {
+        mode == .regularExpression
     }
 
     /// ASCII case-folds a single byte (A–Z → a–z; everything else passes
@@ -55,9 +118,44 @@ final class SearchScan {
         return (byte >= 0x41 && byte <= 0x5A) ? byte + 0x20 : byte
     }
 
-    /// The length of the query in bytes — also the length of every match.
+    /// The length of the query in bytes — and, for a literal query, the
+    /// length of every match. Regular-expression matches vary: ask
+    /// `matchLength(at:)` or `matches(beginningIn:)`.
     var queryByteLength: Int {
         queryBytes.count
+    }
+
+    /// The byte length of the match at `index`.
+    func matchLength(at index: Int) -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        var result = queryBytes.count
+        if mode == .regularExpression && index >= 0 && index < lengths.count {
+            result = lengths[index]
+        }
+        return result
+    }
+
+    /// The longest match found so far: how far before a row a match may begin
+    /// and still reach into it.
+    var longestMatchLength: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return mode == .regularExpression ? longestLength : queryBytes.count
+    }
+
+    /// The byte ranges of all matches that begin within `range`.
+    func matches(beginningIn range: Range<Int>) -> [Range<Int>] {
+        lock.lock()
+        defer { lock.unlock() }
+        var result: [Range<Int>] = []
+        var index = lowerBound(for: range.lowerBound)
+        while index < offsets.count && offsets[index] < range.upperBound {
+            let length = mode == .regularExpression ? lengths[index] : queryBytes.count
+            result.append(offsets[index]..<(offsets[index] + length))
+            index += 1
+        }
+        return result
     }
 
     var matchCount: Int {
@@ -190,6 +288,13 @@ final class SearchScan {
         let total = buffer.count
         let needleLength = queryBytes.count
 
+        if mode == .regularExpression {
+            scanRegularExpression(length: total, onProgress: onProgress) { range in
+                Array(buffer[range])
+            }
+            return
+        }
+
         // Record the file size up front so `scanProgress` is meaningful even
         // before the first batch is published.
         lock.lock()
@@ -319,7 +424,7 @@ final class SearchScan {
         bytesScanned = 0
         lock.unlock()
 
-        guard length >= needleLength else {
+        guard length >= (mode == .regularExpression ? 1 : needleLength) else {
             lock.lock(); bytesScanned = length; lock.unlock()
             markComplete()
             onProgress()
@@ -336,6 +441,16 @@ final class SearchScan {
         }
 
         var window: [UInt8] = []
+
+        if mode == .regularExpression {
+            scanRegularExpression(length: length, onProgress: onProgress) { range in
+                self.assembleWindow(range, pieces: pieces, starts: pieceStarts,
+                                    file: file, added: added, into: &window)
+                return window
+            }
+            return
+        }
+
         var pending: [Int] = []
         var totalFound = 0
         var searchOffset = 0
@@ -449,6 +564,165 @@ final class SearchScan {
             cursor += take
             pieceIndex += 1
         }
+    }
+
+    // MARK: - Regular expressions
+
+    /// Runs the pattern over the document in windows, several at a time.
+    /// `read` hands back the bytes in a logical range — straight from the
+    /// mmap for a clean file, or assembled through the piece table for an
+    /// edited one — and is only ever called from this thread.
+    ///
+    /// Each window is cut at a line boundary, so a match never straddles two
+    /// windows, and that is also what makes the windows independent: a group
+    /// of them is searched concurrently and the results appended in file
+    /// order, so the match list stays sorted and the display cap is applied
+    /// exactly as it would be serially. A window is decoded whole when it is
+    /// valid UTF-8, which is nearly always; one with a broken byte in it falls
+    /// back to line by line, skipping only the lines that do not decode. Empty
+    /// matches are skipped, as `grep -o` skips them.
+    private func scanRegularExpression(length: Int, onProgress: () -> Void,
+                                       read: (Range<Int>) -> [UInt8]) {
+        lock.lock()
+        totalBytes = length
+        bytesScanned = 0
+        lock.unlock()
+
+        let windowSize = max(1, min(logicalScanWindow, SearchScan.regularExpressionWindow))
+        let workers = max(1, min(SearchScan.regularExpressionWorkers,
+                                 ProcessInfo.processInfo.activeProcessorCount))
+        var pending: [Int] = []
+        var pendingLengths: [Int] = []
+        var totalFound = 0
+        var cursor = 0
+
+        while cursor < length && !isStopped() && totalFound < SearchScan.matchLimit {
+            // Carve one window per worker, each ending on a line boundary.
+            var windows: [(start: Int, bytes: [UInt8])] = []
+            while windows.count < workers && cursor < length {
+                let window = nextWindow(from: cursor, length: length,
+                                        windowSize: windowSize, read: read)
+                windows.append((cursor, window.bytes))
+                cursor = window.end
+            }
+
+            var results = [(offsets: [Int], lengths: [Int])](repeating: ([], []),
+                                                             count: windows.count)
+            results.withUnsafeMutableBufferPointer { slots in
+                DispatchQueue.concurrentPerform(iterations: windows.count) { position in
+                    var offsets: [Int] = []
+                    var lengths: [Int] = []
+                    var found = 0
+                    self.collectMatches(in: windows[position].bytes,
+                                        baseOffset: windows[position].start,
+                                        into: &offsets, lengths: &lengths, totalFound: &found)
+                    slots[position] = (offsets, lengths)
+                }
+            }
+
+            for result in results {
+                for (offset, matchLength) in zip(result.offsets, result.lengths)
+                where totalFound < SearchScan.matchLimit {
+                    pending.append(offset)
+                    pendingLengths.append(matchLength)
+                    totalFound += 1
+                }
+            }
+            publish(pending: &pending, lengths: &pendingLengths, bytesScanned: cursor)
+            onProgress()
+        }
+
+        publish(pending: &pending, lengths: &pendingLengths, bytesScanned: length)
+        markComplete()
+        onProgress()
+    }
+
+    /// The next window starting at `cursor`: grown until it holds a whole line
+    /// if it began with none, then cut after its last newline so the boundary
+    /// falls between lines.
+    private func nextWindow(from cursor: Int, length: Int, windowSize: Int,
+                            read: (Range<Int>) -> [UInt8]) -> (bytes: [UInt8], end: Int) {
+        var windowEnd = min(length, cursor + windowSize)
+        var bytes = read(cursor..<windowEnd)
+        while windowEnd < length && !bytes.contains(0x0A)
+            && bytes.count < SearchScan.longestUnbrokenLine {
+            let grownEnd = min(length, windowEnd + max(windowSize, bytes.count))
+            bytes.append(contentsOf: read(windowEnd..<grownEnd))
+            windowEnd = grownEnd
+        }
+        if windowEnd < length, let lastNewline = bytes.lastIndex(of: 0x0A) {
+            bytes.removeSubrange((lastNewline + 1)...)
+            windowEnd = cursor + lastNewline + 1
+        }
+        return (bytes, windowEnd)
+    }
+
+    private func collectMatches(in bytes: [UInt8], baseOffset: Int, into pending: inout [Int],
+                                lengths pendingLengths: inout [Int], totalFound: inout Int) {
+        if let text = String(bytes: bytes, encoding: .utf8) {
+            collectMatches(in: text, baseOffset: baseOffset, into: &pending,
+                           lengths: &pendingLengths, totalFound: &totalFound)
+        } else {
+            var lineStart = 0
+            for (position, byte) in bytes.enumerated() where byte == 0x0A {
+                if let line = String(bytes: bytes[lineStart..<position], encoding: .utf8) {
+                    collectMatches(in: line, baseOffset: baseOffset + lineStart, into: &pending,
+                                   lengths: &pendingLengths, totalFound: &totalFound)
+                }
+                lineStart = position + 1
+            }
+            if lineStart < bytes.count,
+               let line = String(bytes: bytes[lineStart...], encoding: .utf8) {
+                collectMatches(in: line, baseOffset: baseOffset + lineStart, into: &pending,
+                               lengths: &pendingLengths, totalFound: &totalFound)
+            }
+        }
+    }
+
+    /// Enumerates matches in `text` — whose UTF-8 is exactly the bytes at
+    /// `baseOffset` — converting each UTF-16 range to a byte range by walking
+    /// the scalars forward once. Matches arrive in order, so the walk never
+    /// backs up and the whole window costs one pass.
+    private func collectMatches(in text: String, baseOffset: Int, into pending: inout [Int],
+                                lengths pendingLengths: inout [Int], totalFound: inout Int) {
+        guard let expression else { return }
+        var scalars = text.unicodeScalars.makeIterator()
+        var utf16Cursor = 0
+        var byteCursor = 0
+        func advance(to target: Int) {
+            while utf16Cursor < target, let scalar = scalars.next() {
+                utf16Cursor += scalar.utf16.count
+                byteCursor += scalar.utf8.count
+            }
+        }
+
+        let whole = NSRange(location: 0, length: text.utf16.count)
+        expression.enumerateMatches(in: text, options: [], range: whole) { match, _, stop in
+            guard let match, match.range.length > 0 else { return }
+            advance(to: match.range.location)
+            let start = byteCursor
+            advance(to: match.range.location + match.range.length)
+            pending.append(baseOffset + start)
+            pendingLengths.append(byteCursor - start)
+            totalFound += 1
+            if totalFound >= SearchScan.matchLimit {
+                stop.pointee = true
+            }
+        }
+    }
+
+    private func publish(pending: inout [Int], lengths pendingLengths: inout [Int],
+                         bytesScanned: Int) {
+        lock.lock()
+        if !pending.isEmpty {
+            offsets.append(contentsOf: pending)
+            lengths.append(contentsOf: pendingLengths)
+            longestLength = max(longestLength, pendingLengths.max() ?? 0)
+        }
+        self.bytesScanned = bytesScanned
+        lock.unlock()
+        pending.removeAll(keepingCapacity: true)
+        pendingLengths.removeAll(keepingCapacity: true)
     }
 
     private func publish(pending: inout [Int], bytesScanned: Int) {

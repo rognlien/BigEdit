@@ -403,6 +403,7 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
         } else {
             let caseSensitive = bar.isCaseSensitive
             let modeChanged = searchScan?.caseSensitive != caseSensitive
+                || searchScan?.isRegularExpression != bar.isRegularExpression
             if query != currentQuery || modeChanged {
                 startSearch(query, caseSensitive: caseSensitive)
             } else {
@@ -436,6 +437,10 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
     func findBar(_ bar: FindBar, didRequestReplaceAll pattern: String, with replacement: String) {
         if let document = viewport.document, document.isEditable, editModel.rule == nil {
             startMaterializedReplaceAll(in: document, pattern: pattern, replacement: replacement)
+        } else if bar.isRegularExpression {
+            // The deferred rule matches literal bytes; a pattern can only be
+            // replaced where the result can be applied as edits.
+            findBar.updateReplaceStatus("Patterns replace only in an editable document")
         } else if viewport.document?.hasEdits == true {
             // The deferred rule and positional edits are mutually exclusive.
             findBar.updateReplaceStatus("Save your edits first")
@@ -458,7 +463,7 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
         in document: EditedDocument, pattern: String, replacement: String
     ) {
         replaceAllScan?.cancel()
-        guard let scan = SearchScan(query: pattern) else {
+        guard let scan = makeSearchScan(pattern, caseSensitive: true) else {
             findBar.updateReplaceStatus("Invalid pattern")
             return
         }
@@ -488,6 +493,8 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
             materializeReplaceAll(scan: scan, replacement: replacement, in: document)
             let formatted = numberFormatter.string(from: NSNumber(value: count)) ?? "\(count)"
             findBar.updateReplaceStatus("\(formatted) replaced")
+        } else if scan.isRegularExpression {
+            findBar.updateReplaceStatus("Too many matches for a pattern to replace")
         } else if !document.hasEdits,
                   let rule = ReplacementRule(pattern: pattern, replacement: replacement) {
             // Too many occurrences to hold as positional edits — fall back to
@@ -507,12 +514,11 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
     private func materializeReplaceAll(
         scan: SearchScan, replacement: String, in document: EditedDocument
     ) {
-        let offsets = scan.matchOffsets(beginningIn: 0..<Int.max)
-        let patternLength = scan.queryByteLength
+        let matches = scan.matches(beginningIn: 0..<Int.max)
         let replacementBytes = Array(replacement.utf8)
         document.undoStack.beginGrouping()
-        for offset in offsets.reversed() {
-            document.replace(offset..<(offset + patternLength), with: replacementBytes)
+        for match in matches.reversed() {
+            document.replace(match, with: replacementBytes)
         }
         document.undoStack.endGrouping()
         viewport.documentDidChangeProgrammatically()
@@ -759,7 +765,7 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
         self.jumpToFirstMatch = jumpToFirstMatch
 
         if let document = viewport.document,
-           let scan = SearchScan(query: query, caseSensitive: caseSensitive) {
+           let scan = makeSearchScan(query, caseSensitive: caseSensitive) {
             searchScan = scan
             viewport.setSearch(scan: scan, currentMatchOffset: nil)
             findBar.updateStatus("Searching…")
@@ -770,7 +776,19 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
             }
         } else {
             resetSearch()
+            if findBar.isRegularExpression && !query.isEmpty {
+                findBar.updateStatus("Invalid pattern")
+            }
         }
+    }
+
+    /// A scan in whichever mode the find bar is set to. `nil` for an empty
+    /// query — or, in regular-expression mode, for a pattern that does not
+    /// compile.
+    private func makeSearchScan(_ query: String, caseSensitive: Bool) -> SearchScan? {
+        findBar.isRegularExpression
+            ? SearchScan(regularExpression: query, caseSensitive: caseSensitive)
+            : SearchScan(query: query, caseSensitive: caseSensitive)
     }
 
     /// Called on the main queue as matches accumulate.

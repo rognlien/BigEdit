@@ -58,6 +58,42 @@ enum HeadlessIndexer {
     /// Applies a deferred replacement rule and prints the edited preview of the
     /// first rows — the same transformation the viewport renders.
     /// Invoked by `swift run BigEdit --preview <pattern> <replacement> <path>`.
+    /// Regular-expression search, for cross-checking against `grep -oE`. With
+    /// `listAll`, every match is printed as `offset:length`, the shape that
+    /// lines up with `grep -boE` for finding exactly which matches differ.
+    static func searchRegularExpression(pattern: String, path: String,
+                                        listAll: Bool = false) -> Int32 {
+        var exitCode: Int32 = 0
+        if let file = MappedFile(path: path) {
+            if let scan = SearchScan(regularExpression: pattern) {
+                let start = Date()
+                scan.runSynchronously(in: file)
+                let elapsed = Date().timeIntervalSince(start)
+                print("file:    \(path)")
+                print("pattern: \(pattern)")
+                print("matches: \(scan.matchCount)\(scan.isTruncated ? " (capped)" : "")")
+                if listAll {
+                    for match in scan.matches(beginningIn: 0..<Int.max) {
+                        print("\(match.lowerBound):\(match.count)")
+                    }
+                } else {
+                    for index in 0..<min(5, scan.matchCount) {
+                        let offset = scan.matchOffset(at: index) ?? -1
+                        print("  match[\(index)] at byte \(offset), \(scan.matchLength(at: index)) bytes")
+                    }
+                }
+                print(String(format: "scanned: %.3f s", elapsed))
+            } else {
+                FileHandle.standardError.write(Data("BigEdit: invalid pattern\n".utf8))
+                exitCode = 2
+            }
+        } else {
+            FileHandle.standardError.write(Data("BigEdit: cannot search \(path)\n".utf8))
+            exitCode = 1
+        }
+        return exitCode
+    }
+
     static func preview(pattern: String, replacement: String, path: String) -> Int32 {
         var exitCode: Int32 = 0
 

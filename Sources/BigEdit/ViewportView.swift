@@ -1374,13 +1374,14 @@ final class ViewportView: NSView {
         let rowEnd = visualLine.byteRange.upperBound
 
         if let searchScan, rowEnd > rowStart {
-            let needleLength = searchScan.queryByteLength
-            // A match may begin just before this row yet extend into it.
-            let searchFrom = max(0, rowStart - needleLength + 1)
-            let offsets = searchScan.matchOffsets(beginningIn: searchFrom..<rowEnd)
+            // A match may begin before this row yet extend into it — by at
+            // most the longest match found, which for a literal query is the
+            // query's own length.
+            let lookback = max(1, searchScan.longestMatchLength)
+            let searchFrom = max(0, rowStart - lookback + 1)
+            let matches = searchScan.matches(beginningIn: searchFrom..<rowEnd)
             drawHighlightRects(
-                offsets,
-                needleLength: needleLength,
+                matches,
                 rowStart: rowStart,
                 rowEnd: rowEnd,
                 rowY: rowY,
@@ -1390,8 +1391,7 @@ final class ViewportView: NSView {
     }
 
     private func drawHighlightRects(
-        _ offsets: [Int],
-        needleLength: Int,
+        _ matches: [Range<Int>],
         rowStart: Int,
         rowEnd: Int,
         rowY: CGFloat,
@@ -1401,12 +1401,13 @@ final class ViewportView: NSView {
         let currentColor = NSColor.systemOrange.withAlphaComponent(0.85)
         var drawn = 0
 
-        for matchOffset in offsets {
+        for match in matches {
             if drawn >= maxHighlightsPerRow {
                 break
             }
-            let visibleStart = max(matchOffset, rowStart)
-            let visibleEnd = min(matchOffset + needleLength, rowEnd)
+            let matchOffset = match.lowerBound
+            let visibleStart = max(match.lowerBound, rowStart)
+            let visibleEnd = min(match.upperBound, rowEnd)
             if visibleStart < visibleEnd {
                 let prefixWidth = textWidth(ofBytes: rowStart..<visibleStart)
                 let matchWidth = textWidth(ofBytes: visibleStart..<visibleEnd)

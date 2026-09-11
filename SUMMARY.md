@@ -13,7 +13,7 @@ file and a 50 KB file cost the same to display and to edit.
 |---|---|
 | `MappedFile` | `mmap` wrapper. The OS pages in only the bytes that are actually touched. |
 | `LineIndex` | Sparse line index, built on a background queue. One checkpoint per 4096 lines (byte offset + visual-row offset). Now also tracks "long lines" (≥ 1024 bytes) so they can soft-wrap to the viewport width without recomputing the whole index on resize. |
-| `SearchScan` | Background `memmem` search with byte-progress reporting. Case-sensitive uses the fast path; case-insensitive is byte-by-byte with ASCII case folding. Match offsets collected (cap 1,000,000) for display. |
+| `SearchScan` | Background search with byte-progress reporting: `memmem` for literal queries, or `NSRegularExpression` over windows cut at line boundaries (UTF-16 ranges walked back to byte offsets in one pass) for patterns. Case-sensitive uses the fast path; case-insensitive is byte-by-byte with ASCII case folding. Match offsets collected (cap 1,000,000) for display. |
 | `StatisticsScan` | Background per-byte pass counting words and characters; matches `wc -lwm`. |
 | `ReplacementRule` + `EditModel` | The "lazy editor" Stage 1: one deferred find-and-replace rule, never written to disk until the user saves. The viewport renders the transformed result live. Still used when Replace All has too many matches to materialise, and by the CLI. |
 | `PieceTable` + `AddBuffer` | The "lazy editor" Stage 2 storage: logical bytes map onto pieces of the read-only mmap and an append-only add buffer. Edits are O(log pieces) splices in a balanced tree (treap, flat node pool); typed bytes are never copied out of the add buffer again. `AddedByteStore` is the seam for a future on-disk edit journal. |
@@ -115,6 +115,8 @@ viewport, not the file.
 ### Headless modes (cross-checked against POSIX tools)
 - `--index <path>` — line / visual-row count (vs `wc -l`)
 - `--search <pattern> <path>` — match count (vs `grep -oa`)
+- `--search-regex <pattern> <path>` — match count (vs `grep -oE`, via
+  `scripts/verify-search-regex.sh`)
 - `--preview <pattern> <replacement> <path>` — first rows after a deferred edit
 - `--replace <pattern> <replacement> <in> <out>` — full deferred-edit save (vs `sed 's/pattern/replacement/g'`)
 - `--stats <path>` — words / characters (vs `wc -lwm`)

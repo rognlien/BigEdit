@@ -23,6 +23,7 @@ dies when the shell or `swift run` is interrupted — handy for quick tests only
 # Headless modes, for testing without the GUI:
 swift run -c release BigEdit --index /path/to/file
 swift run -c release BigEdit --search <pattern> /path/to/file
+swift run -c release BigEdit --search-regex <pattern> /path/to/file
 swift run -c release BigEdit --csv /path/to/file [rows]
 ```
 
@@ -35,7 +36,9 @@ The package opens directly in Xcode (`File ▸ Open…` the `BigEdit` folder).
 - **Click and type** — edit in place (UTF-8 files). **⌘Z** / **⇧⌘Z** undo and
   redo; **⌘X/⌘C/⌘V** cut, copy, paste. **⌘S** saves atomically via a streaming
   temp-file write.
-- **⌘F** — find. Type a query and press Enter to search.
+- **⌘F** — find. Type a query and press Enter to search. **Aa** toggles case
+  sensitivity; **.\*** makes the query a regular expression (`^` and `$`
+  match at line boundaries, as in `grep`).
 - **⌘G** / **⇧⌘G** — next / previous match. **Esc** closes the find bar.
 - **Text / CSV** — the selector at the top right of the editor. The CSV side
   becomes available when the file is detected as delimited data, and turns it
@@ -130,8 +133,10 @@ App shell (window, menu, open panel) is in `AppDelegate.swift` / `main.swift`.
   wrap could be a later view option.
 - A chunk seam falling inside a multi-byte UTF-8 character renders one
   replacement glyph at the seam (rare in ASCII-dominant JSON/XML).
-- Search is **literal and case-sensitive**; no regex. Matches beyond the
-  1,000,000th are not collected (shown as `N+`).
+- Regular-expression search runs one window of lines at a time, so a single
+  match cannot span more than ~8 MB of lines. Matches beyond the 1,000,000th
+  are not collected (shown as `N+`), and Replace All with a pattern only
+  works under the materialisation cap — there is no streaming form of it.
 - No syntax highlighting yet (**step 6**).
 - Encoding is assumed UTF-8; CRLF line endings are handled.
 - **CSV mode is display-only.** Padding fields into columns means the drawn

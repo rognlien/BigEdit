@@ -43,6 +43,7 @@ final class FindBar: NSView, NSSearchFieldDelegate {
     private let nextButton = NSButton()
     private let closeButton = NSButton()
     private let caseToggleButton = NSButton()
+    private let regexToggleButton = NSButton()
 
     private let replacementField = NSTextField()
     private let replaceStatusLabel = NSTextField(labelWithString: "")
@@ -73,6 +74,11 @@ final class FindBar: NSView, NSSearchFieldDelegate {
     }
 
     /// Whether the case toggle is on — search distinguishes upper/lower case.
+    /// Whether the query is a regular expression rather than literal text.
+    var isRegularExpression: Bool {
+        regexToggleButton.state == .on
+    }
+
     var isCaseSensitive: Bool {
         return caseToggleButton.state == .on
     }
@@ -117,6 +123,16 @@ final class FindBar: NSView, NSSearchFieldDelegate {
         caseToggleButton.toolTip = "Match case"
         caseToggleButton.font = NSFont.systemFont(ofSize: 11)
         addSubview(caseToggleButton)
+
+        regexToggleButton.title = ".*"
+        regexToggleButton.bezelStyle = .rounded
+        regexToggleButton.setButtonType(.pushOnPushOff)
+        regexToggleButton.state = .off   // Literal by default.
+        regexToggleButton.target = self
+        regexToggleButton.action = #selector(regexToggleChanged)
+        regexToggleButton.toolTip = "Regular expression"
+        regexToggleButton.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+        addSubview(regexToggleButton)
     }
 
     private func configureReplaceRow() {
@@ -193,6 +209,8 @@ final class FindBar: NSView, NSSearchFieldDelegate {
         right -= buttonWidth + gap
         let caseWidth: CGFloat = 36
         caseToggleButton.frame = NSRect(x: right - caseWidth, y: findRowY, width: caseWidth, height: controlHeight)
+        right -= caseWidth
+        regexToggleButton.frame = NSRect(x: right - caseWidth, y: findRowY, width: caseWidth, height: controlHeight)
         right -= caseWidth + gap
         statusLabel.frame = NSRect(x: right - statusWidth, y: findRowY, width: statusWidth, height: controlHeight)
         right -= statusWidth + gap
@@ -249,6 +267,11 @@ final class FindBar: NSView, NSSearchFieldDelegate {
 
     @objc private func revertTapped() {
         delegate?.findBarRequestedRevert(self)
+    }
+
+    @objc private func regexToggleChanged() {
+        // Like the case toggle: re-submit so the search rebuilds in the new mode.
+        delegate?.findBar(self, didSubmitQuery: searchField.stringValue)
     }
 
     @objc private func caseToggleChanged() {
