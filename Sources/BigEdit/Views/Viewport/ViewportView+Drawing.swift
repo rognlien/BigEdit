@@ -25,6 +25,7 @@ extension ViewportView {
 
         let gutterWidth = self.gutterWidth(for: layout.gutterLineCount)
         let startState = seedState(forFirstRow: firstRow, layout: layout)
+        drawCSVGrid(rowCount: rows.count, gutterWidth: gutterWidth, fraction: fraction)
         drawText(rows: rows, gutterWidth: gutterWidth, fraction: fraction,
                  startState: startState)
         drawGutter(rows: rows, width: gutterWidth, fraction: fraction)
@@ -36,6 +37,33 @@ extension ViewportView {
 
     /// Draws a tick at each column's trailing edge along the top band, so the
     /// draggable boundaries can be seen rather than only found by feel.
+    /// A faint grid under the CSV table — one line below each row and one
+    /// along each column divider — so the columns read as cells. Drawn before
+    /// the text so highlights, selection and glyphs all sit on top of it.
+    private func drawCSVGrid(rowCount: Int, gutterWidth: CGFloat, fraction: CGFloat) {
+        guard isCSVRenderingActive else {
+            return
+        }
+        let textOriginX = gutterWidth + gutterPadding
+        let textArea = NSRect(x: textOriginX, y: pinnedHeaderHeight,
+                              width: bounds.width - textOriginX, height: bounds.height - pinnedHeaderHeight)
+        NSGraphicsContext.current?.saveGraphicsState()
+        NSBezierPath(rect: textArea).addClip()
+        NSColor.gridColor.setStroke()
+        let grid = NSBezierPath()
+        for row in 0..<rowCount {
+            let y = pinnedHeaderHeight + CGFloat(row + 1) * lineHeight - fraction * lineHeight - 0.5
+            grid.move(to: NSPoint(x: textArea.minX, y: y))
+            grid.line(to: NSPoint(x: textArea.maxX, y: y))
+        }
+        for x in csvDividerPositions() where x >= textArea.minX && x <= textArea.maxX {
+            grid.move(to: NSPoint(x: x + 0.5, y: textArea.minY))
+            grid.line(to: NSPoint(x: x + 0.5, y: textArea.maxY))
+        }
+        grid.stroke()
+        NSGraphicsContext.current?.restoreGraphicsState()
+    }
+
     private func drawCSVColumnDividers(gutterWidth: CGFloat) {
         guard isCSVRenderingActive else {
             return
