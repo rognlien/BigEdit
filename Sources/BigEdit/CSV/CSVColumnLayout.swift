@@ -57,6 +57,11 @@ struct CSVColumnLayout: Equatable {
         return offsets
     }
 
+    /// The character offset at which `column`'s cell begins.
+    func startCharacterOffset(ofColumn column: Int) -> Int {
+        columnWidths.prefix(column).reduce(0) { $0 + $1 + CSVColumnLayout.columnGap }
+    }
+
     /// A copy with `column` set to `width`, never narrower than one character.
     /// A column beyond the measured ones is ignored, since it has no divider.
     func settingWidth(_ width: Int, forColumn column: Int) -> CSVColumnLayout {

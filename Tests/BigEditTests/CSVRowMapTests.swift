@@ -17,8 +17,8 @@ final class CSVRowMapTests: XCTestCase {
         let map = map("ab,cde", widths: [4, 3])
 
         XCTAssertEqual(map.cells, [
-            CSVRowMap.Cell(byteRange: 0..<2, valueStart: 0, displayRange: 0..<4),
-            CSVRowMap.Cell(byteRange: 3..<6, valueStart: 3, displayRange: 6..<9)
+            CSVRowMap.Cell(byteRange: 0..<2, valueStart: 0, valueEnd: 2, displayRange: 0..<4),
+            CSVRowMap.Cell(byteRange: 3..<6, valueStart: 3, valueEnd: 6, displayRange: 6..<9)
         ])
     }
 
@@ -46,6 +46,7 @@ final class CSVRowMapTests: XCTestCase {
         let map = map("\"a,b\",c", widths: [3, 1])
 
         XCTAssertEqual(map.cells[0].valueStart, 1)
+        XCTAssertEqual(map.cells[0].valueEnd, 4, "inside the closing quote")
         XCTAssertEqual(map.displayColumn(forByte: 1), 0, "first shown character")
         XCTAssertEqual(map.displayColumn(forByte: 3), 2)
         XCTAssertEqual(map.byteOffset(forDisplayColumn: 2), 3)

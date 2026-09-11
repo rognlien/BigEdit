@@ -79,6 +79,27 @@ final class ViewportView: NSView {
     /// the document's content changes.
     var csvRowMapCache: (rowStart: Int, layout: CSVColumnLayout, map: CSVRowMap)?
 
+    /// A column the caret was placed in — by a click or Tab — that its row
+    /// has no cell for yet: an empty line has one cell, so the caret sits at
+    /// the line's end while being drawn in this column, and the first
+    /// character typed adds the delimiters that create the cell. Cleared by
+    /// any other move of the selection.
+    var csvCaretColumn: Int?
+
+    /// The layout column a click at `point` beyond its row's last cell asks
+    /// for, or nil when the click lands on a cell that exists.
+    func csvVirtualColumn(at point: NSPoint) -> Int? {
+        var virtual: Int?
+        if let layout, let column = csvColumn(atX: point.x) {
+            let row = max(0, min(rowAt(y: point.y), layout.visualRowCount - 1))
+            if let line = layout.visualLines(forRows: row..<(row + 1)).first,
+               let map = csvRowMap(for: line), column >= map.cells.count {
+                virtual = column
+            }
+        }
+        return virtual
+    }
+
     /// Forgets anything derived from the document's bytes.
     func documentContentChanged() {
         csvRowMapCache = nil
@@ -121,6 +142,7 @@ final class ViewportView: NSView {
     /// Its `activeOffset` doubles as the keyboard caret (the end being moved).
     var selection: TextSelection? {
         didSet {
+            csvCaretColumn = nil
             onSelectionChange?()
             caretVisible = true       // show solid right after a move
             updateCaretBlink()
@@ -414,7 +436,7 @@ final class ViewportView: NSView {
 
     /// The visual row drawn at `y`: row `r` sits at
     /// `pinnedHeaderHeight + (r - scrollRow) * lineHeight`.
-    private func rowAt(y: CGFloat) -> Int {
+    func rowAt(y: CGFloat) -> Int {
         let fraction = CGFloat(scrollRow - Double(Int(scrollRow)))
         return Int(scrollRow) + Int(((y - pinnedHeaderHeight) / lineHeight + fraction).rounded(.down))
     }

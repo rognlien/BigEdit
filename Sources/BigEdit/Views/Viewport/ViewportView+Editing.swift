@@ -43,6 +43,7 @@ extension ViewportView {
     }
 
     private func applyEdit(replacing range: Range<Int>, with bytes: [UInt8], in document: EditedDocument) {
+        let bytes = csvDelimitersCreatingCaretCell(before: bytes, at: range)
         document.replace(range, with: bytes, selectionBefore: selection)
         documentContentChanged()
         let caret = range.lowerBound + bytes.count
@@ -149,8 +150,20 @@ extension ViewportView {
         insertBytesAtSelection(document?.newlineBytes ?? [0x0A])
     }
 
+    /// Under CSV columns Tab moves to the next cell, as in a spreadsheet;
+    /// otherwise it types a tab.
     override func insertTab(_ sender: Any?) {
-        insertBytesAtSelection([0x09])
+        if isCSVRenderingActive {
+            moveToAdjacentCSVCell(forward: true)
+        } else {
+            insertBytesAtSelection([0x09])
+        }
+    }
+
+    override func insertBacktab(_ sender: Any?) {
+        if isCSVRenderingActive {
+            moveToAdjacentCSVCell(forward: false)
+        }
     }
 
     @objc func cut(_ sender: Any?) {

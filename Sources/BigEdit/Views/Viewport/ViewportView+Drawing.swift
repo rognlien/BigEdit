@@ -146,7 +146,11 @@ extension ViewportView {
             return
         }
         let textOriginX = gutterWidth + gutterPadding
-        let x = textOriginX - horizontalOffset + xOffset(inRow: visualLine, forByte: caret)
+        var x = textOriginX - horizontalOffset + xOffset(inRow: visualLine, forByte: caret)
+        if let column = csvCaretColumn, let csvColumnLayout {
+            x = textOriginX - horizontalOffset
+                + CGFloat(csvColumnLayout.startCharacterOffset(ofColumn: column)) * characterWidth
+        }
         let y = pinnedHeaderHeight + CGFloat(caretRow - firstRow) * lineHeight
             - fraction * lineHeight
 

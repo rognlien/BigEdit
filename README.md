@@ -165,7 +165,9 @@ App shell (window, menu, open panel) is in `AppDelegate.swift` / `main.swift`.
   UTF-16 and binary files are labelled but not decoded. CRLF line endings
   are handled.
 - **CSV mode edits the text, not a table.** Typing goes into the cell under
-  the caret and a column widens to fit what you type, but a delimiter typed
+  the caret, **Tab** / **Shift-Tab** select the next / previous cell (and a
+  cell the row does not have yet is created by the first character typed
+  into it), and a column widens to fit what you type; but a delimiter typed
   into a cell splits it, and deleting across a divider removes the delimiter
   and merges the cells — rows are lines and cells are the text between
   delimiters. Column widths are measured from a bounded head sample, so a
