@@ -172,3 +172,7 @@ App shell (window, menu, open panel) is in `AppDelegate.swift` / `main.swift`.
   down the file is truncated rather than widening its column. A quoted field
   containing a newline is not joined across rows, since rows are physical
   lines.
+
+## License
+
+MIT — see [LICENSE](LICENSE). BigEdit ships [Sparkle](https://github.com/sparkle-project/Sparkle) for updates, which is MIT-licensed as well.
