@@ -73,6 +73,10 @@ final class ViewportView: NSView {
     var csvDialect: CSVDialect?
     var csvColumnLayout: CSVColumnLayout?
 
+    /// The map for the row most recently hit-tested or drawn, since a single
+    /// row is asked about many times in a row (caret, selection, highlights).
+    var csvRowMapCache: (rowStart: Int, map: CSVRowMap)?
+
     /// The widths as measured from the file, kept beside the working layout so
     /// a column dragged to some other width can be sent back to the width its
     /// own content asks for.
@@ -563,6 +567,45 @@ final class ViewportView: NSView {
     }
 
     // MARK: - Helpers
+
+    /// The byte↔character map for `visualLine` under CSV columns, or nil when
+    /// rows are drawn as plain text (or the line is chunked, which the
+    /// aligned rendering never is).
+    func csvRowMap(for visualLine: LineIndex.VisualLine) -> CSVRowMap? {
+        var map: CSVRowMap?
+        if isCSVRenderingActive, visualLine.chunkCount == 1,
+           let csvDialect, let csvColumnLayout, let document {
+            let rowStart = visualLine.byteRange.lowerBound
+            if let cached = csvRowMapCache, cached.rowStart == rowStart {
+                map = cached.map
+            } else {
+                var lineBytes = document.displayBytes(in: visualLine.byteRange)
+                while let last = lineBytes.last, last == 0x0A || last == 0x0D {
+                    lineBytes.removeLast()
+                }
+                let built = CSVRowMap(lineBytes: lineBytes, dialect: csvDialect,
+                                      layout: csvColumnLayout, encoding: textEncoding)
+                csvRowMapCache = (rowStart, built)
+                map = built
+            }
+        }
+        return map
+    }
+
+    /// The x offset, from the row's text origin, at which byte `offset` of
+    /// `visualLine` is drawn — through the cell map under CSV columns, and
+    /// by measuring the text before it otherwise.
+    func xOffset(inRow visualLine: LineIndex.VisualLine, forByte offset: Int) -> CGFloat {
+        var x: CGFloat = 0
+        let start = chunkStartByte(visualLine)
+        let clamped = max(start, min(offset, visualLine.byteRange.upperBound))
+        if let map = csvRowMap(for: visualLine) {
+            x = CGFloat(map.displayColumn(forByte: clamped - start)) * characterWidth
+        } else if clamped > start {
+            x = textWidth(ofBytes: start..<clamped)
+        }
+        return x
+    }
 
     /// Builds the drawable, coloured form of a single row's text from a normal
     /// start state — used for hit-testing where carried state doesn't matter.

@@ -181,13 +181,13 @@ final class CSVTests: XCTestCase {
         XCTAssertEqual(layout?.columnWidths, [CSVColumnLayout.maximumColumnWidth])
     }
 
-    func testDividerOffsetsSitAtEachColumnsTrailingEdge() {
+    func testDividerOffsetsSitInTheMiddleOfEachGap() {
         let layout = CSVColumnLayout(columnWidths: [3, 6, 2])
-        // Column 0 ends at 3; the next starts after the gap, so column 1 ends
-        // at 3 + gap + 6, and column 2 at that + gap + 2.
+        // Column 0 ends at 3 and its divider sits half a gap later; the next
+        // column starts after the whole gap, so column 1 ends at 3 + gap + 6.
         let gap = CSVColumnLayout.columnGap
         XCTAssertEqual(layout.dividerCharacterOffsets,
-                       [3, 3 + gap + 6, 3 + gap + 6 + gap + 2])
+                       [3 + gap / 2, 3 + gap + 6 + gap / 2, 3 + gap + 6 + gap + 2 + gap / 2])
     }
 
     func testDividerOffsetsHaveOnePerColumn() {

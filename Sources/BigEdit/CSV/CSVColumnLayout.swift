@@ -13,7 +13,8 @@ struct CSVColumnLayout: Equatable {
     /// Width of each column in characters, in column order.
     let columnWidths: [Int]
 
-    /// Blank characters drawn between one column and the next.
+    /// Blank characters drawn between one column and the next. The divider
+    /// sits in the middle, so a cell has a character of padding on each side.
     static let columnGap = 2
 
     /// A column wider than this is truncated with an ellipsis, so one runaway
@@ -42,14 +43,15 @@ struct CSVColumnLayout: Equatable {
         return CSVColumnLayout(columnWidths: widths)
     }
 
-    /// The character offset of each column's trailing edge — where its divider
-    /// is drawn and grabbed. One per column, so the last column resizes too.
+    /// The character offset of each column's divider — the middle of the gap
+    /// after it, where the divider is drawn and grabbed. One per column, so
+    /// the last column resizes too.
     var dividerCharacterOffsets: [Int] {
         var offsets: [Int] = []
         var cursor = 0
         for width in columnWidths {
             cursor += width
-            offsets.append(cursor)
+            offsets.append(cursor + CSVColumnLayout.columnGap / 2)
             cursor += CSVColumnLayout.columnGap
         }
         return offsets

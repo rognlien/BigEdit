@@ -49,4 +49,40 @@ enum CSVParser {
         }
         return fields
     }
+
+    /// The byte range of each raw field in `line` (a line without its ending,
+    /// in `encoding`), delimiters excluded and quotes included — the same
+    /// split as `fields(in:)`, kept in terms of the file's bytes so a drawn
+    /// cell can be traced back to them. Always at least one range.
+    static func fieldByteRanges(in line: [UInt8], dialect: CSVDialect,
+                                encoding: TextEncoding) -> [Range<Int>] {
+        var ranges: [Range<Int>] = []
+        let delimiter = encoding.encode(String(dialect.delimiter)) ?? []
+        let quote = dialect.quote.flatMap { encoding.encode(String($0)) } ?? []
+        var fieldStart = 0
+        var insideQuotes = false
+        var index = 0
+
+        while index < line.count {
+            if !quote.isEmpty, line[index...].starts(with: quote) {
+                let next = index + quote.count
+                if insideQuotes, line[next...].starts(with: quote) {
+                    index = next                            // a doubled quote is one literal
+                } else if insideQuotes {
+                    insideQuotes = false
+                } else if index == fieldStart {
+                    insideQuotes = true                     // only opens at the field's start
+                }
+                index += quote.count
+            } else if !delimiter.isEmpty, !insideQuotes, line[index...].starts(with: delimiter) {
+                ranges.append(fieldStart..<index)
+                index += delimiter.count
+                fieldStart = index
+            } else {
+                index += 1
+            }
+        }
+        ranges.append(fieldStart..<line.count)
+        return ranges
+    }
 }
