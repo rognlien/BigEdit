@@ -160,6 +160,12 @@ piece-table search vs naive search. Run with `swift test`.
 
 - `./make-app.sh` — `swift build -c release` → bundle the binary → slice `Resources/AppIcon.png` into the iconset via `sips` + `iconutil` → write `Info.plist` → optionally hardened-runtime-sign when `SIGN_IDENTITY` is set. `scripts/make-dmg.sh` packages the styled installer DMG (via `appdmg`). Signing + notarization run in CI (`.github/workflows/release.yml`).
 - `Package.swift` — executable target + test target.
+- `Sources/BigEdit/` is grouped by layer. `Engine/`, `Editing/`, `Search/` and `CSV/` are Foundation-only, and so are the lexers in `Highlighting/` — only its theme and attributed-string helpers touch AppKit:
+  `Engine/` (mapping, line index, file growth and watching, format and encoding detection, statistics) ·
+  `Editing/` (piece table, add buffer, undo, edited document and layout, journal, replacement rule, writer, line processor) ·
+  `Search/` · `CSV/` · `Highlighting/` (tokens, theme, scanner, the four lexers) ·
+  `Views/` (`Viewport/` and `Document/` for the two split views, plus the sidebar, container and sheets) ·
+  `Application/` (delegate, document, headless commands, the installers) · `main.swift`.
 - `TODO.md` — outstanding pre-beta items (distribution blockers, polish, optional). The signing/notarization step is the only thing strictly gating a public beta.
 
 ## Honest limitations (documented)
