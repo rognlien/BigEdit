@@ -399,12 +399,12 @@ extension ViewportView {
         guard visibleStart < visibleEnd else {
             return
         }
-        let leftX = textWidth(ofBytes: rowStart..<visibleStart)
-        let width = textWidth(ofBytes: visibleStart..<visibleEnd)
+        let leftX = xOffset(inRow: visualLine, forByte: visibleStart)
+        let rightX = xOffset(inRow: visualLine, forByte: visibleEnd)
         NSColor.textColor.setFill()
         NSRect(x: textOriginX - horizontalOffset + leftX,
                y: rowY + lineHeight - 2.5,
-               width: width,
+               width: max(0, rightX - leftX),
                height: 1.5).fill()
     }
 

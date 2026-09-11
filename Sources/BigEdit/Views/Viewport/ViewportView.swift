@@ -67,15 +67,45 @@ final class ViewportView: NSView {
     private(set) var csvSortIndicator: (column: Int, descending: Bool)?
 
     /// Set while the document is drawn as aligned CSV columns. The padding this
-    /// inserts means the drawn text no longer matches the file's bytes, so the
-    /// mode is display-only: editing is off and hit-testing falls back to a
-    /// column estimate, exactly as under a deferred replacement rule.
+    /// inserts means the drawn text no longer matches the file's bytes, so
+    /// hit-testing, the caret, selection and highlights go through the row's
+    /// `CSVRowMap` rather than measuring the text.
     var csvDialect: CSVDialect?
     var csvColumnLayout: CSVColumnLayout?
 
     /// The map for the row most recently hit-tested or drawn, since a single
     /// row is asked about many times in a row (caret, selection, highlights).
-    var csvRowMapCache: (rowStart: Int, map: CSVRowMap)?
+    /// Keyed by the row and the layout it was built for, and dropped whenever
+    /// the document's content changes.
+    var csvRowMapCache: (rowStart: Int, layout: CSVColumnLayout, map: CSVRowMap)?
+
+    /// Forgets anything derived from the document's bytes.
+    func documentContentChanged() {
+        csvRowMapCache = nil
+    }
+
+    /// Widens any column that the line containing `offset` has outgrown, so
+    /// text typed into a cell stays visible instead of being cut to an
+    /// ellipsis at the measured width.
+    func widenCSVColumnsToFitRow(containing offset: Int) {
+        guard let csvDialect, let csvColumnLayout, let layout else {
+            return
+        }
+        let row = layout.visualRow(forLogicalByteOffset: offset)
+        guard let line = layout.visualLines(forRows: row..<(row + 1)).first, line.chunkCount == 1 else {
+            return
+        }
+        var widened = csvColumnLayout
+        for (column, field) in CSVParser.fields(in: decodeChunk(line), dialect: csvDialect).enumerated()
+        where column < widened.columnWidths.count && field.count > widened.columnWidths[column] {
+            widened = widened.settingWidth(field.count, forColumn: column)
+        }
+        if widened != csvColumnLayout {
+            self.csvColumnLayout = widened
+            widestDrawnRowWidth = 0
+            window?.invalidateCursorRects(for: self)
+        }
+    }
 
     /// The widths as measured from the file, kept beside the working layout so
     /// a column dragged to some other width can be sent back to the width its
@@ -248,6 +278,7 @@ final class ViewportView: NSView {
     /// scroll position and selection: every offset that was valid still is.
     func replaceDocumentKeepingPosition(_ document: EditedDocument) {
         self.document = document
+        documentContentChanged()
         updateWrapBytes()
         setScrollRow(scrollRow)          // re-clamp against the new row count
         needsDisplay = true
@@ -261,6 +292,7 @@ final class ViewportView: NSView {
 
     func load(document: EditedDocument) {
         self.document = document
+        documentContentChanged()
         scrollRow = 0
         horizontalOffset = 0
         widestDrawnRowWidth = 0
@@ -576,7 +608,7 @@ final class ViewportView: NSView {
         if isCSVRenderingActive, visualLine.chunkCount == 1,
            let csvDialect, let csvColumnLayout, let document {
             let rowStart = visualLine.byteRange.lowerBound
-            if let cached = csvRowMapCache, cached.rowStart == rowStart {
+            if let cached = csvRowMapCache, cached.rowStart == rowStart, cached.layout == csvColumnLayout {
                 map = cached.map
             } else {
                 var lineBytes = document.displayBytes(in: visualLine.byteRange)
@@ -585,7 +617,7 @@ final class ViewportView: NSView {
                 }
                 let built = CSVRowMap(lineBytes: lineBytes, dialect: csvDialect,
                                       layout: csvColumnLayout, encoding: textEncoding)
-                csvRowMapCache = (rowStart, built)
+                csvRowMapCache = (rowStart, csvColumnLayout, built)
                 map = built
             }
         }

@@ -41,10 +41,8 @@ extension DocumentView {
         if let format = fileFormat {
             right = format.lineEnding == "—" ? format.encoding : "\(format.lineEnding)  ·  \(format.encoding)"
         }
-        // Aligned columns pad the drawn text, so editing is off while CSV mode
-        // is on. Say so, rather than letting typing silently do nothing.
         if viewport.isCSVRenderingActive {
-            right = right.isEmpty ? "CSV — read-only" : "CSV — read-only  ·  \(right)"
+            right = right.isEmpty ? "CSV" : "CSV  ·  \(right)"
         }
         if isFollowing {
             right = right.isEmpty ? "Following" : "Following  ·  \(right)"

@@ -4,13 +4,13 @@ import CoreText
 /// Positional editing: typing, deletion, cut and paste, undo and redo.
 extension ViewportView {
 
-    /// Positional edits are possible when the format allows it and nothing is
-    /// transforming the drawn text — neither a deferred replacement rule nor
-    /// aligned CSV columns, since under either the caret's screen position no
-    /// longer identifies a byte.
+    /// Positional edits are possible when the format allows it and no
+    /// deferred replacement rule is transforming the drawn text, since under
+    /// one the caret's screen position no longer identifies a byte. Aligned
+    /// CSV columns are fine: the cell map turns a screen position back into
+    /// the byte it shows.
     var isEditingAllowed: Bool {
         document?.isEditable == true && document?.hasDisplayTransform != true
-            && !isCSVRenderingActive
     }
 
     /// A rewrite of the whole document needs no caret, so it is possible
@@ -44,7 +44,9 @@ extension ViewportView {
 
     private func applyEdit(replacing range: Range<Int>, with bytes: [UInt8], in document: EditedDocument) {
         document.replace(range, with: bytes, selectionBefore: selection)
+        documentContentChanged()
         let caret = range.lowerBound + bytes.count
+        widenCSVColumnsToFitRow(containing: caret)
         selection = TextSelection(anchorOffset: caret, activeOffset: caret)
         desiredCaretX = nil
         onEdit?()
@@ -55,6 +57,7 @@ extension ViewportView {
     /// Call after the document was edited outside the keyboard path (Replace
     /// All): clamps the selection to the new length and re-clamps the scroll.
     func documentDidChangeProgrammatically() {
+        documentContentChanged()
         if let selection, let document {
             let length = document.length
             self.selection = TextSelection(
@@ -84,6 +87,7 @@ extension ViewportView {
             unmarkText()
         }
         if let restored = action(document) {
+            documentContentChanged()
             selection = restored
             desiredCaretX = nil
             onEdit?()

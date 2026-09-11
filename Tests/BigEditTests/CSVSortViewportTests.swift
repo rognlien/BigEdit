@@ -2,9 +2,9 @@ import AppKit
 import XCTest
 @testable import BigEdit
 
-/// Under aligned CSV columns the caret cannot be placed, so typing is off —
-/// but a rewrite of the whole document needs no caret, and sorting relies
-/// on that. A click on a header column reports that column.
+/// A rewrite of the whole document is allowed under aligned CSV columns,
+/// which sorting relies on, and a click on a header column reports that
+/// column.
 final class CSVSortViewportTests: XCTestCase {
 
     private var temporaryFiles: [URL] = []
@@ -31,10 +31,9 @@ final class CSVSortViewportTests: XCTestCase {
         return (viewport, document)
     }
 
-    func testWholeDocumentRewriteIsAllowedUnderColumnsWhileTypingIsNot() {
+    func testWholeDocumentRewriteIsAllowedUnderColumns() {
         let (viewport, document) = makeViewport("name,age\nbob,2\nann,1\n")
 
-        XCTAssertFalse(viewport.isEditingAllowed)
         XCTAssertTrue(viewport.isWholeDocumentReplacementAllowed)
 
         viewport.replaceEntireDocument(with: Array("name,age\nann,1\nbob,2\n".utf8))
