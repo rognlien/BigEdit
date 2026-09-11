@@ -318,7 +318,11 @@ extension ViewportView {
         let rs = visualLine.byteRange.lowerBound
         let re = visualLine.byteRange.upperBound
 
-        if document?.hasDisplayTransform == true || isCSVRenderingActive {
+        if let map = csvRowMap(for: visualLine) {
+            let column = Int((max(0, relativeX) / characterWidth).rounded())
+            return min(rs + map.byteOffset(forDisplayColumn: column), re)
+        }
+        if document?.hasDisplayTransform == true {
             let approxChars = Int((max(0, relativeX) / characterWidth).rounded())
             return max(rs, min(rs + approxChars, re))
         }

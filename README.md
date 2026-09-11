@@ -55,8 +55,11 @@ The package opens directly in Xcode (`File ▸ Open…` the `BigEdit` folder).
   nothing until they are looked at; the first 100,000 are listed.
 - **Text / CSV** — the selector at the top right of the editor. The CSV side
   becomes available when the file is detected as delimited data, and turns it
-  into aligned columns on a faint grid, with options for the delimiter, quote character,
-  header row, pinning the header while scrolling, and trimming field spaces.
+  into aligned columns on a faint grid, with options for the delimiter,
+  quote character, header row, pinning the header while scrolling, and
+  trimming field spaces.
+  Clicks, selection and search highlights land on the cell text they show,
+  padding and quotes included.
 - **Click a column header** to sort the table by that column — naturally, so
   `9` comes before `10`; click again for descending. Right-click any cell
   for Sort Ascending / Descending by that column. The sort is one undoable

@@ -63,11 +63,7 @@ extension ViewportView {
         var result: CGFloat = 0
         if let layout,
            let line = layout.visualLines(forRows: row..<(row + 1)).first {
-            let start = chunkStartByte(line)
-            let clamped = max(start, min(offset, line.byteRange.upperBound))
-            if clamped > start {
-                result = textWidth(ofBytes: start..<clamped)
-            }
+            result = xOffset(inRow: line, forByte: offset)
         }
         return result
     }

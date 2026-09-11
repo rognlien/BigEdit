@@ -82,7 +82,8 @@ extension ViewportView {
 
     /// Draws the CSV header row in the strip reserved at the top, so the column
     /// names stay readable however far down the file you scroll.
-    /// An arrow in the gap after the sorted column's header cell.
+    /// An arrow in the sorted column's right-hand padding, just before its
+    /// divider.
     private func drawCSVSortIndicator(rowY: CGFloat) {
         guard let csvSortIndicator, csvDialect?.hasHeaderRow == true else {
             return
@@ -97,7 +98,8 @@ extension ViewportView {
             .foregroundColor: NSColor.secondaryLabelColor
         ]
         let size = arrow.size(withAttributes: attributes)
-        let origin = NSPoint(x: positions[csvSortIndicator.column] + (characterWidth * 2 - size.width) / 2,
+        let paddingX = positions[csvSortIndicator.column] - characterWidth
+        let origin = NSPoint(x: paddingX + (characterWidth - size.width) / 2,
                              y: rowY + (lineHeight - size.height) / 2)
         arrow.draw(at: origin, withAttributes: attributes)
     }
@@ -143,11 +145,8 @@ extension ViewportView {
               let visualLine = layout.visualLines(forRows: caretRow..<(caretRow + 1)).first else {
             return
         }
-        let start = chunkStartByte(visualLine)
-        let clamped = max(start, min(caret, visualLine.byteRange.upperBound))
-        let widthToCaret = clamped > start ? textWidth(ofBytes: start..<clamped) : 0
         let textOriginX = gutterWidth + gutterPadding
-        let x = textOriginX - horizontalOffset + widthToCaret
+        let x = textOriginX - horizontalOffset + xOffset(inRow: visualLine, forByte: caret)
         let y = pinnedHeaderHeight + CGFloat(caretRow - firstRow) * lineHeight
             - fraction * lineHeight
 
@@ -300,23 +299,18 @@ extension ViewportView {
             let lookback = max(1, searchScan.longestMatchLength)
             let searchFrom = max(0, rowStart - lookback + 1)
             let matches = searchScan.matches(beginningIn: searchFrom..<rowEnd)
-            drawHighlightRects(
-                matches,
-                rowStart: rowStart,
-                rowEnd: rowEnd,
-                rowY: rowY,
-                textOriginX: textOriginX
-            )
+            drawHighlightRects(matches, in: visualLine, rowY: rowY, textOriginX: textOriginX)
         }
     }
 
     private func drawHighlightRects(
         _ matches: [Range<Int>],
-        rowStart: Int,
-        rowEnd: Int,
+        in visualLine: LineIndex.VisualLine,
         rowY: CGFloat,
         textOriginX: CGFloat
     ) {
+        let rowStart = visualLine.byteRange.lowerBound
+        let rowEnd = visualLine.byteRange.upperBound
         let matchColor = NSColor.systemYellow.withAlphaComponent(0.5)
         let currentColor = NSColor.systemOrange.withAlphaComponent(0.85)
         var drawn = 0
@@ -329,12 +323,12 @@ extension ViewportView {
             let visibleStart = max(match.lowerBound, rowStart)
             let visibleEnd = min(match.upperBound, rowEnd)
             if visibleStart < visibleEnd {
-                let prefixWidth = textWidth(ofBytes: rowStart..<visibleStart)
-                let matchWidth = textWidth(ofBytes: visibleStart..<visibleEnd)
+                let leftX = xOffset(inRow: visualLine, forByte: visibleStart)
+                let rightX = xOffset(inRow: visualLine, forByte: visibleEnd)
                 let rect = NSRect(
-                    x: textOriginX - horizontalOffset + prefixWidth,
+                    x: textOriginX - horizontalOffset + leftX,
                     y: rowY,
-                    width: matchWidth,
+                    width: max(0, rightX - leftX),
                     height: lineHeight
                 )
                 let isCurrent = matchOffset == currentMatchOffset
@@ -367,7 +361,7 @@ extension ViewportView {
         if selectedRange.lowerBound <= rowStart {
             leftX = 0
         } else {
-            leftX = textWidth(ofBytes: rowStart..<selectedRange.lowerBound)
+            leftX = xOffset(inRow: visualLine, forByte: selectedRange.lowerBound)
         }
 
         let rightX: CGFloat
@@ -375,7 +369,7 @@ extension ViewportView {
             // Selection continues onto the next row — fill to the viewport edge.
             rightX = max(0, bounds.width - textOriginX + horizontalOffset)
         } else {
-            rightX = textWidth(ofBytes: rowStart..<selectedRange.upperBound)
+            rightX = xOffset(inRow: visualLine, forByte: selectedRange.upperBound)
         }
 
         let rect = NSRect(
