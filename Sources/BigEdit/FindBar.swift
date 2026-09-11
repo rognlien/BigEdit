@@ -39,7 +39,7 @@ final class FindBar: NSView, NSSearchFieldDelegate {
         mode == .findAndReplace ? 72 : 40
     }
 
-    private let searchField = NSSearchField()
+    let searchField = NSSearchField()
     private let statusLabel = NSTextField(labelWithString: "")
     private let previousButton = NSButton()
     private let nextButton = NSButton()
@@ -48,7 +48,7 @@ final class FindBar: NSView, NSSearchFieldDelegate {
     private let caseToggleButton = NSButton()
     private let regexToggleButton = NSButton()
 
-    private let replacementField = NSTextField()
+    let replacementField = NSTextField()
     private let replaceStatusLabel = NSTextField(labelWithString: "")
     private let replaceAllButton = NSButton()
     private let revertButton = NSButton()
@@ -308,7 +308,30 @@ final class FindBar: NSView, NSSearchFieldDelegate {
         if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
             delegate?.findBarRequestedClose(self)
             handled = true
+        } else if commandSelector == #selector(NSResponder.insertTab(_:)) {
+            handled = moveFocus(from: control, forward: true)
+        } else if commandSelector == #selector(NSResponder.insertBacktab(_:)) {
+            handled = moveFocus(from: control, forward: false)
         }
         return handled
+    }
+
+    /// Tab from the find field lands in the replace field, and Shift-Tab
+    /// from the replace field goes back — while the replace row is showing.
+    /// Any other Tab is left to AppKit's own key-view loop.
+    private func moveFocus(from control: NSControl, forward: Bool) -> Bool {
+        var target: NSTextField?
+        if mode == .findAndReplace {
+            if forward, control === searchField {
+                target = replacementField
+            } else if !forward, control === replacementField {
+                target = searchField
+            }
+        }
+        if let target {
+            window?.makeFirstResponder(target)
+            target.selectText(nil)
+        }
+        return target != nil
     }
 }
