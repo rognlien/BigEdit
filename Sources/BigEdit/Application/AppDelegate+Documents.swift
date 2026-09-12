@@ -73,8 +73,8 @@ extension AppDelegate {
         case DocumentView.ProcessLinesRefusal.notEditable:
             alert.messageText = "This document cannot be edited"
             alert.informativeText = "Processing lines rewrites the document, which is not "
-                + "possible while a replacement rule or CSV view is active, or for a file that "
-                + "is not UTF-8 text."
+                + "possible while a replacement rule is active, or for a file that is not "
+                + "UTF-8 text."
         case LineProcessor.ProcessingError.invalidPattern(let pattern):
             alert.messageText = "That pattern is not a valid regular expression"
             alert.informativeText = "“\(pattern)” could not be understood."
