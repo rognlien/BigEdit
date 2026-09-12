@@ -13,14 +13,19 @@ struct CSVRowMap {
     struct Cell: Equatable {
         /// The raw field's bytes within the line, delimiters excluded.
         let byteRange: Range<Int>
-        /// Where the field's shown value starts within `byteRange`.
+        /// The field's shown value within `byteRange`: inside the quotes of a
+        /// quoted field, and inside the spaces of a trimmed one.
         let valueStart: Int
+        let valueEnd: Int
         /// The cell's characters within the aligned row.
         let displayRange: Range<Int>
     }
 
     let cells: [Cell]
     private let bytes: [UInt8]
+
+    /// The line's length in bytes, without its ending.
+    var lineLength: Int { bytes.count }
     private let isSingleByte: Bool
 
     /// Builds the map for one line of `bytes` (no line ending) under
@@ -34,14 +39,27 @@ struct CSVRowMap {
         for (column, range) in ranges.enumerated() {
             let valueStart = CSVRowMap.valueStart(in: lineBytes, field: range, dialect: dialect,
                                                   encoding: encoding)
-            let characters = CSVRowMap.characterCount(of: lineBytes[valueStart..<range.upperBound],
+            let valueEnd = CSVRowMap.valueEnd(in: lineBytes, field: range, valueStart: valueStart,
+                                              dialect: dialect, encoding: encoding)
+            let characters = CSVRowMap.characterCount(of: lineBytes[valueStart..<valueEnd],
                                                       isSingleByte: encoding.isSingleByte)
             let width = column < layout.columnWidths.count ? layout.columnWidths[column] : characters
-            cells.append(Cell(byteRange: range, valueStart: valueStart,
+            cells.append(Cell(byteRange: range, valueStart: valueStart, valueEnd: valueEnd,
                               displayRange: displayCursor..<(displayCursor + width)))
             displayCursor += width + CSVColumnLayout.columnGap
         }
         self.cells = cells
+    }
+
+    /// The index of the cell drawn at character `column`, or nil before the
+    /// first one.
+    func cellIndex(forDisplayColumn column: Int) -> Int? {
+        cells.lastIndex { $0.displayRange.lowerBound <= column }
+    }
+
+    /// The index of the cell holding the byte at `offset` (line-relative).
+    func cellIndex(forByte offset: Int) -> Int? {
+        cells.lastIndex { $0.byteRange.lowerBound <= offset }
     }
 
     /// The character column at which the byte at `offset` (line-relative)
@@ -90,6 +108,23 @@ struct CSVRowMap {
             start += 1
         }
         return start
+    }
+
+    private static func valueEnd(in bytes: [UInt8], field: Range<Int>, valueStart: Int,
+                                 dialect: CSVDialect, encoding: TextEncoding) -> Int {
+        var end = field.upperBound
+        if dialect.trimsFieldWhitespace {
+            while end > valueStart && (bytes[end - 1] == 0x20 || bytes[end - 1] == 0x09) {
+                end -= 1
+            }
+        }
+        let isQuoted = valueStart > field.lowerBound && !(dialect.trimsFieldWhitespace
+            && (bytes[valueStart - 1] == 0x20 || bytes[valueStart - 1] == 0x09))
+        if isQuoted, let quote = dialect.quote, let quoteBytes = encoding.encode(String(quote)),
+           quoteBytes.count == 1, end > valueStart, bytes[end - 1] == quoteBytes[0] {
+            end -= 1
+        }
+        return end
     }
 
     /// Characters in `slice`: every byte in a single-byte encoding, every

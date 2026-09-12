@@ -67,15 +67,66 @@ final class ViewportView: NSView {
     private(set) var csvSortIndicator: (column: Int, descending: Bool)?
 
     /// Set while the document is drawn as aligned CSV columns. The padding this
-    /// inserts means the drawn text no longer matches the file's bytes, so the
-    /// mode is display-only: editing is off and hit-testing falls back to a
-    /// column estimate, exactly as under a deferred replacement rule.
+    /// inserts means the drawn text no longer matches the file's bytes, so
+    /// hit-testing, the caret, selection and highlights go through the row's
+    /// `CSVRowMap` rather than measuring the text.
     var csvDialect: CSVDialect?
     var csvColumnLayout: CSVColumnLayout?
 
     /// The map for the row most recently hit-tested or drawn, since a single
     /// row is asked about many times in a row (caret, selection, highlights).
-    var csvRowMapCache: (rowStart: Int, map: CSVRowMap)?
+    /// Keyed by the row and the layout it was built for, and dropped whenever
+    /// the document's content changes.
+    var csvRowMapCache: (rowStart: Int, layout: CSVColumnLayout, map: CSVRowMap)?
+
+    /// A column the caret was placed in — by a click or Tab — that its row
+    /// has no cell for yet: an empty line has one cell, so the caret sits at
+    /// the line's end while being drawn in this column, and the first
+    /// character typed adds the delimiters that create the cell. Cleared by
+    /// any other move of the selection.
+    var csvCaretColumn: Int?
+
+    /// The layout column a click at `point` beyond its row's last cell asks
+    /// for, or nil when the click lands on a cell that exists.
+    func csvVirtualColumn(at point: NSPoint) -> Int? {
+        var virtual: Int?
+        if let layout, let column = csvColumn(atX: point.x) {
+            let row = max(0, min(rowAt(y: point.y), layout.visualRowCount - 1))
+            if let line = layout.visualLines(forRows: row..<(row + 1)).first,
+               let map = csvRowMap(for: line), column >= map.cells.count {
+                virtual = column
+            }
+        }
+        return virtual
+    }
+
+    /// Forgets anything derived from the document's bytes.
+    func documentContentChanged() {
+        csvRowMapCache = nil
+    }
+
+    /// Widens any column that the line containing `offset` has outgrown, so
+    /// text typed into a cell stays visible instead of being cut to an
+    /// ellipsis at the measured width.
+    func widenCSVColumnsToFitRow(containing offset: Int) {
+        guard let csvDialect, let csvColumnLayout, let layout else {
+            return
+        }
+        let row = layout.visualRow(forLogicalByteOffset: offset)
+        guard let line = layout.visualLines(forRows: row..<(row + 1)).first, line.chunkCount == 1 else {
+            return
+        }
+        var widened = csvColumnLayout
+        for (column, field) in CSVParser.fields(in: decodeChunk(line), dialect: csvDialect).enumerated()
+        where column < widened.columnWidths.count && field.count > widened.columnWidths[column] {
+            widened = widened.settingWidth(field.count, forColumn: column)
+        }
+        if widened != csvColumnLayout {
+            self.csvColumnLayout = widened
+            widestDrawnRowWidth = 0
+            window?.invalidateCursorRects(for: self)
+        }
+    }
 
     /// The widths as measured from the file, kept beside the working layout so
     /// a column dragged to some other width can be sent back to the width its
@@ -91,6 +142,7 @@ final class ViewportView: NSView {
     /// Its `activeOffset` doubles as the keyboard caret (the end being moved).
     var selection: TextSelection? {
         didSet {
+            csvCaretColumn = nil
             onSelectionChange?()
             caretVisible = true       // show solid right after a move
             updateCaretBlink()
@@ -248,6 +300,7 @@ final class ViewportView: NSView {
     /// scroll position and selection: every offset that was valid still is.
     func replaceDocumentKeepingPosition(_ document: EditedDocument) {
         self.document = document
+        documentContentChanged()
         updateWrapBytes()
         setScrollRow(scrollRow)          // re-clamp against the new row count
         needsDisplay = true
@@ -261,6 +314,7 @@ final class ViewportView: NSView {
 
     func load(document: EditedDocument) {
         self.document = document
+        documentContentChanged()
         scrollRow = 0
         horizontalOffset = 0
         widestDrawnRowWidth = 0
@@ -382,7 +436,7 @@ final class ViewportView: NSView {
 
     /// The visual row drawn at `y`: row `r` sits at
     /// `pinnedHeaderHeight + (r - scrollRow) * lineHeight`.
-    private func rowAt(y: CGFloat) -> Int {
+    func rowAt(y: CGFloat) -> Int {
         let fraction = CGFloat(scrollRow - Double(Int(scrollRow)))
         return Int(scrollRow) + Int(((y - pinnedHeaderHeight) / lineHeight + fraction).rounded(.down))
     }
@@ -576,7 +630,7 @@ final class ViewportView: NSView {
         if isCSVRenderingActive, visualLine.chunkCount == 1,
            let csvDialect, let csvColumnLayout, let document {
             let rowStart = visualLine.byteRange.lowerBound
-            if let cached = csvRowMapCache, cached.rowStart == rowStart {
+            if let cached = csvRowMapCache, cached.rowStart == rowStart, cached.layout == csvColumnLayout {
                 map = cached.map
             } else {
                 var lineBytes = document.displayBytes(in: visualLine.byteRange)
@@ -585,7 +639,7 @@ final class ViewportView: NSView {
                 }
                 let built = CSVRowMap(lineBytes: lineBytes, dialect: csvDialect,
                                       layout: csvColumnLayout, encoding: textEncoding)
-                csvRowMapCache = (rowStart, built)
+                csvRowMapCache = (rowStart, csvColumnLayout, built)
                 map = built
             }
         }

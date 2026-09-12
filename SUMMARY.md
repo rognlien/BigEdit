@@ -189,7 +189,7 @@ piece-table search vs naive search. Run with `swift test`.
   Reload and Discard, or Quit Anyway removes the journal, as does a clean close.
 - Editing inside a single multi-GB line re-scans that line's span per splice — no worse than the viewer's own cost profile in a megaline file, but noticeable.
 - CSV column widths are dragged per session and reset whenever a CSV option changes, since changing the delimiter, quote or trim re-measures the columns from scratch.
-- CSV mode is display-only: padding means the drawn text no longer matches the file's bytes, so editing is off, search highlights sit at byte positions rather than padded ones, and column widths come from a bounded head sample (a much wider field further down is truncated). A quoted field containing a newline is not joined across rows.
+- CSV mode edits text, not cells: a delimiter typed into a cell splits it and deleting across a divider merges cells. Column widths come from a bounded head sample (a much wider field further down is truncated until that row is edited). A quoted field containing a newline is not joined across rows.
 - Undo reaches back across saves, but not without limit: each save retires the previous
   mapping (the old inode stays readable after the atomic rename), and after eight of them
   without leaving the document the history is cleared rather than pinning more.

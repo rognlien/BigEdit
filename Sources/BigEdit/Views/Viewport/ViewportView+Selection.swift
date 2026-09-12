@@ -95,6 +95,7 @@ extension ViewportView {
             anchorOffset: selectionAnchorUnit.lowerBound,
             activeOffset: selectionAnchorUnit.upperBound
         )
+        csvCaretColumn = csvVirtualColumn(at: point)
         lastDragLocationInWindow = event.locationInWindow
         startAutoscrollTimer()
         needsDisplay = true

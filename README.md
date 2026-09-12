@@ -57,9 +57,8 @@ The package opens directly in Xcode (`File ▸ Open…` the `BigEdit` folder).
   becomes available when the file is detected as delimited data, and turns it
   into aligned columns on a faint grid, with options for the delimiter,
   quote character, header row, pinning the header while scrolling, and
-  trimming field spaces.
-  Clicks, selection and search highlights land on the cell text they show,
-  padding and quotes included.
+  trimming field spaces. Clicks, selection, search highlights and typing
+  land on the cell text they show, padding and quotes included.
 - **Click a column header** to sort the table by that column — naturally, so
   `9` comes before `10`; click again for descending. Right-click any cell
   for Sort Ascending / Descending by that column. The sort is one undoable
@@ -165,13 +164,16 @@ App shell (window, menu, open panel) is in `AppDelegate.swift` / `main.swift`.
   and counts correctly but stays read-only, since edits are made in UTF-8.
   UTF-16 and binary files are labelled but not decoded. CRLF line endings
   are handled.
-- **CSV mode is display-only.** Padding fields into columns means the drawn
-  text no longer matches the file's bytes, so editing is off and search
-  highlights sit at byte positions rather than at the padded ones. Column
-  widths are measured from a bounded head sample, so a much wider field far
-  down the file is truncated rather than widening its column. A quoted field
-  containing a newline is not joined across rows, since rows are physical
-  lines.
+- **CSV mode edits the text, not a table.** Typing goes into the cell under
+  the caret, **Tab** / **Shift-Tab** select the next / previous cell (and a
+  cell the row does not have yet is created by the first character typed
+  into it), and a column widens to fit what you type; but a delimiter typed
+  into a cell splits it, and deleting across a divider removes the delimiter
+  and merges the cells — rows are lines and cells are the text between
+  delimiters. Column widths are measured from a bounded head sample, so a
+  much wider field far down the file is truncated rather than widening its
+  column until you edit that row. A quoted field containing a newline is not
+  joined across rows, since rows are physical lines.
 
 ## License
 
