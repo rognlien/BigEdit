@@ -3,10 +3,11 @@
 What is actually left. Everything above the "Done" section is open work;
 `[x]` items in Done are recorded so this file stops re-proposing them.
 
-Last audited against the code on 2026-09-11, at v0.1.20: the seven
-improvements, the source split into folders and per-concern files, the
-system-style find bar and toolbar, CSV sorting, grid and exact cell mapping,
-the MIT license, and CI on demand only.
+Last audited against the code on 2026-09-12, at v0.1.20 plus editable CSV
+mode: the seven improvements, the source split into folders and per-concern
+files, the system-style find bar and toolbar, CSV sorting, grid, exact cell
+mapping, editing with Tab between cells, the MIT license, and CI on demand
+only.
 
 ## Syntax highlighting — making it extendable
 
@@ -73,10 +74,12 @@ the streaming rule above it.
       since the edits were made, and journals of files that were never
       reopened are not cleaned up.
 - [ ] **CSV.**
-      - Make CSV mode editable. `CSVRowMap` now maps clicks and highlights
-        through the padding exactly, so the caret can be placed; what is
-        left is letting typing through (`isEditingAllowed`) and re-measuring
-        the edited row's columns.
+      - **Cell semantics while editing.** Editing is text editing under a
+        table rendering: a delimiter typed into a cell splits it, and
+        deleting across a divider merges two cells. Treating those as cell
+        operations — quoting a typed delimiter, stopping a delete at the
+        cell edge — would make the mode feel like a spreadsheet rather than
+        like padded text.
       - Sorting rewrites the file under the 32 MB Process Lines ceiling. A
         view-only sort (a permutation over the line index) would lift the
         ceiling and leave the file clean, at the cost of a new layer between
@@ -205,6 +208,12 @@ they are not proposed again.
       character of padding each side of a cell, and `CSVRowMap` so clicks,
       selection and search highlights land on the cell text they show.
 - [x] **MIT license.**
+- [x] **CSV mode is editable.** Typing goes into the cell the caret was
+      placed in, Tab and Shift-Tab select the next and previous cell, a
+      column widens to fit what is typed, and a cell a row does not have yet
+      is created by the first character typed into it.
+- [x] **Process Lines runs under CSV columns**, like sorting: it rewrites the
+      whole document, which needs no caret.
 
 ## Verification scripts to keep around
 
