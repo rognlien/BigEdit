@@ -85,7 +85,9 @@ bigedit --help
 ```
 
 It is a symlink rather than a copy, so updating BigEdit updates the command
-with it.
+with it. Files go to the BigEdit that is already running, even a copy
+installed somewhere else; only when none is running does the command launch
+the one it belongs to.
 
 `/usr/local/bin` is owned by root, so the first install asks for authorisation.
 BigEdit does that through a small privileged helper — the supported way for an
