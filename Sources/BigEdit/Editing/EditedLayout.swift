@@ -249,6 +249,14 @@ final class EditedLayout {
         return result
     }
 
+    /// The logical line containing `position`, from its start to the next
+    /// line's start (or the document end), so it includes the line ending.
+    func logicalLineRange(containing position: Int) -> Range<Int> {
+        ensureSegmentTable()
+        let start = logicalLineStart(containingPosition: position)
+        return start..<logicalLineEnd(afterPosition: start)
+    }
+
     /// The visual row containing logical byte `offset` (clamped).
     func visualRow(forLogicalByteOffset offset: Int) -> Int {
         var result = 0
@@ -399,11 +407,7 @@ final class EditedLayout {
         insertedLength: Int,
         contentReader: (Range<Int>) -> [UInt8]
     ) {
-        if gaps.isEmpty {
-            gaps = [Gap(originalRange: 0..<file.size)]
-            tableValid = false
-        }
-        ensureTableValid()
+        ensureSegmentTable()
 
         let delta = insertedLength - replacedRange.count
 
@@ -491,6 +495,16 @@ final class EditedLayout {
         endsWithNewline = length > 0
             && contentReader((length - 1)..<length).first == 0x0A
         tableValid = false
+    }
+
+    /// Covers an unedited document with one gap, so the segment queries
+    /// below have a table to search.
+    private func ensureSegmentTable() {
+        if gaps.isEmpty {
+            gaps = [Gap(originalRange: 0..<file.size)]
+            tableValid = false
+        }
+        ensureTableValid()
     }
 
     // MARK: - Alignment helpers (pre-edit logical space)

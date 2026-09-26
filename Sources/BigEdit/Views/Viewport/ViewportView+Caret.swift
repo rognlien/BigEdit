@@ -58,6 +58,49 @@ extension ViewportView {
         needsDisplay = true
     }
 
+    /// The logical line containing `offset`, excluding its line ending. A
+    /// wrapped line counts as one line, as in other Mac text views.
+    func lineContentRange(containing offset: Int) -> Range<Int> {
+        var result = offset..<offset
+        if let layout, let document {
+            let line = layout.logicalLineRange(containing: offset)
+            let start = line.lowerBound
+            var end = line.upperBound
+            if end > start, document.byte(at: end - 1) == 0x0A { end -= 1 }
+            if end > start, document.byte(at: end - 1) == 0x0D { end -= 1 }
+            result = start..<end
+        }
+        return result
+    }
+
+    /// Moves the caret to the start or end of its logical line.
+    func moveCaretToLineBoundary(end: Bool, extend: Bool) {
+        ensureCaret()
+        let line = lineContentRange(containing: selection?.activeOffset ?? 0)
+        let target = end ? line.upperBound : line.lowerBound
+        desiredCaretX = nil
+        setCaret(to: target, extend: extend)
+        scrollByteIntoView(target)
+        needsDisplay = true
+    }
+
+    // Control-A and Control-E are bound to these in the standard key bindings.
+    override func moveToBeginningOfParagraph(_ sender: Any?) {
+        moveCaretToLineBoundary(end: false, extend: false)
+    }
+
+    override func moveToBeginningOfParagraphAndModifySelection(_ sender: Any?) {
+        moveCaretToLineBoundary(end: false, extend: true)
+    }
+
+    override func moveToEndOfParagraph(_ sender: Any?) {
+        moveCaretToLineBoundary(end: true, extend: false)
+    }
+
+    override func moveToEndOfParagraphAndModifySelection(_ sender: Any?) {
+        moveCaretToLineBoundary(end: true, extend: true)
+    }
+
     /// The drawn x of the caret at `offset` within the row at `row`.
     func caretX(forOffset offset: Int, row: Int) -> CGFloat {
         var result: CGFloat = 0
