@@ -189,9 +189,54 @@ extension ViewportView {
         }
     }
 
+    /// Shared by every window, like the system text views' kill buffer, and
+    /// separate from the pasteboard.
+    private static var killBuffer: String?
+
+    /// Control-K: deletes the selection, or from the caret to the end of the
+    /// line — the line ending itself when the caret is already there — and
+    /// keeps the deleted text for Control-Y.
+    override func deleteToEndOfParagraph(_ sender: Any?) {
+        if let document, let range = killRange(), isEditingAllowed {
+            if range.count > 64 * 1024 * 1024 {
+                presentSelectionTooLarge()
+            } else if !range.isEmpty {
+                let bytes = document.displayBytes(in: range)
+                ViewportView.killBuffer = ViewportView.pasteboardText(from: bytes, encoding: textEncoding)
+                performEdit(replacing: range, with: [])
+            }
+        } else {
+            NSSound.beep()
+        }
+    }
+
+    private func killRange() -> Range<Int>? {
+        var result: Range<Int>?
+        if let selection, let document {
+            if !selection.isEmpty {
+                result = selection.range
+            } else {
+                let caret = selection.activeOffset
+                let line = lineContentRange(containing: caret)
+                let lineEnd = document.layout.logicalLineRange(containing: caret).upperBound
+                result = caret < line.upperBound ? caret..<line.upperBound : caret..<lineEnd
+            }
+        }
+        return result
+    }
+
+    /// Control-Y: inserts the text last deleted with Control-K.
+    override func yank(_ sender: Any?) {
+        if isEditingAllowed, selection != nil, let text = ViewportView.killBuffer {
+            insertBytesAtSelection(pasteBytes(from: text))
+        } else {
+            NSSound.beep()
+        }
+    }
+
     /// Pasted text normalised to the document's detected line ending, as
     /// UTF-8 bytes.
-    private func pasteBytes(from text: String) -> [UInt8] {
+    func pasteBytes(from text: String) -> [UInt8] {
         var normalized = text.replacingOccurrences(of: "\r\n", with: "\n")
         normalized = normalized.replacingOccurrences(of: "\r", with: "\n")
         if document?.newlineBytes == [0x0D, 0x0A] {

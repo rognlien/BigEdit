@@ -551,7 +551,9 @@ final class ViewportView: NSView {
         case 115: setScrollRow(0)                          // home
         case 119: setScrollRow(maxScrollRow)               // end
         default:
-            if isEditingAllowed {
+            // Control-key bindings are mostly caret moves, which read-only
+            // documents support too.
+            if isEditingAllowed || event.modifierFlags.contains(.control) {
                 // Routes through the input context: typing arrives via
                 // insertText, editing keys via the NSResponder actions below.
                 interpretKeyEvents([event])
