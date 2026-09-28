@@ -88,14 +88,18 @@ extension ViewportView {
         document?.undoStack.breakCoalescing()
         desiredCaretX = nil
         let point = convert(event.locationInWindow, from: nil)
-        let offset = byteOffset(at: point)
-        selectionGranularity = granularity(forClickCount: event.clickCount)
-        selectionAnchorUnit = unit(at: offset, granularity: selectionGranularity)
-        selection = TextSelection(
-            anchorOffset: selectionAnchorUnit.lowerBound,
-            activeOffset: selectionAnchorUnit.upperBound
-        )
-        csvCaretColumn = csvVirtualColumn(at: point)
+        if event.modifierFlags.contains(.option) && event.clickCount == 1 {
+            beginColumnSelection(at: point)
+        } else {
+            let offset = byteOffset(at: point)
+            selectionGranularity = granularity(forClickCount: event.clickCount)
+            selectionAnchorUnit = unit(at: offset, granularity: selectionGranularity)
+            selection = TextSelection(
+                anchorOffset: selectionAnchorUnit.lowerBound,
+                activeOffset: selectionAnchorUnit.upperBound
+            )
+            csvCaretColumn = csvVirtualColumn(at: point)
+        }
         lastDragLocationInWindow = event.locationInWindow
         startAutoscrollTimer()
         needsDisplay = true
@@ -159,11 +163,15 @@ extension ViewportView {
             x: raw.x,
             y: min(max(0, raw.y), max(0, bounds.height - 1))
         )
-        let offset = byteOffset(at: clamped)
-        let currentUnit = unit(at: offset, granularity: selectionGranularity)
-        let lower = min(selectionAnchorUnit.lowerBound, currentUnit.lowerBound)
-        let upper = max(selectionAnchorUnit.upperBound, currentUnit.upperBound)
-        selection = TextSelection(anchorOffset: lower, activeOffset: upper)
+        if columnSelection != nil {
+            dragColumnSelection(to: clamped)
+        } else {
+            let offset = byteOffset(at: clamped)
+            let currentUnit = unit(at: offset, granularity: selectionGranularity)
+            let lower = min(selectionAnchorUnit.lowerBound, currentUnit.lowerBound)
+            let upper = max(selectionAnchorUnit.upperBound, currentUnit.upperBound)
+            selection = TextSelection(anchorOffset: lower, activeOffset: upper)
+        }
         needsDisplay = true
     }
 
@@ -288,24 +296,32 @@ extension ViewportView {
     private func byteOffset(at point: NSPoint) -> Int {
         var result = 0
         if let document, let layout, layout.visualRowCount > 0 {
-            let firstRow = Int(scrollRow)
-            let fraction = scrollRow - Double(firstRow)
-            let contentY = max(0, Double(point.y) - Double(pinnedHeaderHeight))
-            let rowsFromTop = (contentY + fraction * Double(lineHeight)) / Double(lineHeight)
-            var rowIndex = firstRow + Int(rowsFromTop.rounded(.down))
-            rowIndex = max(0, min(rowIndex, layout.visualRowCount - 1))
-
+            let rowIndex = visualRowIndex(at: point)
             let rows = layout.visualLines(forRows: rowIndex..<(rowIndex + 1))
             if let visualLine = rows.first {
-                let gutterW = gutterWidth(for: layout.gutterLineCount)
-                let textOriginX = gutterW + gutterPadding
-                let relativeX = point.x - textOriginX + horizontalOffset
-                result = byteOffset(inRow: visualLine, atX: relativeX)
+                result = byteOffset(inRow: visualLine, atX: textX(at: point))
             } else {
                 result = document.length
             }
         }
         return result
+    }
+
+    /// The visual row under `point`, clamped to the document's rows.
+    func visualRowIndex(at point: NSPoint) -> Int {
+        let firstRow = Int(scrollRow)
+        let fraction = scrollRow - Double(firstRow)
+        let contentY = max(0, Double(point.y) - Double(pinnedHeaderHeight))
+        let rowsFromTop = (contentY + fraction * Double(lineHeight)) / Double(lineHeight)
+        let rowIndex = firstRow + Int(rowsFromTop.rounded(.down))
+        return max(0, min(rowIndex, (layout?.visualRowCount ?? 1) - 1))
+    }
+
+    /// The x of `point` measured from the start of the text, independent of
+    /// horizontal scrolling.
+    func textX(at point: NSPoint) -> CGFloat {
+        let gutterW = layout.map { gutterWidth(for: $0.gutterLineCount) } ?? 0
+        return point.x - (gutterW + gutterPadding) + horizontalOffset
     }
 
     /// Maps an x position within a visual row to a byte offset. Uses CoreText so

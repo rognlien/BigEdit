@@ -26,7 +26,7 @@ extension ViewportView {
         let gutterWidth = self.gutterWidth(for: layout.gutterLineCount)
         let startState = seedState(forFirstRow: firstRow, layout: layout)
         drawCSVGrid(rowCount: rows.count, gutterWidth: gutterWidth, fraction: fraction)
-        drawText(rows: rows, gutterWidth: gutterWidth, fraction: fraction,
+        drawText(rows: rows, firstRow: firstRow, gutterWidth: gutterWidth, fraction: fraction,
                  startState: startState)
         drawGutter(rows: rows, width: gutterWidth, fraction: fraction)
         drawInsertionCaret(layout: layout, firstRow: firstRow, fraction: fraction,
@@ -135,7 +135,7 @@ extension ViewportView {
     /// Draws the blinking insertion caret at the empty selection's active end.
     private func drawInsertionCaret(layout: EditedLayout, firstRow: Int,
                                     fraction: CGFloat, gutterWidth: CGFloat) {
-        guard isViewportFocused, caretVisible, selectionByteRange == nil,
+        guard isViewportFocused, caretVisible, selectionByteRange == nil, columnSelection == nil,
               let caret = selection?.activeOffset else {
             return
         }
@@ -164,6 +164,7 @@ extension ViewportView {
 
     private func drawText(
         rows: [LineIndex.VisualLine],
+        firstRow: Int,
         gutterWidth: CGFloat,
         fraction: CGFloat,
         startState: HighlightState
@@ -187,6 +188,7 @@ extension ViewportView {
             // the previous so the rendered text is always on top.
             drawMatchHighlights(for: visualLine, rowY: y, textOriginX: textOriginX)
             drawSelectionForRow(visualLine: visualLine, rowY: y, textOriginX: textOriginX)
+            drawColumnSelection(for: visualLine, row: firstRow + row, rowY: y, textOriginX: textOriginX)
             let (attributed, nextState) = displayRow(for: visualLine, startState: state)
             widest = max(widest, attributed.size().width)
             attributed.draw(at: NSPoint(x: textOriginX - horizontalOffset, y: y))
@@ -384,6 +386,29 @@ extension ViewportView {
         )
         NSColor.selectedTextBackgroundColor.setFill()
         rect.fill()
+    }
+
+    /// Fills the part of `visualLine` the column selection covers. A column
+    /// with no width is drawn as a caret on each of its rows.
+    private func drawColumnSelection(
+        for visualLine: LineIndex.VisualLine,
+        row: Int,
+        rowY: CGFloat,
+        textOriginX: CGFloat
+    ) {
+        if let column = columnSelection, column.rows.contains(row) {
+            let slice = columnSlice(of: column, in: visualLine)
+            let leftX = xOffset(inRow: visualLine, forByte: slice.lowerBound)
+            let rightX = xOffset(inRow: visualLine, forByte: slice.upperBound)
+            let x = textOriginX - horizontalOffset + leftX
+            if column.xRange.lowerBound == column.xRange.upperBound {
+                NSColor.labelColor.setFill()
+                NSRect(x: x, y: rowY + 1, width: 1, height: lineHeight - 2).fill()
+            } else {
+                NSColor.selectedTextBackgroundColor.setFill()
+                NSRect(x: x, y: rowY, width: max(0, rightX - leftX), height: lineHeight).fill()
+            }
+        }
     }
 
     /// Underlines the portion of `visualLine` covered by in-progress IME
