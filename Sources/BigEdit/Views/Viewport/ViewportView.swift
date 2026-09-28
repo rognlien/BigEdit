@@ -143,9 +143,19 @@ final class ViewportView: NSView {
     var selection: TextSelection? {
         didSet {
             csvCaretColumn = nil
+            columnSelection = nil
             onSelectionChange?()
             caretVisible = true       // show solid right after a move
             updateCaretBlink()
+        }
+    }
+
+    /// A rectangular (Option-drag) selection. While it is set, `selection` is
+    /// an empty caret at its active corner; any other change of `selection`
+    /// clears it.
+    var columnSelection: ColumnSelection? {
+        didSet {
+            needsDisplay = true
         }
     }
 
@@ -531,6 +541,9 @@ final class ViewportView: NSView {
         // Once a caret/selection exists, the arrows navigate text (extending
         // with Shift); before that they scroll, so plain browsing still works.
         let hasCaret = selection != nil
+        if handleColumnSelectionKey(event) {
+            return
+        }
         switch event.keyCode {
         case 126:                                          // up
             if command { setScrollRow(0) }

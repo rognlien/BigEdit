@@ -6,7 +6,9 @@ extension ViewportView {
 
     @objc func copy(_ sender: Any?) {
         let cap = 64 * 1024 * 1024
-        if let selection, !selection.isEmpty, let document {
+        if columnSelection != nil {
+            copyColumnSelection(cap: cap)
+        } else if let selection, !selection.isEmpty, let document {
             let range = selection.range
             if range.count > cap {
                 presentSelectionTooLarge()
@@ -19,6 +21,16 @@ extension ViewportView {
             }
         } else {
             NSSound.beep()
+        }
+    }
+
+    private func copyColumnSelection(cap: Int) {
+        if let text = columnSelectionText(cap: cap) {
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            pasteboard.setString(text, forType: .string)
+        } else {
+            presentSelectionTooLarge()
         }
     }
 
@@ -75,7 +87,7 @@ extension ViewportView: NSMenuItemValidation {
         var enabled = true
         switch menuItem.action {
         case #selector(copy(_:)):
-            enabled = !(selection?.isEmpty ?? true)
+            enabled = columnSelection != nil || !(selection?.isEmpty ?? true)
         case #selector(cut(_:)):
             enabled = !(selection?.isEmpty ?? true) && isEditingAllowed
         case #selector(paste(_:)):
