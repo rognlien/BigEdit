@@ -1,8 +1,9 @@
 #!/bin/sh
 # Updates the public BigEdit download page (in the maendeleo-site repo) from a
 # GitHub release of this repo: downloads the notarized DMG under a versioned
-# filename, drops the previous one, bumps the download link and version text,
-# then commits and pushes so the host serves it on its next pull.
+# filename, drops the previous one, writes the page's content from site/ with
+# the version filled in, then commits and pushes so the host serves it on its
+# next pull. The page's look comes from the site.
 #
 # Lives in this PRIVATE repo on purpose — the maendeleo-site repo is served
 # publicly, so release tooling must not live there.
@@ -32,7 +33,7 @@ if [ -z "$TAG" ]; then
 fi
 VERSION="${TAG#v}"
 DEST="bigedit/BigEdit-${VERSION}.dmg"
-INDEX="bigedit/index.html"
+INDEX="bigedit/index.md"
 
 echo "Updating $SITE_DIR to ${TAG} (version ${VERSION})"
 
@@ -64,11 +65,11 @@ fi
 rm -f bigedit/appcast.xml
 "$GENERATE_APPCAST" bigedit --download-url-prefix "https://maendeleo.io/bigedit/"
 
-# Point the download link at the new file and bump the version text.
-sed -i '' -E "s#href=\"BigEdit-[^\"]*\.dmg\"#href=\"BigEdit-${VERSION}.dmg\"#" "$INDEX"
-sed -i '' -E "s#Version [0-9]+\.[0-9]+\.[0-9]+[^ <]*#Version ${VERSION}#" "$INDEX"
+# The page's content, with this version filled in.
+rsync -a --exclude index.md "$BIGEDIT_DIR/site/" bigedit/
+sed "s/{{VERSION}}/${VERSION}/g" "$BIGEDIT_DIR/site/index.md" > "$INDEX"
 
-git add "$DEST" "$INDEX" bigedit/appcast.xml
+git add -A bigedit
 if git diff --cached --quiet; then
     echo "No changes — site already on ${VERSION}."
     exit 0
