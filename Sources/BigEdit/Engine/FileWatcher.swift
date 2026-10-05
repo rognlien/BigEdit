@@ -8,7 +8,6 @@ final class FileWatcher {
     private let path: String
     private let onChange: () -> Void
     private var source: DispatchSourceFileSystemObject?
-    private var fileDescriptor: Int32 = -1
     private var notifyPending = false
 
     init?(path: String, onChange: @escaping () -> Void) {
@@ -29,7 +28,6 @@ final class FileWatcher {
         if descriptor < 0 {
             return false
         }
-        fileDescriptor = descriptor
         let newSource = DispatchSource.makeFileSystemObjectSource(
             fileDescriptor: descriptor,
             eventMask: [.write, .extend, .delete, .rename, .link, .revoke],
@@ -38,11 +36,10 @@ final class FileWatcher {
         newSource.setEventHandler { [weak self, weak newSource] in
             self?.handle(newSource?.data ?? [])
         }
-        newSource.setCancelHandler { [weak self] in
-            if let fd = self?.fileDescriptor, fd >= 0 {
-                close(fd)
-            }
-            self?.fileDescriptor = -1
+        // The handler runs after the watcher may be gone, so it must not
+        // reach the descriptor through `self`.
+        newSource.setCancelHandler {
+            close(descriptor)
         }
         source = newSource
         newSource.resume()
