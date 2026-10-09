@@ -2,7 +2,8 @@ import AppKit
 
 /// Receives the user's choices from a `FormatBar`.
 protocol FormatBarDelegate: AnyObject {
-    /// The view mode changed — plain text, or delimited data as columns.
+    /// The view mode changed — plain text, delimited data as columns, or
+    /// rendered Markdown.
     func formatBar(_ bar: FormatBar, didSelect mode: FormatBar.Mode)
     /// One of the CSV options changed; the whole dialect is handed over.
     func formatBar(_ bar: FormatBar, didChange dialect: CSVDialect)
@@ -11,16 +12,18 @@ protocol FormatBarDelegate: AnyObject {
 /// A thin strip across the top of the document with the view-mode selector at
 /// its right-hand end.
 ///
-/// The selector is a two-segment radio control: **Text** or **CSV**. The CSV
-/// side stays disabled until detection finds delimited data, so an ordinary
-/// file cannot be put into a mode that would make no sense for it. Choosing
-/// CSV reveals a second row with the options that decide how the file is
-/// split into columns.
+/// The selector is a three-segment radio control: **Text**, **CSV** or
+/// **Markdown**. CSV stays disabled until detection finds delimited data, and
+/// Markdown until the document is known to be Markdown small enough to render,
+/// so an ordinary file cannot be put into a mode that would make no sense for
+/// it. Choosing CSV reveals a second row with the options that decide how the
+/// file is split into columns.
 final class FormatBar: NSView {
 
     enum Mode {
         case text
         case csv
+        case markdown
     }
 
     weak var delegate: FormatBarDelegate?
@@ -35,6 +38,10 @@ final class FormatBar: NSView {
 
     /// Whether detection found delimited data in the current document.
     private var isCSVAvailable = false
+
+    /// Why Markdown cannot be rendered for the current document, or nil when
+    /// it can.
+    private var markdownUnavailableReason: String? = "This file is not Markdown"
 
     private let modeSelector = NSSegmentedControl()
     private let delimiterLabel = NSTextField(labelWithString: "Delimiter")
@@ -83,9 +90,7 @@ final class FormatBar: NSView {
         if let detected {
             dialect = detected
         }
-        if !isCSVAvailable && mode == .csv {
-            mode = .text
-        }
+        mode = availableMode(mode)
         updateModeSelector()
         applyDialectToControls()
         applyModeVisibility()
@@ -95,18 +100,43 @@ final class FormatBar: NSView {
     /// Restores a previously chosen mode (e.g. when switching back to a
     /// document), without telling the delegate about a change it made itself.
     func setMode(_ newMode: Mode) {
-        mode = (newMode == .csv && !isCSVAvailable) ? .text : newMode
+        mode = availableMode(newMode)
         updateModeSelector()
         applyModeVisibility()
         layoutChildren()
     }
 
+    /// Tells the bar whether the current document can be rendered as
+    /// Markdown; `unavailableReason` is nil when it can, and otherwise
+    /// explains why not.
+    func setMarkdownAvailability(unavailableReason: String?) {
+        markdownUnavailableReason = unavailableReason
+        mode = availableMode(mode)
+        updateModeSelector()
+        applyModeVisibility()
+        layoutChildren()
+    }
+
+    /// `requested`, or plain text when the document does not support it.
+    private func availableMode(_ requested: Mode) -> Mode {
+        var available = requested
+        switch requested {
+        case .csv where !isCSVAvailable,
+             .markdown where markdownUnavailableReason != nil:
+            available = .text
+        default:
+            break
+        }
+        return available
+    }
+
     // MARK: - Building the controls
 
     private func configureModeRow() {
-        modeSelector.segmentCount = 2
+        modeSelector.segmentCount = FormatBar.segmentModes.count
         modeSelector.setLabel("Text", forSegment: 0)
         modeSelector.setLabel("CSV", forSegment: 1)
+        modeSelector.setLabel("Markdown", forSegment: 2)
         modeSelector.trackingMode = .selectOne
         modeSelector.segmentStyle = .rounded
         modeSelector.controlSize = .small
@@ -159,16 +189,20 @@ final class FormatBar: NSView {
         addSubview(checkbox)
     }
 
-    /// Both choices are always visible, so the control never changes width;
-    /// the CSV side stays disabled until detection finds delimited data, which
+    /// The mode each segment of the selector stands for, in order.
+    private static let segmentModes: [Mode] = [.text, .csv, .markdown]
+
+    /// Every choice is always visible, so the control never changes width;
+    /// CSV and Markdown stay disabled until the document supports them, which
     /// is what "detection enables the selector" looks like on screen.
     private func updateModeSelector() {
         modeSelector.setEnabled(true, forSegment: 0)
         modeSelector.setEnabled(isCSVAvailable, forSegment: 1)
-        modeSelector.selectedSegment = mode == .csv && isCSVAvailable ? 1 : 0
-        modeSelector.toolTip = isCSVAvailable
-            ? nil
-            : "This file does not look like delimited data"
+        modeSelector.setEnabled(markdownUnavailableReason == nil, forSegment: 2)
+        modeSelector.selectedSegment = FormatBar.segmentModes.firstIndex(of: mode) ?? 0
+        modeSelector.setToolTip(isCSVAvailable ? nil : "This file does not look like delimited data",
+                                forSegment: 1)
+        modeSelector.setToolTip(markdownUnavailableReason, forSegment: 2)
     }
 
     /// Mirrors `dialect` into the option controls.
@@ -200,7 +234,7 @@ final class FormatBar: NSView {
     // MARK: - Actions
 
     @objc private func modeChanged() {
-        mode = modeSelector.selectedSegment == 1 ? .csv : .text
+        mode = FormatBar.segmentModes[modeSelector.selectedSegment]
         applyModeVisibility()
         layoutChildren()
         delegate?.formatBar(self, didSelect: mode)

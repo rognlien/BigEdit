@@ -7,13 +7,16 @@ let package = Package(
         .macOS(.v13)
     ],
     dependencies: [
-        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.9.0")
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.9.0"),
+        .package(url: "https://github.com/swiftlang/swift-cmark", from: "0.9.0")
     ],
     targets: [
         .executableTarget(
             name: "BigEdit",
             dependencies: [
                 .product(name: "Sparkle", package: "Sparkle"),
+                .product(name: "cmark-gfm", package: "swift-cmark"),
+                .product(name: "cmark-gfm-extensions", package: "swift-cmark"),
                 "BigEditHelperKit"
             ],
             path: "Sources/BigEdit"

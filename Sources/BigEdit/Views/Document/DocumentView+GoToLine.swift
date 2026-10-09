@@ -4,6 +4,7 @@ extension DocumentView {
 
     /// Asks the user for a line number and scrolls the viewport to it.
     func showGoToLineSheet() {
+        leaveRenderedMarkdown()
         guard let layout = viewport.layout, layout.documentLineCount > 0,
               let parentWindow = window else {
             return

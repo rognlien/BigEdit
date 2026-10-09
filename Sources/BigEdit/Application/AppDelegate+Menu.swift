@@ -324,7 +324,7 @@ extension AppDelegate {
         editorFontSize = clamped
         UserDefaults.standard.set(Double(clamped), forKey: AppDelegate.fontSizeDefaultsKey)
         for document in documents {
-            document.view.viewport.setFontSize(clamped)
+            document.view.setEditorFontSize(clamped)
         }
     }
 

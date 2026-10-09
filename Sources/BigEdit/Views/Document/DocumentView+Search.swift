@@ -6,6 +6,7 @@ extension DocumentView {
     /// Shows the find bar (if hidden) and focuses the search field. When
     /// `replace` is true the bar shows its replacement row.
     func showFindBar(replace: Bool) {
+        leaveRenderedMarkdown()
         findBar.mode = replace ? .findAndReplace : .find
         findBarVisible = true
         layoutComponents()

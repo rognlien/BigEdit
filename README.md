@@ -53,7 +53,7 @@ The package opens directly in Xcode (`File ▸ Open…` the `BigEdit` folder).
   jump to it.
   The list is built row by row as you scroll it, so a million matches cost
   nothing until they are looked at; the first 100,000 are listed.
-- **Text / CSV** — the selector at the top right of the editor. The CSV side
+- **Text / CSV / Markdown** — the selector at the top right of the editor. The CSV side
   becomes available when the file is detected as delimited data, and turns it
   into aligned columns on a faint grid, with options for the delimiter,
   quote character, header row, pinning the header while scrolling, and
@@ -69,6 +69,13 @@ The package opens directly in Xcode (`File ▸ Open…` the `BigEdit` folder).
   one. **Double-click an edge** to put that column back to the width its own
   content asks for. Widths reset when a CSV option changes, since that
   re-measures the columns.
+- **Markdown** — the third side of the selector, available for `.md` files
+  up to 16 MB. It shows the document rendered, unsaved edits included, as
+  GitHub does: tables, task lists, strikethrough, autolinks and footnotes.
+  Editing stays in Text; switching either way keeps your place, and Find,
+  Go to Line and Process Lines switch back to Text on their own. Raw HTML
+  in the source is left out and the page runs no scripts; links open in
+  your browser.
 
 ## Command line
 
@@ -177,4 +184,4 @@ App shell (window, menu, open panel) is in `AppDelegate.swift` / `main.swift`.
 
 ## License
 
-MIT — see [LICENSE](LICENSE). BigEdit ships [Sparkle](https://github.com/sparkle-project/Sparkle) for updates, which is MIT-licensed as well.
+MIT — see [LICENSE](LICENSE). BigEdit ships [Sparkle](https://github.com/sparkle-project/Sparkle) for updates, which is MIT-licensed as well, and renders Markdown with [cmark-gfm](https://github.com/swiftlang/swift-cmark), which is BSD-licensed.

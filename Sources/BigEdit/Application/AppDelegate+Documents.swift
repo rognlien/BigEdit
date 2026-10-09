@@ -38,6 +38,7 @@ extension AppDelegate {
         guard let view = activeView, view.canProcessLines else {
             return
         }
+        view.leaveRenderedMarkdown()
         let sheet = ProcessLinesSheet()
         processLinesSheet = sheet
         sheet.present(in: window) { [weak self, weak view] operation in

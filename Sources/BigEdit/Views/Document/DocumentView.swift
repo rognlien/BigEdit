@@ -11,11 +11,16 @@ import AppKit
 final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
 
     let viewport = ViewportView(frame: .zero)
-    private let scroller = NSScroller(frame: NSRect(x: 0, y: 0, width: 16, height: 100))
+    let scroller = NSScroller(frame: NSRect(x: 0, y: 0, width: 16, height: 100))
     let findBar = FindBar(frame: .zero)
     let resultsPanel = SearchResultsPanel(frame: .zero)
     var resultsVisible = false
     let formatBar = FormatBar(frame: .zero)
+    /// Created the first time the document is rendered as Markdown.
+    var markdownPreview: MarkdownPreview?
+    /// Counts Markdown renders, so a render that finishes after the reader
+    /// has moved on is dropped.
+    var markdownRenderGeneration = 0
     let infoPane = InfoPane(frame: .zero)
     private let infoDivider = InfoPaneDivider(frame: .zero)
     let statusBar = StatusBar(frame: .zero)
@@ -148,7 +153,10 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
         viewport.setCSVRendering(dialect: nil, columnLayout: nil)
         let encoding = FileFormat(scanning: file).textEncoding ?? .utf8
         formatBar.setDetectedDialect(CSVDialect.detect(in: file, encoding: encoding))
+        formatBar.setMarkdownAvailability(
+            unavailableReason: DocumentView.markdownUnavailableReason(for: file))
         formatBar.setMode(.text)
+        hideRenderedMarkdown(keepingPlace: false)
         layoutComponents()
         syncScroller()
         if infoPaneVisible, let document = viewport.document {
@@ -268,6 +276,7 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
         resultsPanel.frame = NSRect(x: 0, y: statusHeight, width: documentWidth, height: resultsHeight)
         viewport.frame = NSRect(x: 0, y: contentBottom, width: viewportWidth, height: contentHeight)
         scroller.frame = NSRect(x: viewportWidth, y: contentBottom, width: scrollerWidth, height: contentHeight)
+        markdownPreview?.frame = NSRect(x: 0, y: contentBottom, width: documentWidth, height: contentHeight)
         findBar.isHidden = !findBarVisible
         findBar.frame = NSRect(x: 0, y: contentBottom + contentHeight, width: documentWidth, height: findHeight)
         formatBar.frame = NSRect(x: 0, y: contentBottom + contentHeight + findHeight,

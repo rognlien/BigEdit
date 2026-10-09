@@ -2,10 +2,11 @@ import AppKit
 
 extension DocumentView {
 
-    /// Applies the chosen view mode: plain text, or delimited data drawn as
-    /// aligned columns.
+    /// Applies the chosen view mode: plain text, delimited data drawn as
+    /// aligned columns, or rendered Markdown.
     func formatBar(_ bar: FormatBar, didSelect mode: FormatBar.Mode) {
         applyCSVRendering(enabled: mode == .csv, dialect: bar.dialect)
+        applyMarkdownRendering(enabled: mode == .markdown)
     }
 
     /// Re-measures the columns when an option changes, since a different
