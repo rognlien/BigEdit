@@ -21,6 +21,8 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
     /// Counts Markdown renders, so a render that finishes after the reader
     /// has moved on is dropped.
     var markdownRenderGeneration = 0
+    /// Whether rendered Markdown shows pictures from the web; set from Settings.
+    var loadsRemoteImages = true
     let infoPane = InfoPane(frame: .zero)
     private let infoDivider = InfoPaneDivider(frame: .zero)
     let statusBar = StatusBar(frame: .zero)

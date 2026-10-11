@@ -19,14 +19,16 @@ enum MarkdownRenderer {
     }()
 
     /// A complete page — styles, security policy and body — for `markdown`,
-    /// which must be UTF-8.
-    static func page(from markdown: [UInt8]) -> String {
-        """
+    /// which must be UTF-8. Pictures from the web are shown only with
+    /// `loadsRemoteImages`.
+    static func page(from markdown: [UInt8], loadsRemoteImages: Bool) -> String {
+        let policy = contentSecurityPolicy(loadsRemoteImages: loadsRemoteImages)
+        return """
         <!DOCTYPE html>
         <html>
         <head>
         <meta charset="utf-8">
-        <meta http-equiv="Content-Security-Policy" content="\(contentSecurityPolicy)">
+        <meta http-equiv="Content-Security-Policy" content="\(policy)">
         <style>\(MarkdownStyleSheet.css)</style>
         </head>
         <body>
@@ -36,10 +38,12 @@ enum MarkdownRenderer {
         """
     }
 
-    /// The page may style itself and show pictures, local or remote, and
-    /// nothing else: no scripts, frames, fonts or other fetches.
-    private static let contentSecurityPolicy =
-        "default-src 'none'; img-src file: data: https:; style-src 'unsafe-inline'"
+    /// The page may style itself and show pictures, local and optionally
+    /// remote, and nothing else: no scripts, frames, fonts or other fetches.
+    private static func contentSecurityPolicy(loadsRemoteImages: Bool) -> String {
+        let imageSources = loadsRemoteImages ? "file: data: https:" : "file: data:"
+        return "default-src 'none'; img-src \(imageSources); style-src 'unsafe-inline'"
+    }
 
     /// The HTML body for `markdown`, which must be UTF-8.
     static func html(from markdown: [UInt8]) -> String {

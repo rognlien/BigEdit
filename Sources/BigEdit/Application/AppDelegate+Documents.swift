@@ -210,7 +210,7 @@ extension AppDelegate {
         let document = Document(url: url, file: file, index: index, view: view)
 
         view.load(file: file, index: index)
-        view.viewport.setFontSize(editorFontSize)
+        view.apply(settings)
         view.setInfoPaneWidth(infoPaneWidth)
         view.onInfoPaneWidthChange = { [weak self] width in
             self?.setInfoPaneWidth(width)

@@ -47,13 +47,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
     static let activeIndexDefaultsKey = "BigEditActiveIndex"
     static let recentDocumentsDefaultsKey = "BigEditRecentDocuments"
     static let maxRecentDocuments = 15
-    static let fontSizeDefaultsKey = "BigEditFontSize"
 
-    /// The editor font size shared by all open documents, persisted across launches.
-    lazy var editorFontSize: CGFloat = {
-        let stored = UserDefaults.standard.double(forKey: AppDelegate.fontSizeDefaultsKey)
-        return stored > 0 ? CGFloat(stored) : ViewportView.defaultFontSize
-    }()
+    /// The preferences from the Settings window, applied to every document.
+    let settings = AppSettings()
+    var settingsWindowController: SettingsWindowController?
 
     static let infoPaneWidthDefaultsKey = "BigEditInfoPaneWidth"
 
@@ -90,6 +87,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         // that opens a document (e.g. dropping a file on the Dock icon) delivers
         // application(_:open:) before didFinishLaunching, and that path touches
         // the window — which must already exist.
+        NSApp.appearance = settings.appearance.appearance
+        settings.onChange = { [weak self] in
+            self?.applySettings()
+        }
         PatternLibrary.shared.adoptRememberedLocation()
         buildMenu()
         buildWindow()
@@ -109,8 +110,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         }
 
         // Check for updates on every launch (silent — only surfaces UI if an
-        // update is available), in addition to Sparkle's scheduled checks.
-        updaterController.updater.checkForUpdatesInBackground()
+        // update is available), in addition to Sparkle's scheduled checks,
+        // unless automatic checks are turned off in Settings.
+        if updaterController.updater.automaticallyChecksForUpdates {
+            updaterController.updater.checkForUpdatesInBackground()
+        }
     }
 
     @objc private func applicationDidBecomeActiveForPatterns() {

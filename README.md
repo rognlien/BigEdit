@@ -76,6 +76,10 @@ The package opens directly in Xcode (`File ▸ Open…` the `BigEdit` folder).
   Go to Line and Process Lines switch back to Text on their own. Raw HTML
   in the source is left out and the page runs no scripts; links open in
   your browser.
+- **⌘,** — Settings: appearance (System, Light or Dark), the editor's font
+  family and size (fixed-width fonts only; ⌘+ / ⌘− / ⌘0 change the same
+  size), whether rendered Markdown loads pictures from the web, and
+  automatic update checks. Changes apply at once to every open document.
 
 - **⇧⌘L** — Edit ▸ Process Lines: remove duplicates, keep or remove lines
   containing text, sort (plain, natural, or by a regex key), replace within

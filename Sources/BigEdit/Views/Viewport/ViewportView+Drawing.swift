@@ -251,9 +251,7 @@ extension ViewportView {
     /// table rather than as padded text.
     private func csvAttributedRow(_ text: String, documentLine: Int) -> NSAttributedString {
         let isHeader = csvDialect?.hasHeaderRow == true && documentLine == 0
-        let rowFont = isHeader
-            ? NSFont.monospacedSystemFont(ofSize: fontSize, weight: .bold)
-            : font
+        let rowFont = isHeader ? boldFont : font
         return NSAttributedString(
             string: text, attributes: [.font: rowFont, .foregroundColor: NSColor.textColor])
     }

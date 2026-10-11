@@ -151,6 +151,15 @@ extension AppDelegate {
         appMenu.addItem(updatesItem)
 
         appMenu.addItem(NSMenuItem.separator())
+        let settingsItem = NSMenuItem(
+            title: "Settings…",
+            action: #selector(showSettings),
+            keyEquivalent: ","
+        )
+        settingsItem.target = self
+        appMenu.addItem(settingsItem)
+
+        appMenu.addItem(NSMenuItem.separator())
         let installToolItem = NSMenuItem(
             title: "Install Command Line Tool…",
             action: #selector(installCommandLineTool),
@@ -396,25 +405,21 @@ extension AppDelegate {
     }
 
     @objc func zoomIn() {
-        setEditorFontSize(editorFontSize + 1)
+        setEditorFontSize(settings.fontSize + 1)
     }
 
     @objc func zoomOut() {
-        setEditorFontSize(editorFontSize - 1)
+        setEditorFontSize(settings.fontSize - 1)
     }
 
     @objc func actualSize() {
         setEditorFontSize(ViewportView.defaultFontSize)
     }
 
-    /// Applies a new editor font size to every open document and persists it.
+    /// Sets the editor font size, which Settings applies to every open
+    /// document and persists.
     private func setEditorFontSize(_ size: CGFloat) {
-        let clamped = min(max(size, ViewportView.minFontSize), ViewportView.maxFontSize)
-        editorFontSize = clamped
-        UserDefaults.standard.set(Double(clamped), forKey: AppDelegate.fontSizeDefaultsKey)
-        for document in documents {
-            document.view.setEditorFontSize(clamped)
-        }
+        settings.fontSize = min(max(size, ViewportView.minFontSize), ViewportView.maxFontSize)
     }
 
     /// Applies a new info-pane width to every open document and persists it.
