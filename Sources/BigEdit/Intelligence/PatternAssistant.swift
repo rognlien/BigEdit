@@ -125,7 +125,7 @@ enum PatternAssistant {
 /// rather than prose to be parsed.
 @available(macOS 26.0, *)
 @Generable
-private struct GeneratedPattern {
+struct GeneratedPattern {
     @Guide(description: "The ICU regular expression, with no surrounding slashes or quotes.")
     var pattern: String
 
