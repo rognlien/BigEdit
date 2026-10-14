@@ -89,6 +89,10 @@ extension AppDelegate {
         }
         let firstStem = stem(of: request.first.name)
         let secondStem = stem(of: request.second.name)
+        guard let edits = LineDiff.diff(first, second, isCancelled: isCancelled) else {
+            return nil
+        }
+        let changes = changeRows(edits, first: first, second: second, request: request)
         return [
             CompareSection(title: "Only in \(request.first.name)",
                            rows: comparison.onlyInFirst.map { CompareRow($0) },
@@ -98,8 +102,34 @@ extension AppDelegate {
                            suggestedFileName: "Only in \(secondStem).txt"),
             CompareSection(title: "In both",
                            rows: comparison.inBoth.map { CompareRow($0) },
-                           suggestedFileName: "In both \(firstStem) and \(secondStem).txt")
+                           suggestedFileName: "In both \(firstStem) and \(secondStem).txt"),
+            CompareSection(title: "Changes", rows: changes,
+                           suggestedFileName: "\(firstStem) to \(secondStem).diff")
         ]
+    }
+
+    /// The sequence diff as rows: the two file-name lines, then each hunk's
+    /// header and its prefixed lines — joined, exactly the unified diff
+    /// `diff -u` would write, which is what Save As… exports.
+    static func changeRows(_ edits: [LineDiff.Edit], first: [String], second: [String],
+                           request: CompareRequest) -> [CompareRow] {
+        var rows = [
+            CompareRow("--- \(request.first.name)", kind: .header),
+            CompareRow("+++ \(request.second.name)", kind: .header)
+        ]
+        for hunk in LineDiff.hunks(edits, first: first, second: second, context: 3) {
+            rows.append(CompareRow(hunk.header, kind: .header))
+            for line in hunk.lines {
+                let kind: CompareRow.Kind
+                switch line.first {
+                case "+": kind = .added
+                case "-": kind = .removed
+                default: kind = .context
+                }
+                rows.append(CompareRow(line, kind: kind))
+            }
+        }
+        return rows
     }
 
     private static func stem(of fileName: String) -> String {
