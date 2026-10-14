@@ -96,9 +96,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         // Another Mac may have written the library through iCloud Drive
         // while this one was in the background.
         NotificationCenter.default.addObserver(
-            forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
-            PatternLibrary.shared.reloadIfChangedOnDisk()
-        }
+            self, selector: #selector(applicationDidBecomeActiveForPatterns),
+            name: NSApplication.didBecomeActiveNotification, object: nil)
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -112,6 +111,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         // Check for updates on every launch (silent — only surfaces UI if an
         // update is available), in addition to Sparkle's scheduled checks.
         updaterController.updater.checkForUpdatesInBackground()
+    }
+
+    @objc private func applicationDidBecomeActiveForPatterns() {
+        PatternLibrary.shared.reloadIfChangedOnDisk()
     }
 
     private func buildWindow() {

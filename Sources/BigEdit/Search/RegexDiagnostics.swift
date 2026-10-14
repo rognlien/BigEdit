@@ -52,13 +52,11 @@ enum RegexDiagnostics {
                 if depth < 0 {
                     return "Unmatched “)” at position \(position)"
                 }
-            case "*", "+", "?" where !inClass:
-                if previous == nil || previous == "(" || previous == "|" {
+            case "*", "+", "?", "{":
+                // A `where` on a multi-pattern case binds only to the last
+                // pattern, so the class check is a statement here.
+                if !inClass && (previous == nil || previous == "(" || previous == "|") {
                     return "Nothing to repeat before “\(character)” at position \(position)"
-                }
-            case "{" where !inClass:
-                if previous == nil || previous == "(" || previous == "|" {
-                    return "Nothing to repeat before “{” at position \(position)"
                 }
             default:
                 break
