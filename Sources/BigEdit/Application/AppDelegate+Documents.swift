@@ -137,7 +137,7 @@ extension AppDelegate {
         }
     }
 
-    private func presentProcessLinesFailure(_ error: Error) {
+    func presentProcessLinesFailure(_ error: Error) {
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.addButton(withTitle: "OK")

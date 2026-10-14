@@ -27,6 +27,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
     /// before the user answers it.
     var processLinesSheet: ProcessLinesSheet?
 
+    /// Held while the Compare Documents sheet is up, for the same reason.
+    var compareSheet: CompareDocumentsSheet?
+
+    /// Every open compare result, released when its window closes.
+    var compareWindows: [CompareResultsWindow] = []
+
     let openRecentMenu = NSMenu(title: "Open Recent")
     var didOpenFromURL = false
     static let lastFilePathDefaultsKey = "BigEditLastFilePath"

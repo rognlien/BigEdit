@@ -197,6 +197,15 @@ extension AppDelegate {
         processLinesItem.target = self
         editMenu.addItem(processLinesItem)
 
+        let compareItem = NSMenuItem(
+            title: "Compare Documents…",
+            action: #selector(showCompareDocuments),
+            keyEquivalent: "d"
+        )
+        compareItem.keyEquivalentModifierMask = [.command, .shift]
+        compareItem.target = self
+        editMenu.addItem(compareItem)
+
         editMenu.addItem(NSMenuItem.separator())
         editMenu.addItem(NSMenuItem(
             title: "Select All",

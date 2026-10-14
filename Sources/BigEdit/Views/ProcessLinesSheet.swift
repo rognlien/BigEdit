@@ -6,11 +6,13 @@ import AppKit
 /// sheet; `nil` means the source could not be read.
 struct OtherLineList {
     let name: String
+    /// How many bytes the list holds, for deciding whether it fits in memory.
+    let byteCount: Int
     let loadLines: () -> [String]?
 
     /// The lines of an open document, read through its unsaved edits.
     static func document(named name: String, _ document: EditedDocument) -> OtherLineList {
-        OtherLineList(name: name) {
+        OtherLineList(name: name, byteCount: document.length) {
             LineDocument(bytes: document.bytes(in: 0..<document.length),
                          newline: document.newlineBytes).lines
         }
@@ -18,7 +20,9 @@ struct OtherLineList {
 
     /// The lines of a file on disk.
     static func file(at url: URL) -> OtherLineList {
-        OtherLineList(name: url.lastPathComponent) {
+        let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
+        let size = (attributes?[.size] as? NSNumber)?.intValue ?? 0
+        return OtherLineList(name: url.lastPathComponent, byteCount: size) {
             guard let file = MappedFile(path: url.path) else {
                 return nil
             }
