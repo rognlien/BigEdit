@@ -116,7 +116,7 @@ extension FileWriter {
 
     /// The next window starting at `cursor`: grown until it holds a whole
     /// line, then cut after its last newline unless it reaches the end.
-    private static func nextLineWindow(in document: EditedDocument, from cursor: Int,
+    static func nextLineWindow(in document: EditedDocument, from cursor: Int,
                                        total: Int, windowSize: Int) -> (bytes: [UInt8], end: Int) {
         let size = max(1, windowSize)
         var windowEnd = min(total, cursor + size)

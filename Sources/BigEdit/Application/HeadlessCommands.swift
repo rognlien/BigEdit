@@ -8,6 +8,7 @@ import Foundation
 ///     swift run BigEdit --dump <path> [rows]
 ///     swift run BigEdit --preview <pattern> <replacement> <path>
 ///     swift run BigEdit --replace <pattern> <replacement> <in> <out>
+///     swift run BigEdit --replace-regex <pattern> <template> <in> <out>
 ///     swift run BigEdit --stats <path>
 ///     swift run BigEdit --edit-smoke <in> <out>
 ///     swift run BigEdit --csv <path> [rows]
@@ -43,6 +44,13 @@ enum HeadlessCommands {
             exitCode = replace(
                 pattern: arguments[flagIndex + 1],
                 replacement: arguments[flagIndex + 2],
+                inputPath: arguments[flagIndex + 3],
+                outputPath: arguments[flagIndex + 4]
+            )
+        } else if let flagIndex = arguments.firstIndex(of: "--replace-regex"), flagIndex + 4 < arguments.count {
+            exitCode = replaceRegularExpression(
+                pattern: arguments[flagIndex + 1],
+                template: arguments[flagIndex + 2],
                 inputPath: arguments[flagIndex + 3],
                 outputPath: arguments[flagIndex + 4]
             )
@@ -416,6 +424,37 @@ enum HeadlessCommands {
             operation = nil
         }
         return operation
+    }
+
+    /// Streams the file to `outputPath` with every match of `pattern`
+    /// replaced by `template`, for cross-checking against `perl -pe`.
+    static func replaceRegularExpression(pattern: String, template: String,
+                                         inputPath: String, outputPath: String) -> Int32 {
+        var exitCode: Int32 = 1
+        guard let file = MappedFile(path: inputPath) else {
+            FileHandle.standardError.write(Data("BigEdit: cannot open \(inputPath)\n".utf8))
+            return exitCode
+        }
+        guard let rule = RegexReplacementRule(pattern: pattern, template: template) else {
+            FileHandle.standardError.write(Data("BigEdit: invalid pattern \(pattern)\n".utf8))
+            return exitCode
+        }
+        let index = LineIndex()
+        index.buildSynchronously(from: file)
+        let document = EditedDocument(file: file, editModel: EditModel(), lineIndex: index)
+        let start = Date()
+        let result = FileWriter.saveSynchronously(document: document, regexRule: rule,
+                                                  to: URL(fileURLWithPath: outputPath))
+        switch result {
+        case .success(let count):
+            print("file:     \(inputPath)")
+            print("replaced: \(count)")
+            print(String(format: "took:     %.3f s", Date().timeIntervalSince(start)))
+            exitCode = 0
+        case .failure(let error):
+            FileHandle.standardError.write(Data("BigEdit: \(error.localizedDescription)\n".utf8))
+        }
+        return exitCode
     }
 
     static func editSmoke(inputPath: String, outputPath: String) -> Int32 {

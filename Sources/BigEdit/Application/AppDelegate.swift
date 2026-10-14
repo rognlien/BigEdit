@@ -63,6 +63,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         return stored > 0 ? CGFloat(stored) : InfoPane.preferredWidth
     }()
 
+    let numberFormatter: NumberFormatter = {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        return formatter
+    }()
+
     private static let minSidebarWidth: CGFloat = 190
     private static let minContentWidth: CGFloat = 360
 
