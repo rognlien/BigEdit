@@ -40,6 +40,7 @@ extension AppDelegate {
         }
         view.leaveRenderedMarkdown()
         let sheet = ProcessLinesSheet()
+        sheet.sampleText = view.sampleText()
         processLinesSheet = sheet
         sheet.present(in: window, otherLists: otherLineLists(excluding: view)) {
             [weak self, weak view] request in

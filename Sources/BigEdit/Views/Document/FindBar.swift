@@ -16,12 +16,15 @@ protocol FindBarDelegate: AnyObject {
     func findBar(_ bar: FindBar, queryDidChange query: String)
     /// The replacement text changed.
     func findBar(_ bar: FindBar, replacementDidChange replacement: String)
+    /// A few lines of the document, for the pattern assistant to look at.
+    func findBarSampleText(_ bar: FindBar) -> String?
 }
 
 extension FindBarDelegate {
     func findBarRequestedManagePatterns(_ bar: FindBar) {}
     func findBar(_ bar: FindBar, queryDidChange query: String) {}
     func findBar(_ bar: FindBar, replacementDidChange replacement: String) {}
+    func findBarSampleText(_ bar: FindBar) -> String? { nil }
 }
 
 /// A search bar shown above the document, laid out the way the system's own
@@ -71,6 +74,11 @@ final class FindBar: NSView, NSSearchFieldDelegate {
     private let savedPatternsMenu = NSMenu(title: "Saved Patterns")
     private let savePatternItem = NSMenuItem()
     private let managePatternsItem = NSMenuItem()
+    private let describePatternItem = NSMenuItem()
+    private let explainPatternItem = NSMenuItem()
+
+    /// Held while the assistant sheet is up.
+    private var assistantSheet: PatternAssistantSheet?
 
     /// Where the Saved Patterns submenu reads from and Save Pattern… writes
     /// to. Tests point it at a library of their own.
@@ -251,7 +259,49 @@ final class FindBar: NSView, NSSearchFieldDelegate {
         managePatternsItem.target = self
         managePatternsItem.action = #selector(managePatternsChosen)
         optionsMenu.addItem(managePatternsItem)
+        // Apple Intelligence: only offered where the model can be asked.
+        if PatternAssistant.isAvailable {
+            optionsMenu.addItem(NSMenuItem.separator())
+            describePatternItem.title = "Describe a Pattern…"
+            describePatternItem.target = self
+            describePatternItem.action = #selector(describePatternChosen)
+            optionsMenu.addItem(describePatternItem)
+            explainPatternItem.title = "Explain This Pattern"
+            explainPatternItem.target = self
+            explainPatternItem.action = #selector(explainPatternChosen)
+            optionsMenu.addItem(explainPatternItem)
+        }
         rebuildSavedPatternsMenu()
+    }
+
+    /// Asks Apple Intelligence for a pattern and searches with it.
+    @objc private func describePatternChosen() {
+        guard let window else {
+            return
+        }
+        let sheet = PatternAssistantSheet(mode: .describe(sample: delegate?.findBarSampleText(self)))
+        assistantSheet = sheet
+        sheet.present(in: window) { [weak self] pattern in
+            guard let self else { return }
+            self.assistantSheet = nil
+            if let pattern {
+                self.searchField.stringValue = pattern
+                self.regularExpressionItem.state = .on
+                self.delegate?.findBar(self, didSubmitQuery: pattern)
+            }
+        }
+    }
+
+    @objc private func explainPatternChosen() {
+        guard let window, !searchField.stringValue.isEmpty else {
+            NSSound.beep()
+            return
+        }
+        let sheet = PatternAssistantSheet(mode: .explain(pattern: searchField.stringValue))
+        assistantSheet = sheet
+        sheet.present(in: window) { [weak self] _ in
+            self?.assistantSheet = nil
+        }
     }
 
     /// Lists the library's patterns in the submenu, then hands the field a

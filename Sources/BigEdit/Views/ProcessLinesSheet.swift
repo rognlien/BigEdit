@@ -126,6 +126,13 @@ final class ProcessLinesSheet: NSObject {
     private let processButton = NSButton()
     private let cancelButton = NSButton()
     private let savedPatternsButton = NSPopUpButton(frame: .zero, pullsDown: true)
+    private let describeButton = NSButton()
+
+    /// Held while the assistant sheet is up.
+    private var assistantSheet: PatternAssistantSheet?
+
+    /// A few lines of the document, handed to the pattern assistant.
+    var sampleText: String?
 
     /// Where the Saved Patterns pull-down reads from.
     var patternLibrary: PatternLibrary = .shared
@@ -199,6 +206,16 @@ final class ProcessLinesSheet: NSObject {
 
         configureLabel(patternLabel, y: 162)
         content.addSubview(patternLabel)
+
+        describeButton.title = "Describe…"
+        describeButton.bezelStyle = .rounded
+        describeButton.controlSize = .small
+        describeButton.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
+        describeButton.target = self
+        describeButton.action = #selector(describeTapped)
+        describeButton.frame = NSRect(x: 356, y: 158, width: 84, height: 24)
+        describeButton.isHidden = !PatternAssistant.isAvailable
+        content.addSubview(describeButton)
 
         patternField.frame = NSRect(x: 20, y: 138, width: 420, height: 22)
         content.addSubview(patternField)
@@ -340,6 +357,18 @@ final class ProcessLinesSheet: NSObject {
         }
     }
 
+    /// Asks Apple Intelligence for a pattern and puts it in the field.
+    @objc private func describeTapped() {
+        let sheet = PatternAssistantSheet(mode: .describe(sample: sampleText))
+        assistantSheet = sheet
+        sheet.present(in: window) { [weak self] pattern in
+            self?.assistantSheet = nil
+            if let pattern {
+                self?.patternField.stringValue = pattern
+            }
+        }
+    }
+
     /// Shows only the fields the chosen operation actually reads.
     private func applyChoiceVisibility() {
         let current = choice
@@ -347,6 +376,7 @@ final class ProcessLinesSheet: NSObject {
         patternLabel.stringValue = current.patternLabel ?? ""
         patternLabel.isHidden = !showsPattern
         patternField.isHidden = !showsPattern
+        describeButton.isHidden = !showsPattern || !PatternAssistant.isAvailable
         replacementLabel.isHidden = !current.usesReplacement
         replacementField.isHidden = !current.usesReplacement
         caseCheckbox.isHidden = !current.usesCaseSensitivity

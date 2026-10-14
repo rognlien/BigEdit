@@ -134,6 +134,27 @@ extension DocumentView {
         (NSApp.delegate as? AppDelegate)?.showPatternLibrary()
     }
 
+    func findBarSampleText(_ bar: FindBar) -> String? {
+        sampleText()
+    }
+
+    /// The first few lines of the document, for the pattern assistant: at
+    /// most `maxBytes`, cut at a line boundary, so it fits the model's
+    /// small context whatever the file's size.
+    func sampleText(maxBytes: Int = 1500, maxLines: Int = 12) -> String? {
+        guard let document = viewport.document, document.length > 0 else {
+            return nil
+        }
+        let bytes = document.bytes(in: 0..<min(document.length, maxBytes))
+        var text = textEncoding.decode(bytes)
+        var lines = text.components(separatedBy: "\n")
+        if lines.count > maxLines || bytes.count < document.length {
+            lines = Array(lines.prefix(min(maxLines, max(1, lines.count - 1))))
+        }
+        text = lines.joined(separator: "\n")
+        return text.isEmpty ? nil : text
+    }
+
     /// Called on the main queue as the replacement scan finds more occurrences.
     func editScanDidProgress() {
         viewport.needsDisplay = true
