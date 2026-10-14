@@ -58,7 +58,8 @@ extension DocumentView {
             resetSearch()
             return
         }
-        if bar.isRegularExpression, let problem = RegexDiagnostics.problem(in: query) {
+        if bar.isRegularExpression,
+           let problem = RegexDiagnostics.problem(in: query, options: bar.regularExpressionOptions) {
             searchScan?.cancel()
             searchScan = nil
             currentQuery = ""
@@ -91,13 +92,15 @@ extension DocumentView {
         liveSearchTimer = nil
         if query.isEmpty {
             resetSearch()
-        } else if bar.isRegularExpression, let problem = RegexDiagnostics.problem(in: query) {
+        } else if bar.isRegularExpression,
+                  let problem = RegexDiagnostics.problem(in: query, options: bar.regularExpressionOptions) {
             resetSearch()
             findBar.updateStatus(problem, isProblem: true)
         } else {
             let caseSensitive = bar.isCaseSensitive
             let modeChanged = searchScan?.caseSensitive != caseSensitive
                 || searchScan?.isRegularExpression != bar.isRegularExpression
+                || searchScan?.dotMatchesNewline != (bar.isRegularExpression && bar.isDotMatchingNewline)
             if query != currentQuery || modeChanged {
                 startSearch(query, caseSensitive: caseSensitive)
             } else {
@@ -198,7 +201,7 @@ extension DocumentView {
     func makeSearchScan(_ query: String, caseSensitive: Bool) -> SearchScan? {
         findBar.isRegularExpression
             ? SearchScan(regularExpression: query, caseSensitive: caseSensitive,
-                         encoding: textEncoding)
+                         dotMatchesNewline: findBar.isDotMatchingNewline, encoding: textEncoding)
             : SearchScan(query: query, caseSensitive: caseSensitive, encoding: textEncoding)
     }
 

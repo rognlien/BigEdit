@@ -64,6 +64,8 @@ final class FindBar: NSView, NSSearchFieldDelegate {
     private let optionsMenu = NSMenu()
     private let matchCaseItem = NSMenuItem()
     private let regularExpressionItem = NSMenuItem()
+    private let dotMatchesNewlineItem = NSMenuItem()
+    private let referenceItem = NSMenuItem()
     private let showAllMatchesItem = NSMenuItem()
     private let savedPatternsItem = NSMenuItem()
     private let savedPatternsMenu = NSMenu(title: "Saved Patterns")
@@ -96,6 +98,7 @@ final class FindBar: NSView, NSSearchFieldDelegate {
         case matchCase = 1
         case regularExpression
         case showAllMatches
+        case dotMatchesNewline
     }
 
     override init(frame frameRect: NSRect) {
@@ -138,6 +141,24 @@ final class FindBar: NSView, NSSearchFieldDelegate {
         regularExpressionItem.state == .on
     }
 
+    /// Whether `.` in a pattern matches a line break too, so a pattern can
+    /// span lines.
+    var isDotMatchingNewline: Bool {
+        dotMatchesNewlineItem.state == .on
+    }
+
+    /// The compile options the current settings ask for.
+    var regularExpressionOptions: NSRegularExpression.Options {
+        var options: NSRegularExpression.Options = [.anchorsMatchLines]
+        if !isCaseSensitive {
+            options.insert(.caseInsensitive)
+        }
+        if isDotMatchingNewline {
+            options.insert(.dotMatchesLineSeparators)
+        }
+        return options
+    }
+
     /// Updates the find result-count text (e.g. "3 of 1,024"). A problem
     /// with the pattern is shown in the warning colour.
     func updateStatus(_ text: String, isProblem: Bool = false) {
@@ -172,7 +193,8 @@ final class FindBar: NSView, NSSearchFieldDelegate {
     }
 
     /// Flips the given options as choosing them from the menu would.
-    func toggleOption(matchCase: Bool = false, regularExpression: Bool = false, showAllMatches: Bool = false) {
+    func toggleOption(matchCase: Bool = false, regularExpression: Bool = false,
+                      showAllMatches: Bool = false, dotMatchesNewline: Bool = false) {
         if matchCase {
             toggle(.matchCase)
         }
@@ -181,6 +203,9 @@ final class FindBar: NSView, NSSearchFieldDelegate {
         }
         if showAllMatches {
             toggle(.showAllMatches)
+        }
+        if dotMatchesNewline {
+            toggle(.dotMatchesNewline)
         }
     }
 
@@ -207,6 +232,11 @@ final class FindBar: NSView, NSSearchFieldDelegate {
     private func configureOptionsMenu() {
         configureOption(matchCaseItem, title: "Match Case", option: .matchCase, on: true)
         configureOption(regularExpressionItem, title: "Regular Expression", option: .regularExpression, on: false)
+        configureOption(dotMatchesNewlineItem, title: "Dot Matches Newline", option: .dotMatchesNewline, on: false)
+        referenceItem.title = "Regular Expression Reference"
+        referenceItem.target = self
+        referenceItem.action = #selector(referenceChosen)
+        optionsMenu.addItem(referenceItem)
         optionsMenu.addItem(NSMenuItem.separator())
         configureOption(showAllMatchesItem, title: "Show All Matches", option: .showAllMatches, on: false)
         optionsMenu.addItem(NSMenuItem.separator())
@@ -477,9 +507,16 @@ final class FindBar: NSView, NSSearchFieldDelegate {
         case .regularExpression:
             regularExpressionItem.state = regularExpressionItem.state == .on ? .off : .on
             delegate?.findBar(self, didSubmitQuery: searchField.stringValue)
+        case .dotMatchesNewline:
+            dotMatchesNewlineItem.state = dotMatchesNewlineItem.state == .on ? .off : .on
+            delegate?.findBar(self, didSubmitQuery: searchField.stringValue)
         case .showAllMatches:
             delegate?.findBarRequestedResultsToggle(self)
         }
+    }
+
+    @objc private func referenceChosen() {
+        RegexReferencePopover.show(relativeTo: searchField)
     }
 
     // MARK: - NSSearchFieldDelegate

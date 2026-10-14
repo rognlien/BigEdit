@@ -51,6 +51,29 @@ final class FindBarOptionsTests: XCTestCase {
         XCTAssertTrue(recorder.submitted.isEmpty)
     }
 
+    func testDotMatchesNewlineIsOffByDefaultAndResubmits() {
+        let bar = FindBar(frame: NSRect(x: 0, y: 0, width: 600, height: 34))
+        let recorder = Recorder()
+        bar.delegate = recorder
+        bar.searchField.stringValue = "a.b"
+
+        XCTAssertFalse(bar.isDotMatchingNewline)
+        XCTAssertFalse(bar.regularExpressionOptions.contains(.dotMatchesLineSeparators))
+        bar.toggleOption(dotMatchesNewline: true)
+
+        XCTAssertTrue(bar.isDotMatchingNewline)
+        XCTAssertTrue(bar.regularExpressionOptions.contains(.dotMatchesLineSeparators))
+        XCTAssertTrue(bar.regularExpressionOptions.contains(.anchorsMatchLines))
+        XCTAssertEqual(recorder.submitted, ["a.b"])
+    }
+
+    func testTheReferenceCardListsEveryEntry() {
+        let card = RegexReferencePopover.makeCard()
+        let labels = card.subviews.compactMap { $0 as? NSTextField }.map(\.stringValue)
+        XCTAssertTrue(labels.contains("(abc)"))
+        XCTAssertEqual(labels.count, RegexReferencePopover.entries.count * 2 + 1)
+    }
+
     func testReplaceFieldLinesUpUnderTheSearchField() {
         let bar = FindBar(frame: NSRect(x: 0, y: 0, width: 800, height: 68))
         bar.mode = .findAndReplace

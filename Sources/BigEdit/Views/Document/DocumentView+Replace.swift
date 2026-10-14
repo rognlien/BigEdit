@@ -113,13 +113,9 @@ extension DocumentView {
            let document = viewport.document, let offset = scan.matchOffset(at: currentMatchIndex) {
             let length = scan.matchLength(at: currentMatchIndex)
             let matched = textEncoding.decode(document.bytes(in: offset..<(offset + length)))
-            var options: NSRegularExpression.Options = [.anchorsMatchLines]
-            if !findBar.isCaseSensitive {
-                options.insert(.caseInsensitive)
-            }
             if let expansion = ReplacementPreview.expansion(
                 of: findBar.replacementField.stringValue, for: matched,
-                pattern: currentQuery, options: options) {
+                pattern: currentQuery, options: findBar.regularExpressionOptions) {
                 preview = "→ " + expansion.replacingOccurrences(of: "\n", with: "⏎")
             }
         }
