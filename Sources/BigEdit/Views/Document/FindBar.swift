@@ -12,10 +12,16 @@ protocol FindBarDelegate: AnyObject {
     func findBarRequestedRevert(_ bar: FindBar)
     /// Open the window that edits the saved patterns.
     func findBarRequestedManagePatterns(_ bar: FindBar)
+    /// The query text changed under the user's fingers, before Enter.
+    func findBar(_ bar: FindBar, queryDidChange query: String)
+    /// The replacement text changed.
+    func findBar(_ bar: FindBar, replacementDidChange replacement: String)
 }
 
 extension FindBarDelegate {
     func findBarRequestedManagePatterns(_ bar: FindBar) {}
+    func findBar(_ bar: FindBar, queryDidChange query: String) {}
+    func findBar(_ bar: FindBar, replacementDidChange replacement: String) {}
 }
 
 /// A search bar shown above the document, laid out the way the system's own
@@ -132,14 +138,32 @@ final class FindBar: NSView, NSSearchFieldDelegate {
         regularExpressionItem.state == .on
     }
 
-    /// Updates the find result-count text (e.g. "3 of 1,024").
-    func updateStatus(_ text: String) {
+    /// Updates the find result-count text (e.g. "3 of 1,024"). A problem
+    /// with the pattern is shown in the warning colour.
+    func updateStatus(_ text: String, isProblem: Bool = false) {
         statusLabel.stringValue = text
+        statusLabel.textColor = isProblem ? .systemRed : .secondaryLabelColor
+        statusLabel.toolTip = isProblem ? text : nil
+    }
+
+    /// The status text as shown, for tests.
+    var statusText: String {
+        statusLabel.stringValue
+    }
+
+    /// Whether the status shows a problem with the pattern.
+    var statusShowsProblem: Bool {
+        statusLabel.textColor == .systemRed
     }
 
     /// Updates the replace status text (e.g. "1,234 replaced").
     func updateReplaceStatus(_ text: String) {
         replaceStatusLabel.stringValue = text
+    }
+
+    /// The replace status text as shown, for tests.
+    var replaceStatusText: String {
+        replaceStatusLabel.stringValue
     }
 
     /// Reflects whether the results list is showing.
@@ -459,6 +483,29 @@ final class FindBar: NSView, NSSearchFieldDelegate {
     }
 
     // MARK: - NSSearchFieldDelegate
+
+    func controlTextDidChange(_ notification: Notification) {
+        guard let field = notification.object as? NSTextField else {
+            return
+        }
+        if field === searchField {
+            delegate?.findBar(self, queryDidChange: searchField.stringValue)
+        } else if field === replacementField {
+            delegate?.findBar(self, replacementDidChange: replacementField.stringValue)
+        }
+    }
+
+    /// Reports a change to the fields as typing into them would.
+    func simulateTyping(query: String? = nil, replacement: String? = nil) {
+        if let query {
+            searchField.stringValue = query
+            delegate?.findBar(self, queryDidChange: query)
+        }
+        if let replacement {
+            replacementField.stringValue = replacement
+            delegate?.findBar(self, replacementDidChange: replacement)
+        }
+    }
 
     func control(
         _ control: NSControl,

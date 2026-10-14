@@ -100,6 +100,32 @@ extension DocumentView {
         documentWasEdited()
     }
 
+    /// Shows what the replacement template makes of the current match, so
+    /// `$1` can be checked before Replace All. Only a pattern has groups to
+    /// expand; a literal replacement is what it says. Nothing is shown while
+    /// a rule's count is on display, which has the same label.
+    func updateReplacementPreview() {
+        guard editModel.rule == nil, findBar.mode == .findAndReplace else {
+            return
+        }
+        var preview = ""
+        if findBar.isRegularExpression, let scan = searchScan, currentMatchIndex >= 0,
+           let document = viewport.document, let offset = scan.matchOffset(at: currentMatchIndex) {
+            let length = scan.matchLength(at: currentMatchIndex)
+            let matched = textEncoding.decode(document.bytes(in: offset..<(offset + length)))
+            var options: NSRegularExpression.Options = [.anchorsMatchLines]
+            if !findBar.isCaseSensitive {
+                options.insert(.caseInsensitive)
+            }
+            if let expansion = ReplacementPreview.expansion(
+                of: findBar.replacementField.stringValue, for: matched,
+                pattern: currentQuery, options: options) {
+                preview = "→ " + expansion.replacingOccurrences(of: "\n", with: "⏎")
+            }
+        }
+        findBar.updateReplaceStatus(preview)
+    }
+
     func findBarRequestedRevert(_ bar: FindBar) {
         editModel.clear()
         viewport.needsDisplay = true
