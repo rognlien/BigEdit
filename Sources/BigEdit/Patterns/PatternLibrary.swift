@@ -63,13 +63,57 @@ final class PatternLibrary {
 
     // MARK: - Reading and writing
 
-    /// Re-reads the file. A missing file is an empty library; a file that
-    /// does not parse is left alone and reported as empty rather than
-    /// overwritten, so a stray edit cannot wipe the collection.
+    /// Re-reads the file. A missing file is an empty library. A file that
+    /// is there but cannot be read — damaged, or in iCloud Drive and not
+    /// downloaded yet — leaves the patterns as they were rather than
+    /// replacing them with nothing, so a stray edit or a slow sync cannot
+    /// wipe the collection; an evicted file is asked for.
     func reload() {
-        patterns = PatternLibrary.read(from: fileURL) ?? []
+        if let read = PatternLibrary.read(from: fileURL) {
+            patterns = read
+        } else if !FileManager.default.fileExists(atPath: fileURL.path) {
+            patterns = []
+        } else if UbiquitousFile.needsDownload(fileURL) {
+            try? UbiquitousFile.startDownload(fileURL)
+        }
         loadedModificationDate = PatternLibrary.modificationDate(of: fileURL)
         notify()
+    }
+
+    /// Where the library lives when kept in iCloud Drive, or `nil` when
+    /// iCloud Drive is not turned on. A plain folder in the user's Drive,
+    /// synced by the system like any other, with no entitlement involved.
+    static func iCloudFileURL(home: URL = FileManager.default.homeDirectoryForCurrentUser) -> URL? {
+        UbiquitousFile.iCloudDriveURL(home: home)?
+            .appendingPathComponent("BigEdit", isDirectory: true)
+            .appendingPathComponent(fileName)
+    }
+
+    /// The defaults key remembering that the library is kept in iCloud Drive.
+    static let keptInICloudDefaultsKey = "BigEditPatternsInICloudDrive"
+
+    /// Whether the library is in its iCloud Drive location.
+    var isKeptInICloud: Bool {
+        fileURL == PatternLibrary.iCloudFileURL()
+    }
+
+    /// Moves the library into iCloud Drive or back to Application Support
+    /// and remembers the choice.
+    func setKeptInICloud(_ keep: Bool) throws {
+        guard let cloud = PatternLibrary.iCloudFileURL() else {
+            return
+        }
+        try relocate(to: keep ? cloud : PatternLibrary.defaultFileURL())
+        UserDefaults.standard.set(keep, forKey: PatternLibrary.keptInICloudDefaultsKey)
+    }
+
+    /// Applies the remembered choice at launch: a library that was kept in
+    /// iCloud Drive is read from there.
+    func adoptRememberedLocation() {
+        if UserDefaults.standard.bool(forKey: PatternLibrary.keptInICloudDefaultsKey),
+           let cloud = PatternLibrary.iCloudFileURL(), cloud != fileURL {
+            try? relocate(to: cloud)
+        }
     }
 
     /// Re-reads the file only when its modification date moved on, which is

@@ -178,8 +178,10 @@ extension AppDelegate {
         }
     }
 
-    /// Opens each URL as a new document and selects the last one.
-    func openDocuments(at urls: [URL]) {
+    /// Opens each URL as a new document and selects the last one. The URLs
+    /// are files on this Mac; `openDocuments(at:)` is the entry point that
+    /// also fetches what iCloud has not downloaded.
+    func openReadyDocuments(at urls: [URL]) {
         var lastOpened: Int?
         for url in urls {
             if let document = makeDocument(at: url) {

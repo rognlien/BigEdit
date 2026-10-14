@@ -59,6 +59,17 @@ final class PatternLibraryTests: XCTestCase {
         XCTAssertEqual(PatternLibrary(fileURL: fileURL()).patterns.map(\.name), ["uno"])
     }
 
+    func testAFileThatStopsBeingReadableKeepsThePatternsAlreadyLoaded() throws {
+        let library = PatternLibrary(fileURL: fileURL())
+        library.add(SavedPattern(name: "kept", pattern: "k"))
+        try Data("damaged".utf8).write(to: fileURL())
+        library.reload()
+        XCTAssertEqual(library.patterns.map(\.name), ["kept"])
+        try FileManager.default.removeItem(at: fileURL())
+        library.reload()
+        XCTAssertEqual(library.patterns, [], "a file that is gone is an empty library")
+    }
+
     func testADamagedFileReadsAsEmptyAndIsNotOverwrittenUntilAChange() throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try Data("not json".utf8).write(to: fileURL())

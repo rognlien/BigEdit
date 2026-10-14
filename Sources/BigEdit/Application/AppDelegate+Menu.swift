@@ -42,6 +42,26 @@ extension AppDelegate {
                                     keyEquivalent: "")
         manageItem.target = self
         savedPatternsMenu.addItem(manageItem)
+        let cloudItem = NSMenuItem(title: "Keep in iCloud Drive", action: #selector(togglePatternsInICloud),
+                                   keyEquivalent: "")
+        cloudItem.target = self
+        cloudItem.state = PatternLibrary.shared.isKeptInICloud ? .on : .off
+        cloudItem.isEnabled = PatternLibrary.iCloudFileURL() != nil
+        cloudItem.toolTip = cloudItem.isEnabled
+            ? "Keep the saved patterns in iCloud Drive, so every Mac signed in to iCloud shares them."
+            : "iCloud Drive is not turned on in System Settings."
+        savedPatternsMenu.addItem(cloudItem)
+    }
+
+    /// Moves the saved patterns into iCloud Drive, or back.
+    @objc private func togglePatternsInICloud() {
+        let library = PatternLibrary.shared
+        do {
+            try library.setKeptInICloud(!library.isKeptInICloud)
+        } catch {
+            let alert = NSAlert(error: error)
+            alert.beginSheetModal(for: window) { _ in }
+        }
     }
 
     /// Opens the find bar with the chosen saved pattern and searches.

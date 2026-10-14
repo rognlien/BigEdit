@@ -90,8 +90,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         // that opens a document (e.g. dropping a file on the Dock icon) delivers
         // application(_:open:) before didFinishLaunching, and that path touches
         // the window — which must already exist.
+        PatternLibrary.shared.adoptRememberedLocation()
         buildMenu()
         buildWindow()
+        // Another Mac may have written the library through iCloud Drive
+        // while this one was in the background.
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
+            PatternLibrary.shared.reloadIfChangedOnDisk()
+        }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
