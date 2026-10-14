@@ -67,6 +67,26 @@ printf 'file10\nfile9\nfile1\nfile20\nfile2\n' > "$NAT"
 printf 'file1\nfile2\nfile9\nfile10\nfile20\n' > "$WORK/theirs.txt"
 check "natural sort orders numerically" "$WORK/theirs.txt" "$WORK/mine.txt"
 
+# Set operations against another list. grep -Fxf is the POSIX idiom for
+# both membership directions; comm needs sorted input and loses the order.
+OTHER="$WORK/other.txt"
+printf 'banana\nfig\nkiwi\n' > "$OTHER"
+"$BINARY" --process-lines subtract "$IN" "$WORK/mine.txt" "$OTHER" > /dev/null
+grep -vFxf "$OTHER" "$IN" > "$WORK/theirs.txt" || true
+check "subtract matches grep -vFxf" "$WORK/theirs.txt" "$WORK/mine.txt"
+
+"$BINARY" --process-lines intersect "$IN" "$WORK/mine.txt" "$OTHER" > /dev/null
+grep -Fxf "$OTHER" "$IN" > "$WORK/theirs.txt" || true
+check "intersect matches grep -Fxf" "$WORK/theirs.txt" "$WORK/mine.txt"
+
+"$BINARY" --process-lines union "$IN" "$WORK/mine.txt" "$OTHER" > /dev/null
+{ cat "$IN"; grep -vFxf "$IN" "$OTHER" | awk '!seen[$0]++'; } > "$WORK/theirs.txt"
+check "union appends what the document lacks" "$WORK/theirs.txt" "$WORK/mine.txt"
+
+"$BINARY" --process-lines symmetric-difference "$IN" "$WORK/mine.txt" "$OTHER" > /dev/null
+{ grep -vFxf "$OTHER" "$IN" || true; grep -vFxf "$IN" "$OTHER" | awk '!seen[$0]++'; } > "$WORK/theirs.txt"
+check "symmetric difference keeps lines in only one list" "$WORK/theirs.txt" "$WORK/mine.txt"
+
 if [ "$FAILURES" -eq 0 ]; then
     echo "All line operations match their POSIX equivalents."
 else

@@ -41,19 +41,96 @@ extension AppDelegate {
         view.leaveRenderedMarkdown()
         let sheet = ProcessLinesSheet()
         processLinesSheet = sheet
-        sheet.present(in: window) { [weak self, weak view] operation in
+        sheet.present(in: window, otherLists: otherLineLists(excluding: view)) {
+            [weak self, weak view] request in
             self?.processLinesSheet = nil
-            if let operation, let view {
-                self?.runProcessLines(operation, in: view)
+            if let request, let view {
+                self?.runProcessLines(request, in: view)
             }
         }
     }
 
-    private func runProcessLines(_ operation: LineOperation, in view: DocumentView) {
-        view.processLines(operation) { [weak self] result in
+    /// Every other open document as a list a set operation can compare
+    /// against, in sidebar order.
+    func otherLineLists(excluding view: DocumentView) -> [OtherLineList] {
+        documents.compactMap { document in
+            guard document.view !== view, let edited = document.view.editedDocument else {
+                return nil
+            }
+            return OtherLineList.document(named: document.fileName, edited)
+        }
+    }
+
+    private func runProcessLines(_ request: ProcessLinesRequest, in view: DocumentView) {
+        let completion: (Result<Int, Error>) -> Void = { [weak self] result in
             switch result {
             case .success:
                 self?.updateTitle()
+            case .failure(let error):
+                self?.presentProcessLinesFailure(error)
+            }
+        }
+        switch request {
+        case .operation(let operation):
+            view.processLines(operation, completion: completion)
+        case .setOperation(let kind, let other, let options):
+            let length = view.editedDocument?.length ?? 0
+            if length > DocumentView.processLinesSizeLimit && view.canStreamSetOperation(kind) {
+                offerStreamedSetOperation(kind, other: other, options: options, in: view)
+            } else {
+                view.processSetOperation(kind, other: other, options: options,
+                                         completion: completion)
+            }
+        }
+    }
+
+    /// A document above the ceiling cannot be rewritten in place, but a
+    /// filtering set operation can still stream its result to a new file:
+    /// ask where, write it, and open what was written.
+    private func offerStreamedSetOperation(_ kind: SetOperationKind, other: OtherLineList,
+                                           options: LineMatchOptions, in view: DocumentView) {
+        let formatter = ByteCountFormatter()
+        let alert = NSAlert()
+        alert.messageText = "This document is too large to rewrite in place"
+        alert.informativeText = "Documents over "
+            + "\(formatter.string(fromByteCount: Int64(DocumentView.processLinesSizeLimit))) "
+            + "are not held in memory, but this operation can still read the document once and "
+            + "write the lines it keeps to a new file."
+        alert.addButton(withTitle: "Write to New File…")
+        alert.addButton(withTitle: "Cancel")
+        alert.beginSheetModal(for: window) { [weak self, weak view] response in
+            guard response == .alertFirstButtonReturn, let self, let view else {
+                return
+            }
+            let panel = NSSavePanel()
+            panel.nameFieldStringValue = self.suggestedResultName(for: view)
+            panel.canCreateDirectories = true
+            panel.beginSheetModal(for: self.window) { [weak self, weak view] response in
+                if response == .OK, let url = panel.url, let view {
+                    self?.streamSetOperation(kind, other: other, options: options,
+                                             in: view, to: url)
+                }
+            }
+        }
+    }
+
+    private func suggestedResultName(for view: DocumentView) -> String {
+        let name = activeDocument?.url ?? URL(fileURLWithPath: "Result.txt")
+        let stem = name.deletingPathExtension().lastPathComponent
+        let suffix = name.pathExtension.isEmpty ? "" : ".\(name.pathExtension)"
+        return "\(stem) (filtered)\(suffix)"
+    }
+
+    private func streamSetOperation(_ kind: SetOperationKind, other: OtherLineList,
+                                    options: LineMatchOptions, in view: DocumentView,
+                                    to destination: URL) {
+        view.streamSetOperation(kind, other: other, options: options, to: destination) {
+            [weak self] result in
+            switch result {
+            case .success(let count):
+                if count != nil {
+                    self?.openDocuments(at: [destination])
+                }
             case .failure(let error):
                 self?.presentProcessLinesFailure(error)
             }
@@ -76,6 +153,9 @@ extension AppDelegate {
             alert.informativeText = "Processing lines rewrites the document, which is not "
                 + "possible while a replacement rule is active, or for a file that is not "
                 + "UTF-8 text."
+        case DocumentView.ProcessLinesRefusal.cannotReadOtherList(let name):
+            alert.messageText = "The other list could not be read"
+            alert.informativeText = "“\(name)” could not be opened."
         case LineProcessor.ProcessingError.invalidPattern(let pattern):
             alert.messageText = "That pattern is not a valid regular expression"
             alert.informativeText = "“\(pattern)” could not be understood."

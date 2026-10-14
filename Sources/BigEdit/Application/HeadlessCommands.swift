@@ -348,7 +348,9 @@ enum HeadlessCommands {
     /// transformations can be checked against sort, uniq, grep and sed.
     ///
     /// Usage: --process-lines <operation> <in> <out> [pattern] [replacement]
-    /// where operation is dedupe, remove, keep, sort, natural-sort or regex.
+    /// where operation is dedupe, remove, keep, sort, natural-sort or regex,
+    /// or one of subtract, intersect, union and symmetric-difference, whose
+    /// `pattern` is the path of the other list.
     static func processLines(operation: String, inputPath: String, outputPath: String,
                              pattern: String?, replacement: String?) -> Int32 {
         var status: Int32 = 1
@@ -401,6 +403,15 @@ enum HeadlessCommands {
             operation = .sortLines(natural: true, keyPattern: pattern)
         case "regex":
             operation = .replaceWithinLines(pattern: pattern ?? "", replacement: replacement ?? "")
+        case "subtract", "intersect", "union", "symmetric-difference":
+            let kinds: [String: SetOperationKind] = [
+                "subtract": .subtract, "intersect": .intersect,
+                "union": .union, "symmetric-difference": .symmetricDifference
+            ]
+            if let kind = kinds[name], let path = pattern,
+               let other = OtherLineList.file(at: URL(fileURLWithPath: path)).loadLines() {
+                operation = .setOperation(kind, other: other, options: LineMatchOptions())
+            }
         default:
             operation = nil
         }
