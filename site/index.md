@@ -15,7 +15,7 @@ features:
   - title: Fast search
     text: Background literal search across the whole file with live progress, case-sensitive or not. Jump between matches as they stream in.
   - title: Syntax highlighting
-    text: Automatic colouring for JSON, XML, Markdown and YAML, picked from the extension or the file’s first bytes.
+    text: Automatic colouring for JSON, XML, Markdown, YAML and shell scripts, picked from the extension or the file’s first bytes.
   - title: Find & replace
     text: A deferred find-and-replace rule previews live in the viewport and writes to disk with a streaming, atomic save.
   - title: Multiple documents

@@ -20,6 +20,8 @@ struct HighlightTheme {
         .string: TokenStyle(color: SyntaxColor.string),
         .number: TokenStyle(color: SyntaxColor.number),
         .literal: TokenStyle(color: SyntaxColor.keyword),
+        .keyword: TokenStyle(color: SyntaxColor.keyword),
+        .variable: TokenStyle(color: SyntaxColor.name),
         .key: TokenStyle(color: SyntaxColor.name),
         .tag: TokenStyle(color: SyntaxColor.name),
         .attributeName: TokenStyle(color: SyntaxColor.attribute),
