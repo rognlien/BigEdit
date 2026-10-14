@@ -125,6 +125,10 @@ final class ProcessLinesSheet: NSObject {
     private let ignoreCaseCheckbox = NSButton()
     private let processButton = NSButton()
     private let cancelButton = NSButton()
+    private let savedPatternsButton = NSPopUpButton(frame: .zero, pullsDown: true)
+
+    /// Where the Saved Patterns pull-down reads from.
+    var patternLibrary: PatternLibrary = .shared
 
     /// The lists the other-list menu offers, in menu order. A file chosen
     /// from disk is inserted at the front.
@@ -153,6 +157,7 @@ final class ProcessLinesSheet: NSObject {
         self.completion = completion
         self.otherLists = otherLists
         rebuildOtherListMenu(selecting: 0)
+        rebuildSavedPatternsMenu()
         applyChoiceVisibility()
         parent.beginSheet(window) { _ in }
         window.makeFirstResponder(patternField)
@@ -170,6 +175,13 @@ final class ProcessLinesSheet: NSObject {
         title.font = NSFont.boldSystemFont(ofSize: 13)
         title.frame = NSRect(x: 20, y: 266, width: 300, height: 20)
         content.addSubview(title)
+
+        savedPatternsButton.frame = NSRect(x: 280, y: 262, width: 160, height: 25)
+        savedPatternsButton.controlSize = .small
+        savedPatternsButton.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
+        savedPatternsButton.target = self
+        savedPatternsButton.action = #selector(savedPatternChosen(_:))
+        content.addSubview(savedPatternsButton)
 
         operationPopUp.addItems(withTitles: Choice.allCases.map(\.title))
         operationPopUp.target = self
@@ -251,6 +263,37 @@ final class ProcessLinesSheet: NSObject {
             otherListPopUp.selectItem(at: index)
         }
     }
+
+    /// A pull-down's first item is its title; the patterns follow it.
+    private func rebuildSavedPatternsMenu() {
+        savedPatternsButton.removeAllItems()
+        savedPatternsButton.addItem(withTitle: "Saved Patterns")
+        for pattern in patternLibrary.patterns {
+            savedPatternsButton.addItem(withTitle: pattern.name)
+        }
+        savedPatternsButton.isEnabled = !patternLibrary.patterns.isEmpty
+    }
+
+    /// Fills the fields from the chosen saved pattern. Item 0 is the title.
+    @objc private func savedPatternChosen(_ sender: NSPopUpButton) {
+        let index = sender.indexOfSelectedItem - 1
+        guard patternLibrary.patterns.indices.contains(index) else {
+            return
+        }
+        apply(patternLibrary.patterns[index])
+    }
+
+    /// Puts `pattern` into the pattern and replacement fields, and the case
+    /// checkbox for the operations that read it.
+    func apply(_ pattern: SavedPattern) {
+        patternField.stringValue = pattern.pattern
+        replacementField.stringValue = pattern.replacement
+        caseCheckbox.state = pattern.isCaseSensitive ? .on : .off
+    }
+
+    /// The pattern and replacement fields, for tests.
+    var enteredPattern: String { patternField.stringValue }
+    var enteredReplacement: String { replacementField.stringValue }
 
     private var availableLists: [OtherLineList] {
         if let chosenFile {

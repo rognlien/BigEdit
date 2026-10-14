@@ -33,6 +33,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
     /// Every open compare result, released when its window closes.
     var compareWindows: [CompareResultsWindow] = []
 
+    /// The Saved Patterns editor, made on first use and kept.
+    var patternLibraryWindow: PatternLibraryWindow?
+
+    /// The Saved Patterns submenu of the Find menu, filled when opened.
+    let savedPatternsMenu = NSMenu(title: "Saved Patterns")
+
     let openRecentMenu = NSMenu(title: "Open Recent")
     var didOpenFromURL = false
     static let lastFilePathDefaultsKey = "BigEditLastFilePath"

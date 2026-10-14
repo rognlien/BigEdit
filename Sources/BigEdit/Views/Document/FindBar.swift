@@ -10,6 +10,12 @@ protocol FindBarDelegate: AnyObject {
     func findBarRequestedResultsToggle(_ bar: FindBar)
     func findBar(_ bar: FindBar, didRequestReplaceAll pattern: String, with replacement: String)
     func findBarRequestedRevert(_ bar: FindBar)
+    /// Open the window that edits the saved patterns.
+    func findBarRequestedManagePatterns(_ bar: FindBar)
+}
+
+extension FindBarDelegate {
+    func findBarRequestedManagePatterns(_ bar: FindBar) {}
 }
 
 /// A search bar shown above the document, laid out the way the system's own
@@ -53,6 +59,21 @@ final class FindBar: NSView, NSSearchFieldDelegate {
     private let matchCaseItem = NSMenuItem()
     private let regularExpressionItem = NSMenuItem()
     private let showAllMatchesItem = NSMenuItem()
+    private let savedPatternsItem = NSMenuItem()
+    private let savedPatternsMenu = NSMenu(title: "Saved Patterns")
+    private let savePatternItem = NSMenuItem()
+    private let managePatternsItem = NSMenuItem()
+
+    /// Where the Saved Patterns submenu reads from and Save Pattern… writes
+    /// to. Tests point it at a library of their own.
+    var patternLibrary: PatternLibrary = .shared {
+        didSet {
+            rebuildSavedPatternsMenu()
+        }
+    }
+
+    /// Tags of the saved-pattern items start here; the options use 1–3.
+    private static let savedPatternTagBase = 1000
 
     let replacementField = NSTextField()
     private let replaceStatusLabel = NSTextField(labelWithString: "")
@@ -77,10 +98,17 @@ final class FindBar: NSView, NSSearchFieldDelegate {
         configureReplaceRow()
         applyModeVisibility()
         layoutChildren()
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(patternLibraryDidChange(_:)),
+            name: PatternLibrary.didChangeNotification, object: nil)
     }
 
     required init?(coder: NSCoder) {
         fatalError("FindBar is created programmatically")
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
     }
 
     /// The current query text.
@@ -157,6 +185,101 @@ final class FindBar: NSView, NSSearchFieldDelegate {
         configureOption(regularExpressionItem, title: "Regular Expression", option: .regularExpression, on: false)
         optionsMenu.addItem(NSMenuItem.separator())
         configureOption(showAllMatchesItem, title: "Show All Matches", option: .showAllMatches, on: false)
+        optionsMenu.addItem(NSMenuItem.separator())
+        savedPatternsItem.title = "Saved Patterns"
+        savedPatternsItem.submenu = savedPatternsMenu
+        optionsMenu.addItem(savedPatternsItem)
+        savePatternItem.title = "Save Pattern…"
+        savePatternItem.target = self
+        savePatternItem.action = #selector(savePatternChosen)
+        optionsMenu.addItem(savePatternItem)
+        managePatternsItem.title = "Manage Saved Patterns…"
+        managePatternsItem.target = self
+        managePatternsItem.action = #selector(managePatternsChosen)
+        optionsMenu.addItem(managePatternsItem)
+        rebuildSavedPatternsMenu()
+    }
+
+    /// Lists the library's patterns in the submenu, then hands the field a
+    /// fresh copy of the template so the copy it shows matches.
+    private func rebuildSavedPatternsMenu() {
+        savedPatternsMenu.removeAllItems()
+        let patterns = patternLibrary.patterns
+        if patterns.isEmpty {
+            let empty = NSMenuItem(title: "No Saved Patterns", action: nil, keyEquivalent: "")
+            empty.isEnabled = false
+            savedPatternsMenu.addItem(empty)
+        }
+        for (index, pattern) in patterns.enumerated() {
+            let item = NSMenuItem(title: pattern.name, action: #selector(savedPatternChosen(_:)),
+                                  keyEquivalent: "")
+            item.target = self
+            item.tag = FindBar.savedPatternTagBase + index
+            item.toolTip = pattern.pattern + (pattern.note.isEmpty ? "" : " — " + pattern.note)
+            savedPatternsMenu.addItem(item)
+        }
+        savedPatternsMenu.autoenablesItems = false
+        searchField.searchMenuTemplate = optionsMenu
+    }
+
+    @objc private func patternLibraryDidChange(_ notification: Notification) {
+        if notification.object as AnyObject? === patternLibrary {
+            rebuildSavedPatternsMenu()
+        }
+    }
+
+    /// The pattern at `index` in the library, if any.
+    func savedPattern(at index: Int) -> SavedPattern? {
+        let patterns = patternLibrary.patterns
+        return patterns.indices.contains(index) ? patterns[index] : nil
+    }
+
+    /// Puts `pattern` into the fields, sets its options, and searches.
+    func apply(_ pattern: SavedPattern) {
+        searchField.stringValue = pattern.pattern
+        replacementField.stringValue = pattern.replacement
+        matchCaseItem.state = pattern.isCaseSensitive ? .on : .off
+        regularExpressionItem.state = pattern.isRegularExpression ? .on : .off
+        delegate?.findBar(self, didSubmitQuery: pattern.pattern)
+    }
+
+    /// The fields as a pattern worth saving — `nil` while the query is empty.
+    var currentPattern: SavedPattern? {
+        let query = searchField.stringValue
+        guard !query.isEmpty else {
+            return nil
+        }
+        return SavedPattern(name: patternLibrary.suggestedName(for: query), pattern: query,
+                            replacement: replacementField.stringValue,
+                            isRegularExpression: isRegularExpression,
+                            isCaseSensitive: isCaseSensitive)
+    }
+
+    /// Asks for a name and saves the current fields under it.
+    func promptToSavePattern() {
+        guard var pattern = currentPattern, let window else {
+            NSSound.beep()
+            return
+        }
+        let alert = NSAlert()
+        alert.messageText = "Save Pattern"
+        alert.informativeText = "A name for “\(pattern.pattern)”, to find it in the Saved Patterns menu."
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+        field.stringValue = pattern.name
+        alert.accessoryView = field
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+        alert.window.initialFirstResponder = field
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard let self, response == .alertFirstButtonReturn else { return }
+            let name = field.stringValue.trimmingCharacters(in: .whitespaces)
+            if !name.isEmpty {
+                pattern.name = name
+            }
+            if let error = self.patternLibrary.add(pattern) {
+                NSAlert(error: error).beginSheetModal(for: window) { _ in }
+            }
+        }
     }
 
     private func configureOption(_ item: NSMenuItem, title: String, option: Option, on: Bool) {
@@ -302,6 +425,20 @@ final class FindBar: NSView, NSSearchFieldDelegate {
         if let option = Option(rawValue: sender.tag) {
             toggle(option)
         }
+    }
+
+    @objc private func savedPatternChosen(_ sender: NSMenuItem) {
+        if let pattern = savedPattern(at: sender.tag - FindBar.savedPatternTagBase) {
+            apply(pattern)
+        }
+    }
+
+    @objc private func savePatternChosen() {
+        promptToSavePattern()
+    }
+
+    @objc private func managePatternsChosen() {
+        delegate?.findBarRequestedManagePatterns(self)
     }
 
     /// Match Case and Regular Expression re-submit the query so the search

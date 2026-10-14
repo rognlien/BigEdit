@@ -79,6 +79,10 @@ extension DocumentView {
         setResultsVisible(!resultsVisible)
     }
 
+    func findBarRequestedManagePatterns(_ bar: FindBar) {
+        (NSApp.delegate as? AppDelegate)?.showPatternLibrary()
+    }
+
     /// Called on the main queue as the replacement scan finds more occurrences.
     func editScanDidProgress() {
         viewport.needsDisplay = true

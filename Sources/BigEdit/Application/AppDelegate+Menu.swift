@@ -8,7 +8,59 @@ extension AppDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         if menu === openRecentMenu {
             populateOpenRecentMenu()
+        } else if menu === savedPatternsMenu {
+            populateSavedPatternsMenu()
         }
+    }
+
+    // MARK: - Saved patterns
+
+    private func populateSavedPatternsMenu() {
+        savedPatternsMenu.removeAllItems()
+        let patterns = PatternLibrary.shared.patterns
+        if patterns.isEmpty {
+            let empty = NSMenuItem(title: "No Saved Patterns", action: nil, keyEquivalent: "")
+            empty.isEnabled = false
+            savedPatternsMenu.addItem(empty)
+        }
+        for (index, pattern) in patterns.enumerated() {
+            let item = NSMenuItem(title: pattern.name, action: #selector(findSavedPattern(_:)),
+                                  keyEquivalent: "")
+            item.target = self
+            item.tag = index
+            item.toolTip = pattern.pattern
+            item.isEnabled = activeView != nil
+            savedPatternsMenu.addItem(item)
+        }
+        savedPatternsMenu.addItem(NSMenuItem.separator())
+        let saveItem = NSMenuItem(title: "Save Current Pattern…", action: #selector(saveCurrentPattern),
+                                  keyEquivalent: "")
+        saveItem.target = self
+        saveItem.isEnabled = activeView?.findBar.currentPattern != nil
+        savedPatternsMenu.addItem(saveItem)
+        let manageItem = NSMenuItem(title: "Manage Saved Patterns…", action: #selector(showPatternLibrary),
+                                    keyEquivalent: "")
+        manageItem.target = self
+        savedPatternsMenu.addItem(manageItem)
+    }
+
+    /// Opens the find bar with the chosen saved pattern and searches.
+    @objc private func findSavedPattern(_ sender: NSMenuItem) {
+        guard let view = activeView, let pattern = view.findBar.savedPattern(at: sender.tag) else {
+            return
+        }
+        view.showFindBar(replace: !pattern.replacement.isEmpty)
+        view.findBar.apply(pattern)
+    }
+
+    @objc private func saveCurrentPattern() {
+        activeView?.findBar.promptToSavePattern()
+    }
+
+    @objc func showPatternLibrary() {
+        let editor = patternLibraryWindow ?? PatternLibraryWindow(library: .shared)
+        patternLibraryWindow = editor
+        editor.show()
     }
 
     private func populateOpenRecentMenu() {
@@ -284,6 +336,14 @@ extension AppDelegate {
         resultsItem.keyEquivalentModifierMask = [.command, .option]
         resultsItem.target = self
         findMenu.addItem(resultsItem)
+
+        findMenu.addItem(NSMenuItem.separator())
+
+        let savedPatternsItem = NSMenuItem(title: "Saved Patterns", action: nil, keyEquivalent: "")
+        savedPatternsMenu.delegate = self
+        savedPatternsMenu.autoenablesItems = false
+        savedPatternsItem.submenu = savedPatternsMenu
+        findMenu.addItem(savedPatternsItem)
 
         findMenu.addItem(NSMenuItem.separator())
 
