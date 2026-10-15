@@ -19,7 +19,9 @@ permissions:
 
 jobs:
   release:
-    runs-on: macos-15
+    # macOS 26 for the Xcode 26 SDK: older SDKs lack FoundationModels, and the
+    # build then leaves Apple Intelligence out without complaint.
+    runs-on: macos-26
     env:
       DMG_NAME: BigEdit.dmg
     steps:
@@ -79,6 +81,12 @@ jobs:
 
       - name: Verify the privileged helper
         run: scripts/verify-helper.sh BigEdit.app
+
+      - name: Verify Apple Intelligence support is built in
+        run: |
+          otool -l BigEdit.app/Contents/MacOS/BigEdit | grep -A2 LC_LOAD_WEAK_DYLIB \
+            | grep -q FoundationModels.framework \
+            || { echo "::error::BigEdit is not weak-linked against FoundationModels"; exit 1; }
 
       - name: Write notarization key
         env:
