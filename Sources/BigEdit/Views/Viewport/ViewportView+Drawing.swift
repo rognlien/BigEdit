@@ -200,6 +200,9 @@ extension ViewportView {
             let (attributed, nextState) = displayRow(for: visualLine, startState: state)
             widest = max(widest, attributed.size().width)
             attributed.draw(at: NSPoint(x: textOriginX - horizontalOffset, y: y))
+            if !isCSVRenderingActive {
+                drawTabMarks(in: attributed, rowY: y, rowX: textOriginX - horizontalOffset)
+            }
             if visualLine.documentLine == 0 && !isPinnedHeaderVisible {
                 drawCSVSortIndicator(rowY: y)
             }
@@ -209,6 +212,31 @@ extension ViewportView {
         widestDrawnRowWidth = max(widestDrawnRowWidth, widest)
 
         NSGraphicsContext.current?.restoreGraphicsState()
+    }
+
+    /// A faint arrow across each tab's span, so a tab can be told from spaces
+    /// and seen where it is narrow.
+    private func drawTabMarks(in row: NSAttributedString, rowY: CGFloat, rowX: CGFloat) {
+        let tabIndexes = row.string.utf16.indices(of: 0x09)
+        if !tabIndexes.isEmpty {
+            let line = CTLineCreateWithAttributedString(row as CFAttributedString)
+            let midY = rowY + (lineHeight / 2).rounded() + 0.5
+            let marks = NSBezierPath()
+            marks.lineWidth = 1
+            for index in tabIndexes {
+                let start = rowX + CTLineGetOffsetForStringIndex(line, index, nil) + 2
+                let end = rowX + CTLineGetOffsetForStringIndex(line, index + 1, nil) - 2
+                if end - start >= 3 {
+                    marks.move(to: NSPoint(x: start, y: midY))
+                    marks.line(to: NSPoint(x: end, y: midY))
+                    marks.move(to: NSPoint(x: end - 2.5, y: midY - 2.5))
+                    marks.line(to: NSPoint(x: end, y: midY))
+                    marks.line(to: NSPoint(x: end - 2.5, y: midY + 2.5))
+                }
+            }
+            NSColor.tertiaryLabelColor.setStroke()
+            marks.stroke()
+        }
     }
 
     /// The starting highlight state for the first visible row, found by replaying
@@ -501,5 +529,12 @@ extension ViewportView {
             y: (bounds.height - size.height) / 2
         )
         message.draw(at: origin, withAttributes: attributes)
+    }
+}
+
+private extension String.UTF16View {
+    /// The integer offsets of every `unit` in the view.
+    func indices(of unit: UInt16) -> [Int] {
+        enumerated().compactMap { $0.element == unit ? $0.offset : nil }
     }
 }
