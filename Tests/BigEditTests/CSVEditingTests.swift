@@ -78,17 +78,43 @@ final class CSVEditingTests: XCTestCase {
         XCTAssertEqual(text(of: document), "name,age\nbob,42\n", "moving edits nothing")
     }
 
-    func testTabPastTheLastColumnMovesToTheNextRow() {
-        let (viewport, _) = makeViewport("name,age\nbob,42\nann,7\n")
+    func testTabPastTheLastColumnAddsOne() {
+        let (viewport, document) = makeViewport("name,age\nbob,42\nann,7\n")
         let secondRow = viewport.layout!.visualLines(forRows: 1..<2).first!
-        let thirdRow = viewport.layout!.visualLines(forRows: 2..<3).first!
         let inAge = secondRow.byteRange.lowerBound + 5
         viewport.selection = TextSelection(anchorOffset: inAge, activeOffset: inAge)
 
         viewport.insertTab(nil)
 
-        let annStart = thirdRow.byteRange.lowerBound
-        XCTAssertEqual(viewport.selection?.range, annStart..<(annStart + 3))
+        XCTAssertEqual(text(of: document), "name,age\nbob,42,\nann,7\n")
+        let lineEnd = secondRow.byteRange.lowerBound + 7
+        XCTAssertEqual(viewport.selection?.range, lineEnd..<lineEnd, "the caret is in the new cell")
+        XCTAssertEqual(viewport.csvColumnLayout?.columnWidths.count, 3)
+    }
+
+    func testTabPastTheLastColumnFillsAShortRow() {
+        let (viewport, document) = makeViewport("name,age\nbob\n")
+        let secondRow = viewport.layout!.visualLines(forRows: 1..<2).first!
+        let lineEnd = secondRow.byteRange.lowerBound + 3
+        viewport.selection = TextSelection(anchorOffset: lineEnd, activeOffset: lineEnd)
+        viewport.csvCaretColumn = 1
+
+        viewport.insertTab(nil)
+
+        XCTAssertEqual(text(of: document), "name,age\nbob,,\n")
+    }
+
+    func testTypingIntoTheAddedColumnWidensIt() {
+        let (viewport, document) = makeViewport("name,age\nbob,42\n")
+        let secondRow = viewport.layout!.visualLines(forRows: 1..<2).first!
+        let inAge = secondRow.byteRange.lowerBound + 5
+        viewport.selection = TextSelection(anchorOffset: inAge, activeOffset: inAge)
+        viewport.insertTab(nil)
+
+        viewport.insertText("Oslo", replacementRange: NSRange(location: NSNotFound, length: 0))
+
+        XCTAssertEqual(text(of: document), "name,age\nbob,42,Oslo\n")
+        XCTAssertEqual(viewport.csvColumnLayout?.columnWidths, [4, 3, 4])
     }
 
     func testTypingIntoAMissingCellCreatesIt() {

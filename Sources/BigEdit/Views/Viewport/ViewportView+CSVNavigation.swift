@@ -9,8 +9,9 @@ import AppKit
 /// delimiters that create the cell.
 extension ViewportView {
 
-    /// Tab / Shift-Tab: selects the next or previous cell's value, moving to
-    /// the next or previous row past the ends of the table's columns.
+    /// Tab / Shift-Tab: selects the next or previous cell's value. Shift-Tab
+    /// before the first column moves to the previous row's last; Tab past the
+    /// last column adds a new one to the row.
     func moveToAdjacentCSVCell(forward: Bool) {
         guard let layout, let csvColumnLayout, let caret = selection?.activeOffset else {
             NSSound.beep()
@@ -27,14 +28,23 @@ extension ViewportView {
         if target < 0 {
             moveToCell(inRow: row - 1, column: .last)
         } else if target >= csvColumnLayout.columnWidths.count {
-            moveToCell(inRow: row + 1, column: .first)
+            appendCSVColumn(target, rowStart: line.byteRange.lowerBound, map: map)
         } else {
             moveToCell(inRow: row, column: .index(target))
         }
     }
 
+    /// Ends the row with the delimiters that give it an empty cell in
+    /// `column`, as one undoable edit, and leaves the caret in that cell.
+    private func appendCSVColumn(_ column: Int, rowStart: Int, map: CSVRowMap) {
+        let lineEnd = rowStart + map.lineLength
+        selection = TextSelection(anchorOffset: lineEnd, activeOffset: lineEnd)
+        csvCaretColumn = column
+        document?.undoStack.breakCoalescing()
+        performEdit(replacing: lineEnd..<lineEnd, with: [])
+    }
+
     private enum CellChoice {
-        case first
         case last
         case index(Int)
     }
@@ -50,7 +60,6 @@ extension ViewportView {
         }
         let index: Int
         switch column {
-        case .first: index = 0
         case .last: index = max(0, (csvColumnLayout?.columnWidths.count ?? 1) - 1)
         case .index(let wanted): index = wanted
         }

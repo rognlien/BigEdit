@@ -107,7 +107,8 @@ final class ViewportView: NSView {
 
     /// Widens any column that the line containing `offset` has outgrown, so
     /// text typed into a cell stays visible instead of being cut to an
-    /// ellipsis at the measured width.
+    /// ellipsis at the measured width, and adds a column for each cell the
+    /// line has beyond the table's.
     func widenCSVColumnsToFitRow(containing offset: Int) {
         guard let csvDialect, let csvColumnLayout, let layout else {
             return
@@ -117,9 +118,12 @@ final class ViewportView: NSView {
             return
         }
         var widened = csvColumnLayout
-        for (column, field) in CSVParser.fields(in: decodeChunk(line), dialect: csvDialect).enumerated()
-        where column < widened.columnWidths.count && field.count > widened.columnWidths[column] {
-            widened = widened.settingWidth(field.count, forColumn: column)
+        for (column, field) in CSVParser.fields(in: decodeChunk(line), dialect: csvDialect).enumerated() {
+            if column >= widened.columnWidths.count {
+                widened = widened.addingColumn(width: field.count)
+            } else if field.count > widened.columnWidths[column] {
+                widened = widened.settingWidth(field.count, forColumn: column)
+            }
         }
         if widened != csvColumnLayout {
             self.csvColumnLayout = widened

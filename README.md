@@ -222,7 +222,8 @@ App shell (window, menu, open panel) is in `AppDelegate.swift` / `main.swift`.
 - **CSV mode edits the text, not a table.** Typing goes into the cell under
   the caret, **Tab** / **Shift-Tab** select the next / previous cell (and a
   cell the row does not have yet is created by the first character typed
-  into it), and a column widens to fit what you type; but a delimiter typed
+  into it), **Tab** past the last column adds a new one to the row, and a
+  column widens to fit what you type; but a delimiter typed
   into a cell splits it, and deleting across a divider removes the delimiter
   and merges the cells — rows are lines and cells are the text between
   delimiters. Column widths are measured from a bounded head sample, so a
