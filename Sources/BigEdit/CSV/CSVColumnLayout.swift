@@ -72,6 +72,11 @@ struct CSVColumnLayout: Equatable {
         return CSVColumnLayout(columnWidths: widths)
     }
 
+    /// A copy with a column of `width` added after the last one.
+    func addingColumn(width: Int) -> CSVColumnLayout {
+        CSVColumnLayout(columnWidths: columnWidths + [max(1, width)])
+    }
+
     /// `fields` padded into columns, as one line of monospaced text.
     ///
     /// A row with more fields than the measured layout keeps its extra fields
