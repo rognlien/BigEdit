@@ -8,6 +8,7 @@ import Foundation
 ///     swift run BigEdit --dump <path> [rows]
 ///     swift run BigEdit --preview <pattern> <replacement> <path>
 ///     swift run BigEdit --replace <pattern> <replacement> <in> <out>
+///     swift run BigEdit --replace-regex <pattern> <template> <in> <out>
 ///     swift run BigEdit --stats <path>
 ///     swift run BigEdit --edit-smoke <in> <out>
 ///     swift run BigEdit --csv <path> [rows]
@@ -43,6 +44,13 @@ enum HeadlessCommands {
             exitCode = replace(
                 pattern: arguments[flagIndex + 1],
                 replacement: arguments[flagIndex + 2],
+                inputPath: arguments[flagIndex + 3],
+                outputPath: arguments[flagIndex + 4]
+            )
+        } else if let flagIndex = arguments.firstIndex(of: "--replace-regex"), flagIndex + 4 < arguments.count {
+            exitCode = replaceRegularExpression(
+                pattern: arguments[flagIndex + 1],
+                template: arguments[flagIndex + 2],
                 inputPath: arguments[flagIndex + 3],
                 outputPath: arguments[flagIndex + 4]
             )
@@ -348,7 +356,9 @@ enum HeadlessCommands {
     /// transformations can be checked against sort, uniq, grep and sed.
     ///
     /// Usage: --process-lines <operation> <in> <out> [pattern] [replacement]
-    /// where operation is dedupe, remove, keep, sort, natural-sort or regex.
+    /// where operation is dedupe, remove, keep, sort, natural-sort or regex,
+    /// or one of subtract, intersect, union and symmetric-difference, whose
+    /// `pattern` is the path of the other list.
     static func processLines(operation: String, inputPath: String, outputPath: String,
                              pattern: String?, replacement: String?) -> Int32 {
         var status: Int32 = 1
@@ -401,10 +411,50 @@ enum HeadlessCommands {
             operation = .sortLines(natural: true, keyPattern: pattern)
         case "regex":
             operation = .replaceWithinLines(pattern: pattern ?? "", replacement: replacement ?? "")
+        case "subtract", "intersect", "union", "symmetric-difference":
+            let kinds: [String: SetOperationKind] = [
+                "subtract": .subtract, "intersect": .intersect,
+                "union": .union, "symmetric-difference": .symmetricDifference
+            ]
+            if let kind = kinds[name], let path = pattern,
+               let other = OtherLineList.file(at: URL(fileURLWithPath: path)).loadLines() {
+                operation = .setOperation(kind, other: other, options: LineMatchOptions())
+            }
         default:
             operation = nil
         }
         return operation
+    }
+
+    /// Streams the file to `outputPath` with every match of `pattern`
+    /// replaced by `template`, for cross-checking against `perl -pe`.
+    static func replaceRegularExpression(pattern: String, template: String,
+                                         inputPath: String, outputPath: String) -> Int32 {
+        var exitCode: Int32 = 1
+        guard let file = MappedFile(path: inputPath) else {
+            FileHandle.standardError.write(Data("BigEdit: cannot open \(inputPath)\n".utf8))
+            return exitCode
+        }
+        guard let rule = RegexReplacementRule(pattern: pattern, template: template) else {
+            FileHandle.standardError.write(Data("BigEdit: invalid pattern \(pattern)\n".utf8))
+            return exitCode
+        }
+        let index = LineIndex()
+        index.buildSynchronously(from: file)
+        let document = EditedDocument(file: file, editModel: EditModel(), lineIndex: index)
+        let start = Date()
+        let result = FileWriter.saveSynchronously(document: document, regexRule: rule,
+                                                  to: URL(fileURLWithPath: outputPath))
+        switch result {
+        case .success(let count):
+            print("file:     \(inputPath)")
+            print("replaced: \(count)")
+            print(String(format: "took:     %.3f s", Date().timeIntervalSince(start)))
+            exitCode = 0
+        case .failure(let error):
+            FileHandle.standardError.write(Data("BigEdit: \(error.localizedDescription)\n".utf8))
+        }
+        return exitCode
     }
 
     static func editSmoke(inputPath: String, outputPath: String) -> Int32 {

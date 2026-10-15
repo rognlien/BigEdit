@@ -10,6 +10,21 @@ protocol FindBarDelegate: AnyObject {
     func findBarRequestedResultsToggle(_ bar: FindBar)
     func findBar(_ bar: FindBar, didRequestReplaceAll pattern: String, with replacement: String)
     func findBarRequestedRevert(_ bar: FindBar)
+    /// Open the window that edits the saved patterns.
+    func findBarRequestedManagePatterns(_ bar: FindBar)
+    /// The query text changed under the user's fingers, before Enter.
+    func findBar(_ bar: FindBar, queryDidChange query: String)
+    /// The replacement text changed.
+    func findBar(_ bar: FindBar, replacementDidChange replacement: String)
+    /// A few lines of the document, for the pattern assistant to look at.
+    func findBarSampleText(_ bar: FindBar) -> String?
+}
+
+extension FindBarDelegate {
+    func findBarRequestedManagePatterns(_ bar: FindBar) {}
+    func findBar(_ bar: FindBar, queryDidChange query: String) {}
+    func findBar(_ bar: FindBar, replacementDidChange replacement: String) {}
+    func findBarSampleText(_ bar: FindBar) -> String? { nil }
 }
 
 /// A search bar shown above the document, laid out the way the system's own
@@ -52,7 +67,29 @@ final class FindBar: NSView, NSSearchFieldDelegate {
     private let optionsMenu = NSMenu()
     private let matchCaseItem = NSMenuItem()
     private let regularExpressionItem = NSMenuItem()
+    private let dotMatchesNewlineItem = NSMenuItem()
+    private let referenceItem = NSMenuItem()
     private let showAllMatchesItem = NSMenuItem()
+    private let savedPatternsItem = NSMenuItem()
+    private let savedPatternsMenu = NSMenu(title: "Saved Patterns")
+    private let savePatternItem = NSMenuItem()
+    private let managePatternsItem = NSMenuItem()
+    private let describePatternItem = NSMenuItem()
+    private let explainPatternItem = NSMenuItem()
+
+    /// Held while the assistant sheet is up.
+    private var assistantSheet: PatternAssistantSheet?
+
+    /// Where the Saved Patterns submenu reads from and Save Pattern… writes
+    /// to. Tests point it at a library of their own.
+    var patternLibrary: PatternLibrary = .shared {
+        didSet {
+            rebuildSavedPatternsMenu()
+        }
+    }
+
+    /// Tags of the saved-pattern items start here; the options use 1–3.
+    private static let savedPatternTagBase = 1000
 
     let replacementField = NSTextField()
     private let replaceStatusLabel = NSTextField(labelWithString: "")
@@ -69,6 +106,7 @@ final class FindBar: NSView, NSSearchFieldDelegate {
         case matchCase = 1
         case regularExpression
         case showAllMatches
+        case dotMatchesNewline
     }
 
     override init(frame frameRect: NSRect) {
@@ -77,10 +115,17 @@ final class FindBar: NSView, NSSearchFieldDelegate {
         configureReplaceRow()
         applyModeVisibility()
         layoutChildren()
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(patternLibraryDidChange(_:)),
+            name: PatternLibrary.didChangeNotification, object: nil)
     }
 
     required init?(coder: NSCoder) {
         fatalError("FindBar is created programmatically")
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
     }
 
     /// The current query text.
@@ -104,14 +149,50 @@ final class FindBar: NSView, NSSearchFieldDelegate {
         regularExpressionItem.state == .on
     }
 
-    /// Updates the find result-count text (e.g. "3 of 1,024").
-    func updateStatus(_ text: String) {
+    /// Whether `.` in a pattern matches a line break too, so a pattern can
+    /// span lines.
+    var isDotMatchingNewline: Bool {
+        dotMatchesNewlineItem.state == .on
+    }
+
+    /// The compile options the current settings ask for.
+    var regularExpressionOptions: NSRegularExpression.Options {
+        var options: NSRegularExpression.Options = [.anchorsMatchLines]
+        if !isCaseSensitive {
+            options.insert(.caseInsensitive)
+        }
+        if isDotMatchingNewline {
+            options.insert(.dotMatchesLineSeparators)
+        }
+        return options
+    }
+
+    /// Updates the find result-count text (e.g. "3 of 1,024"). A problem
+    /// with the pattern is shown in the warning colour.
+    func updateStatus(_ text: String, isProblem: Bool = false) {
         statusLabel.stringValue = text
+        statusLabel.textColor = isProblem ? .systemRed : .secondaryLabelColor
+        statusLabel.toolTip = isProblem ? text : nil
+    }
+
+    /// The status text as shown, for tests.
+    var statusText: String {
+        statusLabel.stringValue
+    }
+
+    /// Whether the status shows a problem with the pattern.
+    var statusShowsProblem: Bool {
+        statusLabel.textColor == .systemRed
     }
 
     /// Updates the replace status text (e.g. "1,234 replaced").
     func updateReplaceStatus(_ text: String) {
         replaceStatusLabel.stringValue = text
+    }
+
+    /// The replace status text as shown, for tests.
+    var replaceStatusText: String {
+        replaceStatusLabel.stringValue
     }
 
     /// Reflects whether the results list is showing.
@@ -120,7 +201,8 @@ final class FindBar: NSView, NSSearchFieldDelegate {
     }
 
     /// Flips the given options as choosing them from the menu would.
-    func toggleOption(matchCase: Bool = false, regularExpression: Bool = false, showAllMatches: Bool = false) {
+    func toggleOption(matchCase: Bool = false, regularExpression: Bool = false,
+                      showAllMatches: Bool = false, dotMatchesNewline: Bool = false) {
         if matchCase {
             toggle(.matchCase)
         }
@@ -129,6 +211,9 @@ final class FindBar: NSView, NSSearchFieldDelegate {
         }
         if showAllMatches {
             toggle(.showAllMatches)
+        }
+        if dotMatchesNewline {
+            toggle(.dotMatchesNewline)
         }
     }
 
@@ -155,8 +240,150 @@ final class FindBar: NSView, NSSearchFieldDelegate {
     private func configureOptionsMenu() {
         configureOption(matchCaseItem, title: "Match Case", option: .matchCase, on: true)
         configureOption(regularExpressionItem, title: "Regular Expression", option: .regularExpression, on: false)
+        configureOption(dotMatchesNewlineItem, title: "Dot Matches Newline", option: .dotMatchesNewline, on: false)
+        referenceItem.title = "Regular Expression Reference"
+        referenceItem.target = self
+        referenceItem.action = #selector(referenceChosen)
+        optionsMenu.addItem(referenceItem)
         optionsMenu.addItem(NSMenuItem.separator())
         configureOption(showAllMatchesItem, title: "Show All Matches", option: .showAllMatches, on: false)
+        optionsMenu.addItem(NSMenuItem.separator())
+        savedPatternsItem.title = "Saved Patterns"
+        savedPatternsItem.submenu = savedPatternsMenu
+        optionsMenu.addItem(savedPatternsItem)
+        savePatternItem.title = "Save Pattern…"
+        savePatternItem.target = self
+        savePatternItem.action = #selector(savePatternChosen)
+        optionsMenu.addItem(savePatternItem)
+        managePatternsItem.title = "Manage Saved Patterns…"
+        managePatternsItem.target = self
+        managePatternsItem.action = #selector(managePatternsChosen)
+        optionsMenu.addItem(managePatternsItem)
+        // Apple Intelligence: only offered where the model can be asked.
+        if PatternAssistant.isAvailable {
+            optionsMenu.addItem(NSMenuItem.separator())
+            describePatternItem.title = "Describe a Pattern…"
+            describePatternItem.target = self
+            describePatternItem.action = #selector(describePatternChosen)
+            optionsMenu.addItem(describePatternItem)
+            explainPatternItem.title = "Explain This Pattern"
+            explainPatternItem.target = self
+            explainPatternItem.action = #selector(explainPatternChosen)
+            optionsMenu.addItem(explainPatternItem)
+        }
+        rebuildSavedPatternsMenu()
+    }
+
+    /// Asks Apple Intelligence for a pattern and searches with it.
+    @objc private func describePatternChosen() {
+        guard let window else {
+            return
+        }
+        let sheet = PatternAssistantSheet(mode: .describe(sample: delegate?.findBarSampleText(self)))
+        assistantSheet = sheet
+        sheet.present(in: window) { [weak self] pattern in
+            guard let self else { return }
+            self.assistantSheet = nil
+            if let pattern {
+                self.searchField.stringValue = pattern
+                self.regularExpressionItem.state = .on
+                self.delegate?.findBar(self, didSubmitQuery: pattern)
+            }
+        }
+    }
+
+    @objc private func explainPatternChosen() {
+        guard let window, !searchField.stringValue.isEmpty else {
+            NSSound.beep()
+            return
+        }
+        let sheet = PatternAssistantSheet(mode: .explain(pattern: searchField.stringValue))
+        assistantSheet = sheet
+        sheet.present(in: window) { [weak self] _ in
+            self?.assistantSheet = nil
+        }
+    }
+
+    /// Lists the library's patterns in the submenu, then hands the field a
+    /// fresh copy of the template so the copy it shows matches.
+    private func rebuildSavedPatternsMenu() {
+        savedPatternsMenu.removeAllItems()
+        let patterns = patternLibrary.patterns
+        if patterns.isEmpty {
+            let empty = NSMenuItem(title: "No Saved Patterns", action: nil, keyEquivalent: "")
+            empty.isEnabled = false
+            savedPatternsMenu.addItem(empty)
+        }
+        for (index, pattern) in patterns.enumerated() {
+            let item = NSMenuItem(title: pattern.name, action: #selector(savedPatternChosen(_:)),
+                                  keyEquivalent: "")
+            item.target = self
+            item.tag = FindBar.savedPatternTagBase + index
+            item.toolTip = pattern.pattern + (pattern.note.isEmpty ? "" : " — " + pattern.note)
+            savedPatternsMenu.addItem(item)
+        }
+        savedPatternsMenu.autoenablesItems = false
+        searchField.searchMenuTemplate = optionsMenu
+    }
+
+    @objc private func patternLibraryDidChange(_ notification: Notification) {
+        if notification.object as AnyObject? === patternLibrary {
+            rebuildSavedPatternsMenu()
+        }
+    }
+
+    /// The pattern at `index` in the library, if any.
+    func savedPattern(at index: Int) -> SavedPattern? {
+        let patterns = patternLibrary.patterns
+        return patterns.indices.contains(index) ? patterns[index] : nil
+    }
+
+    /// Puts `pattern` into the fields, sets its options, and searches.
+    func apply(_ pattern: SavedPattern) {
+        searchField.stringValue = pattern.pattern
+        replacementField.stringValue = pattern.replacement
+        matchCaseItem.state = pattern.isCaseSensitive ? .on : .off
+        regularExpressionItem.state = pattern.isRegularExpression ? .on : .off
+        delegate?.findBar(self, didSubmitQuery: pattern.pattern)
+    }
+
+    /// The fields as a pattern worth saving — `nil` while the query is empty.
+    var currentPattern: SavedPattern? {
+        let query = searchField.stringValue
+        guard !query.isEmpty else {
+            return nil
+        }
+        return SavedPattern(name: patternLibrary.suggestedName(for: query), pattern: query,
+                            replacement: replacementField.stringValue,
+                            isRegularExpression: isRegularExpression,
+                            isCaseSensitive: isCaseSensitive)
+    }
+
+    /// Asks for a name and saves the current fields under it.
+    func promptToSavePattern() {
+        guard var pattern = currentPattern, let window else {
+            NSSound.beep()
+            return
+        }
+        let alert = NSAlert()
+        alert.messageText = "Save Pattern"
+        alert.informativeText = "A name for “\(pattern.pattern)”, to find it in the Saved Patterns menu."
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+        field.stringValue = pattern.name
+        alert.accessoryView = field
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+        alert.window.initialFirstResponder = field
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard let self, response == .alertFirstButtonReturn else { return }
+            let name = field.stringValue.trimmingCharacters(in: .whitespaces)
+            if !name.isEmpty {
+                pattern.name = name
+            }
+            if let error = self.patternLibrary.add(pattern) {
+                NSAlert(error: error).beginSheetModal(for: window) { _ in }
+            }
+        }
     }
 
     private func configureOption(_ item: NSMenuItem, title: String, option: Option, on: Bool) {
@@ -304,6 +531,20 @@ final class FindBar: NSView, NSSearchFieldDelegate {
         }
     }
 
+    @objc private func savedPatternChosen(_ sender: NSMenuItem) {
+        if let pattern = savedPattern(at: sender.tag - FindBar.savedPatternTagBase) {
+            apply(pattern)
+        }
+    }
+
+    @objc private func savePatternChosen() {
+        promptToSavePattern()
+    }
+
+    @objc private func managePatternsChosen() {
+        delegate?.findBarRequestedManagePatterns(self)
+    }
+
     /// Match Case and Regular Expression re-submit the query so the search
     /// rebuilds in the new mode without another Enter; Show All Matches only
     /// asks for the list, whose visibility comes back through
@@ -316,12 +557,42 @@ final class FindBar: NSView, NSSearchFieldDelegate {
         case .regularExpression:
             regularExpressionItem.state = regularExpressionItem.state == .on ? .off : .on
             delegate?.findBar(self, didSubmitQuery: searchField.stringValue)
+        case .dotMatchesNewline:
+            dotMatchesNewlineItem.state = dotMatchesNewlineItem.state == .on ? .off : .on
+            delegate?.findBar(self, didSubmitQuery: searchField.stringValue)
         case .showAllMatches:
             delegate?.findBarRequestedResultsToggle(self)
         }
     }
 
+    @objc private func referenceChosen() {
+        RegexReferencePopover.show(relativeTo: searchField)
+    }
+
     // MARK: - NSSearchFieldDelegate
+
+    func controlTextDidChange(_ notification: Notification) {
+        guard let field = notification.object as? NSTextField else {
+            return
+        }
+        if field === searchField {
+            delegate?.findBar(self, queryDidChange: searchField.stringValue)
+        } else if field === replacementField {
+            delegate?.findBar(self, replacementDidChange: replacementField.stringValue)
+        }
+    }
+
+    /// Reports a change to the fields as typing into them would.
+    func simulateTyping(query: String? = nil, replacement: String? = nil) {
+        if let query {
+            searchField.stringValue = query
+            delegate?.findBar(self, queryDidChange: query)
+        }
+        if let replacement {
+            replacementField.stringValue = replacement
+            delegate?.findBar(self, replacementDidChange: replacement)
+        }
+    }
 
     func control(
         _ control: NSControl,

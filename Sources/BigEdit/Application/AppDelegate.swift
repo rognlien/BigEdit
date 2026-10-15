@@ -27,6 +27,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
     /// before the user answers it.
     var processLinesSheet: ProcessLinesSheet?
 
+    /// Held while the Compare Documents sheet is up, for the same reason.
+    var compareSheet: CompareDocumentsSheet?
+
+    /// Every open compare result, released when its window closes.
+    var compareWindows: [CompareResultsWindow] = []
+
+    /// The Saved Patterns editor, made on first use and kept.
+    var patternLibraryWindow: PatternLibraryWindow?
+
+    /// The Saved Patterns submenu of the Find menu, filled when opened.
+    let savedPatternsMenu = NSMenu(title: "Saved Patterns")
+
     let openRecentMenu = NSMenu(title: "Open Recent")
     var didOpenFromURL = false
     static let lastFilePathDefaultsKey = "BigEditLastFilePath"
@@ -51,6 +63,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         return stored > 0 ? CGFloat(stored) : InfoPane.preferredWidth
     }()
 
+    let numberFormatter: NumberFormatter = {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        return formatter
+    }()
+
     private static let minSidebarWidth: CGFloat = 190
     private static let minContentWidth: CGFloat = 360
 
@@ -72,8 +90,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         // that opens a document (e.g. dropping a file on the Dock icon) delivers
         // application(_:open:) before didFinishLaunching, and that path touches
         // the window — which must already exist.
+        PatternLibrary.shared.adoptRememberedLocation()
         buildMenu()
         buildWindow()
+        // Another Mac may have written the library through iCloud Drive
+        // while this one was in the background.
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(applicationDidBecomeActiveForPatterns),
+            name: NSApplication.didBecomeActiveNotification, object: nil)
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -87,6 +111,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         // Check for updates on every launch (silent — only surfaces UI if an
         // update is available), in addition to Sparkle's scheduled checks.
         updaterController.updater.checkForUpdatesInBackground()
+    }
+
+    @objc private func applicationDidBecomeActiveForPatterns() {
+        PatternLibrary.shared.reloadIfChangedOnDisk()
     }
 
     private func buildWindow() {

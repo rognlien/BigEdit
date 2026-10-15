@@ -127,7 +127,7 @@ enum FileWriter {
 
     /// Opens the temp file, runs `stream` into it, and atomically renames it
     /// over the destination on success.
-    private static func performWrite(
+    static func performWrite(
         destination: URL,
         stream: (Int32) -> Result<Void, WriteError>
     ) -> Result<Void, WriteError> {
@@ -338,7 +338,7 @@ enum FileWriter {
         }
     }
 
-    private static func writeBytes(fd: Int32, pointer: UnsafeRawPointer, count: Int) -> Result<Void, WriteError> {
+    static func writeBytes(fd: Int32, pointer: UnsafeRawPointer, count: Int) -> Result<Void, WriteError> {
         var result: Result<Void, WriteError> = .success(())
         var written = 0
         while written < count && result.isSuccess {

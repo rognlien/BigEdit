@@ -67,8 +67,16 @@ final class SaveProgressSheet: NSObject {
 
     /// Updates the progress bar and the percentage label.
     func setProgress(_ fraction: Double) {
+        progressBar.isIndeterminate = false
         progressBar.doubleValue = fraction
         detailLabel.stringValue = "\(Int(fraction * 100))%"
+    }
+
+    /// Shows a spinning bar for work whose length is not known up front.
+    func setIndeterminate(_ detail: String = "") {
+        progressBar.isIndeterminate = true
+        progressBar.startAnimation(nil)
+        detailLabel.stringValue = detail
     }
 
     @objc private func cancelTapped() {

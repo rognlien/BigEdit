@@ -113,6 +113,95 @@ extension AppDelegate {
         }
     }
 
+    // MARK: - Streaming regular-expression replace
+
+    /// Replace All found more matches than can be held as edits: offer to
+    /// stream the result over the file itself, or to a new file.
+    func offerStreamedRegexReplace(_ rule: RegexReplacementRule, matchCount: Int, isTruncated: Bool,
+                                   in view: DocumentView) {
+        guard let document = documents.first(where: { $0.view === view }) else {
+            return
+        }
+        let formatted = (numberFormatter.string(from: NSNumber(value: matchCount)) ?? "\(matchCount)")
+            + (isTruncated ? "+" : "")
+        let alert = NSAlert()
+        alert.messageText = "\(formatted) matches is too many to replace as edits"
+        alert.informativeText = "BigEdit can instead write the document with every match of "
+            + "“\(rule.pattern)” replaced, reading it once and holding none of it. Replacing in "
+            + "the file rewrites \(document.fileName) on disk — unsaved edits are included, but "
+            + "the change cannot be undone — or the result can go to a new file."
+        alert.addButton(withTitle: "Replace in File")
+        alert.addButton(withTitle: "Write to New File…")
+        alert.addButton(withTitle: "Cancel")
+        alert.alertStyle = .warning
+        alert.beginSheetModal(for: window) { [weak self] response in
+            switch response {
+            case .alertFirstButtonReturn:
+                if document.hasDiskChanges {
+                    self?.presentDiskChangeConflict(for: document)
+                } else {
+                    self?.streamRegexReplace(rule, of: document, to: document.url, reloading: true)
+                }
+            case .alertSecondButtonReturn:
+                self?.chooseDestinationForRegexReplace(rule, of: document)
+            default:
+                break
+            }
+        }
+    }
+
+    private func chooseDestinationForRegexReplace(_ rule: RegexReplacementRule, of document: Document) {
+        let panel = NSSavePanel()
+        let stem = document.url.deletingPathExtension().lastPathComponent
+        let suffix = document.url.pathExtension.isEmpty ? "" : ".\(document.url.pathExtension)"
+        panel.nameFieldStringValue = "\(stem) (replaced)\(suffix)"
+        panel.directoryURL = document.url.deletingLastPathComponent()
+        panel.canCreateDirectories = true
+        panel.beginSheetModal(for: window) { [weak self] response in
+            if response == .OK, let url = panel.url {
+                self?.streamRegexReplace(rule, of: document, to: url, reloading: url == document.url)
+            }
+        }
+    }
+
+    /// Streams the replaced document to `destination` behind the save
+    /// sheet. Over the document's own file the document reloads from what
+    /// was written; elsewhere the result opens as a new document.
+    private func streamRegexReplace(_ rule: RegexReplacementRule, of document: Document,
+                                    to destination: URL, reloading: Bool) {
+        guard let edited = document.view.editedDocument else {
+            return
+        }
+        let sheet = SaveProgressSheet(fileName: destination.lastPathComponent)
+        let cancelToken = CancelToken()
+        sheet.onCancel = { cancelToken.cancel() }
+        saveProgressSheet = sheet
+        window.beginSheet(sheet.window) { _ in }
+        FileWriter.save(document: edited, regexRule: rule, to: destination, cancelToken: cancelToken,
+                        onProgress: { sheet.setProgress($0) }) { [weak self] result in
+            guard let self else { return }
+            self.window.endSheet(sheet.window)
+            self.saveProgressSheet = nil
+            switch result {
+            case .success(let count):
+                if reloading {
+                    document.view.discardJournal()
+                    self.reload(document, from: destination, preserveScroll: true)
+                    document.view.startJournalFromCurrentFile()
+                    let formatted = self.numberFormatter.string(from: NSNumber(value: count)) ?? "\(count)"
+                    document.view.findBar.updateReplaceStatus("\(formatted) replaced")
+                } else {
+                    self.openDocuments(at: [destination])
+                }
+            case .failure(let error):
+                if case .cancelled = error {
+                    return
+                }
+                self.presentSaveError(error.localizedDescription)
+            }
+        }
+    }
+
     /// Re-points a document at the freshly written file and restarts indexing.
     /// After a save: the document re-maps from what was just written, keeping
     /// its edit history so ⌘Z still works.

@@ -13,6 +13,7 @@ extension DocumentView {
     enum ProcessLinesRefusal: Error {
         case notEditable
         case tooLarge(size: Int, limit: Int)
+        case cannotReadOtherList(name: String)
     }
 
     /// Whether Process Lines can run on this document at all. It rewrites
@@ -36,6 +37,83 @@ extension DocumentView {
             }
         } else {
             completion(.failure(ProcessLinesRefusal.notEditable))
+        }
+    }
+
+    /// Runs a set operation against `other`, loading that list off the main
+    /// thread first, and applies the result as one undoable edit.
+    func processSetOperation(_ kind: SetOperationKind, other: OtherLineList,
+                             options: LineMatchOptions,
+                             completion: @escaping (Result<Int, Error>) -> Void) {
+        if canProcessLines {
+            rewriteLines(title: "Processing lines…", completion: completion) { lines, isCancelled in
+                guard let otherLines = other.loadLines() else {
+                    throw ProcessLinesRefusal.cannotReadOtherList(name: other.name)
+                }
+                return try LineProcessor.apply(
+                    .setOperation(kind, other: otherLines, options: options),
+                    to: lines, isCancelled: isCancelled)
+            }
+        } else {
+            completion(.failure(ProcessLinesRefusal.notEditable))
+        }
+    }
+
+    /// Whether `kind` can be run on this document by streaming its result to
+    /// a new file instead of rewriting it in place — the route for a
+    /// document above the Process Lines ceiling. Only the filtering kinds
+    /// stream, and nothing about the document has to be editable for it.
+    func canStreamSetOperation(_ kind: SetOperationKind) -> Bool {
+        kind.isFilter && viewport.document != nil
+    }
+
+    /// Streams the lines of the document that survive `kind` against
+    /// `other` to `destination`, behind a cancellable progress sheet.
+    /// `completion` reports the number of lines written; a cancelled run
+    /// reports success with nil.
+    func streamSetOperation(_ kind: SetOperationKind, other: OtherLineList,
+                            options: LineMatchOptions, to destination: URL,
+                            completion: @escaping (Result<Int?, Error>) -> Void) {
+        guard let document = viewport.document, canStreamSetOperation(kind) else {
+            completion(.failure(ProcessLinesRefusal.notEditable))
+            return
+        }
+        let sheet = SaveProgressSheet(title: "Writing \(destination.lastPathComponent)…")
+        let cancelled = CancelToken()
+        sheet.onCancel = { cancelled.cancel() }
+        sheet.setProgress(0)
+        window?.beginSheet(sheet.window) { _ in }
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            var outcome: Result<Int?, Error>
+            do {
+                guard let otherLines = other.loadLines() else {
+                    throw ProcessLinesRefusal.cannotReadOtherList(name: other.name)
+                }
+                guard let keep = try LineSetOperation.filter(for: kind, other: otherLines,
+                                                             options: options) else {
+                    throw ProcessLinesRefusal.notEditable
+                }
+                let written = FileWriter.saveSynchronously(
+                    document: document, keepingLinesWhere: keep, to: destination,
+                    cancelToken: cancelled)
+                switch written {
+                case .success(let count):
+                    outcome = .success(count)
+                case .failure(let error):
+                    if case .cancelled = error {
+                        outcome = .success(nil)
+                    } else {
+                        outcome = .failure(error)
+                    }
+                }
+            } catch {
+                outcome = .failure(error)
+            }
+            DispatchQueue.main.async {
+                self?.window?.endSheet(sheet.window)
+                completion(outcome)
+            }
         }
     }
 

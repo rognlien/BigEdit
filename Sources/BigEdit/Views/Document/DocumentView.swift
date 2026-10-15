@@ -63,6 +63,9 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
     var currentMatchIndex = -1
     var jumpToFirstMatch = true
     var searchRefreshTimer: Timer?
+    /// Runs the query as it is typed, after a pause, on documents small
+    /// enough for that to feel instant.
+    var liveSearchTimer: Timer?
     private var statisticsRefreshTimer: Timer?
     var replaceAllScan: SearchScan?
 
@@ -242,6 +245,8 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
     /// Cancels all background work for this document. Call before dropping the
     /// document so its `MappedFile` can be unmapped cleanly.
     func close() {
+        liveSearchTimer?.invalidate()
+        liveSearchTimer = nil
         resetSearch()
         replaceAllScan?.cancel()
         replaceAllScan = nil
