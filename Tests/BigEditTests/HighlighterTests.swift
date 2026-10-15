@@ -11,7 +11,9 @@ final class HighlighterTests: XCTestCase {
         "for f in *.txt; do echo \"$f ${x:-1}\"; done # end",
         "cat <<",
         "echo $ \\",
-        "x=$'unterminated"
+        "x=$'unterminated",
+        "SELECT 'it''s', $$body FROM t -- end",
+        "a::int @ : $ /*"
     ]
 
     func testTokensStayInsideTheRow() {
@@ -19,7 +21,7 @@ final class HighlighterTests: XCTestCase {
             let length = (input as NSString).length
             let all = XMLHighlighter.tokens(input) + JSONHighlighter.tokens(input)
                 + MarkdownHighlighter.tokens(input) + YAMLHighlighter.tokens(input)
-                + ShellHighlighter.tokens(input)
+                + ShellHighlighter.tokens(input) + SQLHighlighter.tokens(input)
             for token in all {
                 XCTAssertGreaterThanOrEqual(token.range.lowerBound, 0, "\(token) in \(input)")
                 XCTAssertLessThanOrEqual(token.range.upperBound, length, "\(token) in \(input)")
@@ -129,6 +131,53 @@ final class HighlighterTests: XCTestCase {
     func testShellSingleQuotesDoNotExpand() {
         XCTAssertEqual(ShellHighlighter.tokens("echo '$HOME'"), [
             Token(kind: .string, range: 5..<12)
+        ])
+    }
+
+    func testSQLKeywordsInAnyCaseStringsAndComment() {
+        XCTAssertEqual(SQLHighlighter.tokens("select name FROM t WHERE id = 42 AND x IS null -- n"), [
+            Token(kind: .keyword, range: 0..<6),
+            Token(kind: .keyword, range: 12..<16),
+            Token(kind: .keyword, range: 19..<24),
+            Token(kind: .punctuation, range: 28..<29),
+            Token(kind: .number, range: 30..<32),
+            Token(kind: .keyword, range: 33..<36),
+            Token(kind: .keyword, range: 39..<41),
+            Token(kind: .literal, range: 42..<46),
+            Token(kind: .comment, range: 47..<51)
+        ])
+    }
+
+    func testSQLStringEscapesAndQuotedIdentifiers() {
+        XCTAssertEqual(SQLHighlighter.tokens("INSERT INTO `t` VALUES ('it''s','a\\'b');"), [
+            Token(kind: .keyword, range: 0..<6),
+            Token(kind: .keyword, range: 7..<11),
+            Token(kind: .variable, range: 12..<15),
+            Token(kind: .keyword, range: 16..<22),
+            Token(kind: .punctuation, range: 23..<24),
+            Token(kind: .string, range: 24..<28),
+            Token(kind: .string, range: 28..<31),
+            Token(kind: .punctuation, range: 31..<32),
+            Token(kind: .string, range: 32..<38),
+            Token(kind: .punctuation, range: 38..<39),
+            Token(kind: .punctuation, range: 39..<40)
+        ])
+    }
+
+    func testSQLQualifiedNamesAreNotKeywords() {
+        XCTAssertEqual(SQLHighlighter.tokens("t.date"), [
+            Token(kind: .punctuation, range: 1..<2)
+        ])
+    }
+
+    func testSQLParametersVariablesAndCasts() {
+        XCTAssertEqual(SQLHighlighter.tokens("$1 @@version :name x::text"), [
+            Token(kind: .variable, range: 0..<2),
+            Token(kind: .variable, range: 3..<12),
+            Token(kind: .variable, range: 13..<18),
+            Token(kind: .punctuation, range: 20..<21),
+            Token(kind: .punctuation, range: 21..<22),
+            Token(kind: .keyword, range: 22..<26)
         ])
     }
 }
