@@ -21,7 +21,7 @@ enum ShellScript {
     static func startsWithShellInterpreter(_ file: MappedFile) -> Bool {
         let buffer = file.buffer
         let limit = min(buffer.count, interpreterLineLimit)
-        let lineEnd = (0..<limit).first { buffer[$0] == 0x0A } ?? limit
+        let lineEnd: Int = (0..<limit).first(where: { buffer[$0] == 0x0A }) ?? limit
         let line = String(decoding: UnsafeRawBufferPointer(rebasing: buffer[0..<lineEnd]), as: UTF8.self)
         return isShellInterpreterLine(line)
     }
