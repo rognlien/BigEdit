@@ -1,8 +1,8 @@
 import AppKit
 
 /// Rectangular selection: Option-drag, or ⌃⇧↑/↓ from the caret. While one is
-/// active, ⇧ + arrows resize it. It selects and copies; any edit or other
-/// caret move turns it back into a plain caret.
+/// active, ⇧ + arrows resize it. Delete and Cut remove every row's slice;
+/// any other edit or caret move turns it back into a plain caret.
 extension ViewportView {
 
     func beginColumnSelection(at point: NSPoint) {
@@ -106,5 +106,33 @@ extension ViewportView {
                 .joined(separator: "\n")
         }
         return result
+    }
+
+    /// True when the column selection covers at least one character.
+    var hasColumnSelectionContent: Bool {
+        columnSelectionSlices().contains { !$0.isEmpty }
+    }
+
+    /// Deletes every row's slice as one undoable step, bottom row first so
+    /// the offsets above stay valid, and leaves the caret at the top-left
+    /// corner.
+    func deleteColumnSelection() {
+        let slices = columnSelectionSlices()
+        if let document, isEditingAllowed, let caret = slices.first?.lowerBound {
+            let selectionBefore = selection
+            document.undoStack.beginGrouping()
+            for slice in slices.reversed() where !slice.isEmpty {
+                document.replace(slice, with: [], selectionBefore: selectionBefore)
+            }
+            document.undoStack.endGrouping()
+            documentContentChanged()
+            selection = TextSelection(anchorOffset: caret, activeOffset: caret)
+            desiredCaretX = nil
+            onEdit?()
+            scrollByteIntoView(caret)
+            needsDisplay = true
+        } else {
+            NSSound.beep()
+        }
     }
 }

@@ -3,7 +3,7 @@ import XCTest
 @testable import BigEdit
 
 /// Rectangular selection: ⌃⇧↑/↓ grow it from the caret, ⇧ + arrows resize
-/// it, and copying takes each row's slice.
+/// it, copying takes each row's slice, and deleting removes it.
 final class ColumnSelectionTests: XCTestCase {
 
     private var temporaryFiles: [URL] = []
@@ -21,6 +21,7 @@ final class ColumnSelectionTests: XCTestCase {
         let index = LineIndex()
         index.buildSynchronously(from: file)
         let document = EditedDocument(file: file, editModel: EditModel(), lineIndex: index)
+        document.isEditable = true
         let viewport = ViewportView(frame: NSRect(x: 0, y: 0, width: 600, height: 200))
         viewport.load(document: document)
         viewport.selection = TextSelection(anchorOffset: caret, activeOffset: caret)
@@ -108,5 +109,43 @@ final class ColumnSelectionTests: XCTestCase {
         viewport.widenColumnSelection(byCharacters: 4)
 
         XCTAssertNil(viewport.columnSelectionText(cap: 4))
+    }
+
+    private func text(of viewport: ViewportView) -> String {
+        let document = viewport.document!
+        return String(decoding: document.bytes(in: 0..<document.length), as: UTF8.self)
+    }
+
+    func testDeleteRemovesEachRowsSlice() {
+        let viewport = makeViewport("abcd\nefgh\nijkl\n", caret: 1)
+        viewport.extendColumnSelection(byRows: 2)
+        viewport.widenColumnSelection(byCharacters: 2)
+
+        viewport.deleteBackward(nil)
+
+        XCTAssertEqual(text(of: viewport), "ad\neh\nil\n")
+        XCTAssertEqual(viewport.caretByteOffset, 1)
+        XCTAssertNil(viewport.columnSelection)
+    }
+
+    func testForwardDeleteRemovesWhatAShortRowHas() {
+        let viewport = makeViewport("abcd\ne\nijkl\n", caret: 1)
+        viewport.extendColumnSelection(byRows: 2)
+        viewport.widenColumnSelection(byCharacters: 2)
+
+        viewport.deleteForward(nil)
+
+        XCTAssertEqual(text(of: viewport), "ad\ne\nil\n")
+    }
+
+    func testOneUndoPutsTheColumnBack() {
+        let viewport = makeViewport("abcd\nefgh\nijkl\n", caret: 1)
+        viewport.extendColumnSelection(byRows: 2)
+        viewport.widenColumnSelection(byCharacters: 2)
+        viewport.deleteBackward(nil)
+
+        viewport.undo(nil)
+
+        XCTAssertEqual(text(of: viewport), "abcd\nefgh\nijkl\n")
     }
 }

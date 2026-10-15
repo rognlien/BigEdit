@@ -89,7 +89,7 @@ extension ViewportView: NSMenuItemValidation {
         case #selector(copy(_:)):
             enabled = columnSelection != nil || !(selection?.isEmpty ?? true)
         case #selector(cut(_:)):
-            enabled = !(selection?.isEmpty ?? true) && isEditingAllowed
+            enabled = (hasColumnSelectionContent || !(selection?.isEmpty ?? true)) && isEditingAllowed
         case #selector(paste(_:)):
             enabled = isEditingAllowed && selection != nil
                 && NSPasteboard.general.string(forType: .string) != nil

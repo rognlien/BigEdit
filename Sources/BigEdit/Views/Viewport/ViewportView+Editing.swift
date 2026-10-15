@@ -110,6 +110,14 @@ extension ViewportView {
     }
 
     override func deleteBackward(_ sender: Any?) {
+        if hasColumnSelectionContent {
+            deleteColumnSelection()
+        } else {
+            deleteCharacterBackward()
+        }
+    }
+
+    private func deleteCharacterBackward() {
         guard let document, let selection else {
             NSSound.beep()
             return
@@ -129,6 +137,14 @@ extension ViewportView {
     }
 
     override func deleteForward(_ sender: Any?) {
+        if hasColumnSelectionContent {
+            deleteColumnSelection()
+        } else {
+            deleteCharacterForward()
+        }
+    }
+
+    private func deleteCharacterForward() {
         guard let document, let selection else {
             NSSound.beep()
             return
@@ -168,7 +184,9 @@ extension ViewportView {
 
     @objc func cut(_ sender: Any?) {
         let cap = 64 * 1024 * 1024
-        if let selection, !selection.isEmpty, isEditingAllowed {
+        if hasColumnSelectionContent && isEditingAllowed {
+            cutColumnSelection(cap: cap)
+        } else if let selection, !selection.isEmpty, isEditingAllowed {
             if selection.range.count > cap {
                 presentSelectionTooLarge()
             } else {
@@ -177,6 +195,15 @@ extension ViewportView {
             }
         } else {
             NSSound.beep()
+        }
+    }
+
+    private func cutColumnSelection(cap: Int) {
+        if columnSelectionText(cap: cap) == nil {
+            presentSelectionTooLarge()
+        } else {
+            copy(nil)
+            deleteColumnSelection()
         }
     }
 
