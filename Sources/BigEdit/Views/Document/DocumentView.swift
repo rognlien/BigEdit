@@ -133,9 +133,14 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
 
     /// Attaches a file and starts showing it. With `inheritingHistory`, the
     /// file is the one just saved from the current document, and its edit
-    /// history is carried over so undo reaches back across the save.
-    func load(file: MappedFile, index: LineIndex, inheritingHistory: Bool = false) {
+    /// history is carried over so undo reaches back across the save. With
+    /// `keepingViewMode`, the file is the document reloaded, and it stays in
+    /// the view mode, and with the CSV options, it was shown in.
+    func load(file: MappedFile, index: LineIndex, inheritingHistory: Bool = false,
+              keepingViewMode: Bool = false) {
         let previous = inheritingHistory ? viewport.document : nil
+        let previousMode = formatBar.mode
+        let previousDialect = formatBar.dialect
         resetSearch()
         editModel.clear()
         replaceAllScan?.cancel()
@@ -157,11 +162,15 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
         mappedFile = file
         viewport.setCSVRendering(dialect: nil, columnLayout: nil)
         let encoding = FileFormat(scanning: file).textEncoding ?? .utf8
-        formatBar.setDetectedDialect(CSVDialect.detect(in: file, encoding: encoding))
+        let keepsColumns = keepingViewMode && previousMode == .csv
+        formatBar.setDetectedDialect(keepsColumns ? previousDialect : CSVDialect.detect(in: file, encoding: encoding))
         formatBar.setMarkdownAvailability(
             unavailableReason: DocumentView.markdownUnavailableReason(for: file))
-        formatBar.setMode(.text)
+        formatBar.setMode(keepingViewMode ? previousMode : .text)
         hideRenderedMarkdown(keepingPlace: false)
+        if keepingViewMode {
+            formatBar(formatBar, didSelect: formatBar.mode)
+        }
         layoutComponents()
         syncScroller()
         if infoPaneVisible, let document = viewport.document {

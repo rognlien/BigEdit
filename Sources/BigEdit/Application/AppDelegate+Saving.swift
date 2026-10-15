@@ -255,7 +255,8 @@ extension AppDelegate {
         document.view.close()
         document.reload(url: url, file: file, index: index)
         document.hasDiskChanges = false
-        document.view.load(file: file, index: index, inheritingHistory: inheritingHistory)
+        document.view.load(file: file, index: index, inheritingHistory: inheritingHistory,
+                           keepingViewMode: true)
         document.view.apply(settings)
         document.view.setInfoPaneWidth(infoPaneWidth)
         document.view.setFileFormat(document.format)
