@@ -175,6 +175,20 @@ final class CSVTests: XCTestCase {
         XCTAssertEqual(layout.alignedRow(["ab", "extra"]), "ab  extra")
     }
 
+    func testColumnWidthsFollowUnsavedEdits() {
+        let url = TestHelpers.writeTempFile("a\tb\t\t\t\nc\td\n")
+        defer { TestHelpers.remove(url) }
+        let file = MappedFile(path: url.path)!
+        let index = LineIndex()
+        index.buildSynchronously(from: file)
+        let document = EditedDocument(file: file, editModel: EditModel(), lineIndex: index)
+        _ = document.replace(3..<6, with: [])
+
+        let layout = CSVColumnLayout.measure(document: document, dialect: CSVDialect(delimiter: "\t"))
+
+        XCTAssertEqual(layout.columnWidths, [1, 1])
+    }
+
     func testColumnWidthIsCapped() {
         let wide = String(repeating: "x", count: 200)
         let layout = columnLayout("a\n\(wide)\n", dialect: CSVDialect())

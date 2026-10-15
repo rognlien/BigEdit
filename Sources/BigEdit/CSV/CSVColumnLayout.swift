@@ -28,8 +28,23 @@ struct CSVColumnLayout: Equatable {
     /// Column widths for `file` under `dialect`, measured from its head.
     static func measure(file: MappedFile, dialect: CSVDialect,
                         encoding: TextEncoding = .utf8) -> CSVColumnLayout {
+        let count = min(file.buffer.count, sampleByteLimit)
+        let head = Array(UnsafeRawBufferPointer(rebasing: file.buffer[0..<count]))
+        return measure(head: head, isCut: count < file.buffer.count, dialect: dialect, encoding: encoding)
+    }
+
+    /// Column widths for `document` as edited, measured from its head.
+    static func measure(document: EditedDocument, dialect: CSVDialect,
+                        encoding: TextEncoding = .utf8) -> CSVColumnLayout {
+        let count = min(document.length, sampleByteLimit)
+        let head = document.displayBytes(in: 0..<count)
+        return measure(head: head, isCut: count < document.length, dialect: dialect, encoding: encoding)
+    }
+
+    private static func measure(head: [UInt8], isCut: Bool, dialect: CSVDialect,
+                                encoding: TextEncoding) -> CSVColumnLayout {
         var widths: [Int] = []
-        for line in sampleLines(of: file, encoding: encoding) {
+        for line in sampleLines(of: head, isCut: isCut, encoding: encoding) {
             let fields = CSVParser.fields(in: line, dialect: dialect)
             for (column, field) in fields.enumerated() {
                 let width = min(field.count, maximumColumnWidth)
@@ -107,11 +122,9 @@ struct CSVColumnLayout: Equatable {
 
     /// Whole lines from the head of `file`, with any trailing partial line
     /// dropped so a cut row cannot understate a column's width.
-    private static func sampleLines(of file: MappedFile, encoding: TextEncoding) -> [String] {
-        let buffer = file.buffer
-        let count = min(buffer.count, sampleByteLimit)
-        var bytes = Array(UnsafeRawBufferPointer(rebasing: buffer[0..<count]))
-        if count < buffer.count, let lastNewline = bytes.lastIndex(of: 0x0A) {
+    private static func sampleLines(of head: [UInt8], isCut: Bool, encoding: TextEncoding) -> [String] {
+        var bytes = head
+        if isCut, let lastNewline = bytes.lastIndex(of: 0x0A) {
             bytes = Array(bytes[0..<lastNewline])
         }
         let text = encoding.decode(bytes)

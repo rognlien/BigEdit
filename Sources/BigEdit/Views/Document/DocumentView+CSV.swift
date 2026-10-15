@@ -65,8 +65,8 @@ extension DocumentView {
 
     private func applyCSVRendering(enabled: Bool, dialect: CSVDialect) {
         var columnLayout: CSVColumnLayout?
-        if enabled, let mappedFile {
-            columnLayout = CSVColumnLayout.measure(file: mappedFile, dialect: dialect,
+        if enabled, let document = viewport.document {
+            columnLayout = CSVColumnLayout.measure(document: document, dialect: dialect,
                                                    encoding: textEncoding)
         }
         viewport.setCSVRendering(dialect: enabled ? dialect : nil, columnLayout: columnLayout)
