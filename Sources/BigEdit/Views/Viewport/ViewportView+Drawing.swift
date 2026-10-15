@@ -269,7 +269,7 @@ extension ViewportView {
     func highlightedRow(_ text: String, startState: HighlightState)
         -> (NSAttributedString, HighlightState) {
         let (tokens, endState) = rowTokens(text, startState: startState)
-        return (theme.attributedRow(text, tokens: tokens, font: font), endState)
+        return (theme.attributedRow(text, tokens: tokens, font: font, paragraphStyle: tabStops), endState)
     }
 
     /// Dispatches a row to the active highlighter for its tokens and the

@@ -45,8 +45,9 @@ struct HighlightTheme {
     }
 
     /// `text` in the default colour with each token's style layered on in order.
-    func attributedRow(_ text: String, tokens: [Token], font: NSFont) -> NSAttributedString {
-        let result = NSMutableAttributedString.plainRow(text, font: font)
+    func attributedRow(_ text: String, tokens: [Token], font: NSFont,
+                       paragraphStyle: NSParagraphStyle? = nil) -> NSAttributedString {
+        let result = NSMutableAttributedString.plainRow(text, font: font, paragraphStyle: paragraphStyle)
         var boldFont: NSFont?
         for token in tokens {
             let style = style(for: token.kind)
