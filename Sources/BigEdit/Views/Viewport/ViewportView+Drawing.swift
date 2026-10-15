@@ -346,8 +346,10 @@ extension ViewportView {
     }
 
     /// Draws the selection rectangle for the portion of `visualLine` covered
-    /// by the current selection. Lines fully inside a multi-row selection fill
-    /// to the viewport edge, matching standard macOS text-view behaviour.
+    /// by the current selection. A selection that runs past the row's text —
+    /// into the line ending or onto the next row — fills to the viewport edge,
+    /// matching standard macOS text-view behaviour; one that stops at the end
+    /// of the text stops there.
     private func drawSelectionForRow(
         visualLine: LineIndex.VisualLine,
         rowY: CGFloat,
@@ -371,8 +373,7 @@ extension ViewportView {
         }
 
         let rightX: CGFloat
-        if selectedRange.upperBound >= rowEnd {
-            // Selection continues onto the next row — fill to the viewport edge.
+        if ViewportView.selectionRunsPastRow(selectedRange, rowEnd: rowEnd) {
             rightX = max(0, bounds.width - textOriginX + horizontalOffset)
         } else {
             rightX = xOffset(inRow: visualLine, forByte: selectedRange.upperBound)
@@ -386,6 +387,10 @@ extension ViewportView {
         )
         NSColor.selectedTextBackgroundColor.setFill()
         rect.fill()
+    }
+
+    static func selectionRunsPastRow(_ selectedRange: Range<Int>, rowEnd: Int) -> Bool {
+        selectedRange.upperBound > rowEnd
     }
 
     /// Fills the part of `visualLine` the column selection covers. A column
