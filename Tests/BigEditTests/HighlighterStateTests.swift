@@ -59,4 +59,43 @@ final class HighlighterStateTests: XCTestCase {
     func testYAMLPlainValueDoesNotOpenScalar() {
         XCTAssertEqual(YAMLHighlighter.endState("url: http://example.com", start: .normal), .normal)
     }
+
+    // MARK: Shell strings and here-documents
+
+    func testShellStringsCarryAcrossRows() {
+        XCTAssertEqual(ShellHighlighter.endState("echo 'multi", start: .normal), .singleQuotedString)
+        XCTAssertEqual(ShellHighlighter.endState("still \" inside", start: .singleQuotedString),
+                       .singleQuotedString)
+        XCTAssertEqual(ShellHighlighter.endState("end' # x", start: .singleQuotedString), .normal)
+        XCTAssertEqual(ShellHighlighter.endState("echo \"a \\\"", start: .normal), .doubleQuotedString)
+        XCTAssertEqual(ShellHighlighter.endState("b\"", start: .doubleQuotedString), .normal)
+    }
+
+    func testShellHereDocumentRunsToItsDelimiter() {
+        let open = HighlightState.hereDocument(delimiter: "EOF", stripsTabs: false, expands: true)
+        XCTAssertEqual(ShellHighlighter.endState("cat <<EOF > out", start: .normal), open)
+        XCTAssertEqual(ShellHighlighter.endState("echo \"not code", start: open), open)
+        XCTAssertEqual(ShellHighlighter.endState(" EOF", start: open), open)
+        XCTAssertEqual(ShellHighlighter.endState("EOF", start: open), .normal)
+    }
+
+    func testShellQuotedHereDocumentDoesNotExpand() {
+        let open = HighlightState.hereDocument(delimiter: "END", stripsTabs: true, expands: false)
+        XCTAssertEqual(ShellHighlighter.endState("cat <<-'END'", start: .normal), open)
+        XCTAssertEqual(ShellHighlighter.tokens("\t$HOME", startState: open).0,
+                       [Token(kind: .string, range: 0..<6)])
+        XCTAssertEqual(ShellHighlighter.endState("\t\tEND", start: open), .normal)
+    }
+
+    func testShellHereDocumentExpandsParameters() {
+        let open = HighlightState.hereDocument(delimiter: "EOF", stripsTabs: false, expands: true)
+        XCTAssertEqual(ShellHighlighter.tokens("home: $HOME", startState: open).0, [
+            Token(kind: .string, range: 0..<11),
+            Token(kind: .variable, range: 6..<11)
+        ])
+    }
+
+    func testShellHereStringIsNotAHereDocument() {
+        XCTAssertEqual(ShellHighlighter.endState("cat <<< \"$x\"", start: .normal), .normal)
+    }
 }

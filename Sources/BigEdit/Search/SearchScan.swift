@@ -33,6 +33,9 @@ final class SearchScan {
     /// matching folds ASCII only; the regular-expression engine folds Unicode.
     let caseSensitive: Bool
 
+    /// Whether `.` matches a line break, in regular-expression mode.
+    let dotMatchesNewline: Bool
+
     /// The compiled pattern, in regular-expression mode.
     private let expression: NSRegularExpression?
 
@@ -86,6 +89,7 @@ final class SearchScan {
         }
         self.queryBytes = bytes
         self.caseSensitive = caseSensitive
+        self.dotMatchesNewline = false
         self.foldedQueryBytes = bytes.map(SearchScan.foldByte)
         self.logicalScanWindow = logicalScanWindow
         self.mode = .literal
@@ -94,12 +98,17 @@ final class SearchScan {
     }
 
     /// Fails if `pattern` is empty or is not a valid regular expression.
-    /// `^` and `$` match at line boundaries, as they do in `grep`.
+    /// `^` and `$` match at line boundaries, as they do in `grep`; `.`
+    /// stops at a line break unless `dotMatchesNewline`.
     init?(regularExpression pattern: String, caseSensitive: Bool = true,
+          dotMatchesNewline: Bool = false,
           logicalScanWindow: Int = 64 * 1024 * 1024, encoding: TextEncoding = .utf8) {
         var options: NSRegularExpression.Options = [.anchorsMatchLines]
         if !caseSensitive {
             options.insert(.caseInsensitive)
+        }
+        if dotMatchesNewline {
+            options.insert(.dotMatchesLineSeparators)
         }
         guard !pattern.isEmpty, logicalScanWindow > 0,
               let compiled = try? NSRegularExpression(pattern: pattern, options: options) else {
@@ -107,6 +116,7 @@ final class SearchScan {
         }
         self.queryBytes = Array(pattern.utf8)
         self.caseSensitive = caseSensitive
+        self.dotMatchesNewline = dotMatchesNewline
         self.foldedQueryBytes = []
         self.logicalScanWindow = logicalScanWindow
         self.mode = .regularExpression

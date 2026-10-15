@@ -76,6 +76,51 @@ The package opens directly in Xcode (`File ▸ Open…` the `BigEdit` folder).
   Go to Line and Process Lines switch back to Text on their own. Raw HTML
   in the source is left out and the page runs no scripts; links open in
   your browser.
+- **⌘,** — Settings: appearance (System, Light or Dark), the editor's font
+  family and size (fixed-width fonts only; ⌘+ / ⌘− / ⌘0 change the same
+  size), whether rendered Markdown loads pictures from the web, and
+  automatic update checks. Changes apply at once to every open document.
+
+- **⇧⌘L** — Edit ▸ Process Lines: remove duplicates, keep or remove lines
+  containing text, sort (plain, natural, or by a regex key), replace within
+  each line, and the **set operations**: remove the lines that are in another
+  list, keep only those that are, add what another list has that this one
+  lacks, or keep what is in only one of the two. The other list is any other
+  open document or a file on disk; lines can be matched trimmed, ignoring
+  case, or by a regular expression's first match (its first group, if any),
+  so two CSV exports can be intersected on one column. Removing and keeping
+  stream — they hold only the other list — so a document above the
+  Process Lines ceiling is offered a new file to write the result to.
+- **⇧⌘D** — Edit ▸ Compare Documents: two open documents as sets of lines
+  (only in the first, only in the second, in both — `comm` with the order
+  kept) and as a sequence diff, the way `diff -u` writes it. Each section
+  can be copied, saved to a file, or opened as a document; the Changes
+  section saves as a `.diff` that `patch` reads.
+- **Saved Patterns** — a find pattern, its replacement and its options can be
+  saved under a name from the magnifier menu, the Find menu, or the Process
+  Lines sheet, and chosen again from any of them. They live in one JSON file
+  in Application Support; **Keep in iCloud Drive** moves it into a BigEdit
+  folder in your iCloud Drive, where every Mac signed in to the account sees
+  it.
+- **Regular expressions, as you type** — a pattern that does not compile is
+  explained in red (an unclosed group, a quantifier with nothing before it, a
+  trailing backslash…) before Enter; on documents up to 64 MB the query runs
+  after a short pause without moving the view; in replace mode the second row
+  shows what `$1` expands to for the current match. The magnifier menu also
+  has **Dot Matches Newline** and a **Regular Expression Reference** card.
+- **Replace All with a pattern** has no match cap: above the 2,000-match
+  materialisation limit BigEdit offers to stream the result, reading the
+  document once in windows cut at line boundaries and writing it back to the
+  file (which then reloads) or to a new file.
+- **iCloud Drive** — a file iCloud has not downloaded is fetched, with a
+  progress sheet, before it opens, instead of showing an empty placeholder.
+- **Apple Intelligence** — on macOS 26 with Apple Intelligence turned on,
+  the magnifier menu offers **Describe a Pattern…**, which turns a sentence
+  and a few sample lines into a regular expression you can edit before it
+  runs, and **Explain This Pattern**; the Process Lines sheet has
+  **Describe…**. The on-device model sees a pattern and at most a dozen
+  lines, never the document, and nothing leaves the Mac. On older systems
+  the items do not appear.
 
 ## Command line
 
@@ -164,8 +209,9 @@ App shell (window, menu, open panel) is in `AppDelegate.swift` / `main.swift`.
   match cannot span more than ~8 MB of lines. Matches beyond the 1,000,000th
   are not collected (shown as `N+`), and Replace All with a pattern only
   works under the materialisation cap — there is no streaming form of it.
-- Syntax highlighting covers XML, JSON, Markdown, and YAML; other files draw
-  as plain text.
+- Syntax highlighting covers XML, JSON, Markdown, YAML, and shell scripts
+  (sh, bash, zsh and ksh, recognised by extension, dotfile name or `#!`
+  line); other files draw as plain text.
 - Files are read as UTF-8, or as Windows-1252 when they are not valid UTF-8
   (the status bar says which). A Windows-1252 file reads, copies, searches
   and counts correctly but stays read-only, since edits are made in UTF-8.

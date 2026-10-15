@@ -1,11 +1,11 @@
 name: CI
 
-# Builds the release configuration and runs the unit tests, on demand only.
-# macOS runners are expensive for a private repository, so this no longer
-# runs on every push and pull request: run it from the Actions tab when a
-# branch needs checking, and rely on the release workflow — which runs the
-# same tests before it signs anything — for every tagged release.
+# Builds the release configuration and runs the unit tests. Runs for every
+# pull request, and on demand from the Actions tab for any branch. The
+# repository is public, so standard runners cost nothing; the release
+# workflow runs the same tests again before it signs anything.
 on:
+  pull_request:
   workflow_dispatch:
 
 jobs:
