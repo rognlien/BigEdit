@@ -544,34 +544,38 @@ final class ViewportView: NSView {
         if handleColumnSelectionKey(event) {
             return
         }
-        switch event.keyCode {
-        case 126:                                          // up
-            if command { setScrollRow(0) }
-            else if shift || hasCaret { moveCaretVertically(by: -1, extend: shift) }
-            else { scrollByRows(-1) }
-        case 125:                                          // down
-            if command { setScrollRow(maxScrollRow) }
-            else if shift || hasCaret { moveCaretVertically(by: 1, extend: shift) }
-            else { scrollByRows(1) }
-        case 123:                                          // left
-            if shift || hasCaret { moveCaretHorizontally(forward: false, extend: shift) }
-            else { shiftHorizontally(by: -characterWidth * 8) }
-        case 124:                                          // right
-            if shift || hasCaret { moveCaretHorizontally(forward: true, extend: shift) }
-            else { shiftHorizontally(by: characterWidth * 8) }
-        case 116: scrollByPages(-1)                        // page up
-        case 121: scrollByPages(1)                         // page down
-        case 115: setScrollRow(0)                          // home
-        case 119: setScrollRow(maxScrollRow)               // end
-        default:
-            // Control-key bindings are mostly caret moves, which read-only
-            // documents support too.
-            if isEditingAllowed || event.modifierFlags.contains(.control) {
-                // Routes through the input context: typing arrives via
-                // insertText, editing keys via the NSResponder actions below.
-                interpretKeyEvents([event])
-            } else {
-                super.keyDown(with: event)
+        let arrowKeyCodes: Set<UInt16> = [123, 124, 125, 126]
+        if command && arrowKeyCodes.contains(event.keyCode) {
+            // The standard key bindings turn these into line and document moves.
+            interpretKeyEvents([event])
+        } else {
+            switch event.keyCode {
+            case 126:                                          // up
+                if shift || hasCaret { moveCaretVertically(by: -1, extend: shift) }
+                else { scrollByRows(-1) }
+            case 125:                                          // down
+                if shift || hasCaret { moveCaretVertically(by: 1, extend: shift) }
+                else { scrollByRows(1) }
+            case 123:                                          // left
+                if shift || hasCaret { moveCaretHorizontally(forward: false, extend: shift) }
+                else { shiftHorizontally(by: -characterWidth * 8) }
+            case 124:                                          // right
+                if shift || hasCaret { moveCaretHorizontally(forward: true, extend: shift) }
+                else { shiftHorizontally(by: characterWidth * 8) }
+            case 116: scrollByPages(-1)                        // page up
+            case 121: scrollByPages(1)                         // page down
+            case 115: setScrollRow(0)                          // home
+            case 119: setScrollRow(maxScrollRow)               // end
+            default:
+                // Control-key bindings are mostly caret moves, which read-only
+                // documents support too.
+                if isEditingAllowed || event.modifierFlags.contains(.control) {
+                    // Routes through the input context: typing arrives via
+                    // insertText, editing keys via the NSResponder actions below.
+                    interpretKeyEvents([event])
+                } else {
+                    super.keyDown(with: event)
+                }
             }
         }
     }

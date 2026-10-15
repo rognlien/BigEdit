@@ -101,6 +101,49 @@ extension ViewportView {
         moveCaretToLineBoundary(end: true, extend: true)
     }
 
+    func moveCaretToDocumentBoundary(end: Bool, extend: Bool) {
+        ensureCaret()
+        let target = end ? (document?.length ?? 0) : 0
+        desiredCaretX = nil
+        setCaret(to: target, extend: extend)
+        scrollByteIntoView(target)
+        needsDisplay = true
+    }
+
+    // Command-Left and Command-Right are bound to these in the standard key bindings.
+    override func moveToLeftEndOfLine(_ sender: Any?) {
+        moveCaretToLineBoundary(end: false, extend: false)
+    }
+
+    override func moveToLeftEndOfLineAndModifySelection(_ sender: Any?) {
+        moveCaretToLineBoundary(end: false, extend: true)
+    }
+
+    override func moveToRightEndOfLine(_ sender: Any?) {
+        moveCaretToLineBoundary(end: true, extend: false)
+    }
+
+    override func moveToRightEndOfLineAndModifySelection(_ sender: Any?) {
+        moveCaretToLineBoundary(end: true, extend: true)
+    }
+
+    // Command-Up and Command-Down are bound to these in the standard key bindings.
+    override func moveToBeginningOfDocument(_ sender: Any?) {
+        moveCaretToDocumentBoundary(end: false, extend: false)
+    }
+
+    override func moveToBeginningOfDocumentAndModifySelection(_ sender: Any?) {
+        moveCaretToDocumentBoundary(end: false, extend: true)
+    }
+
+    override func moveToEndOfDocument(_ sender: Any?) {
+        moveCaretToDocumentBoundary(end: true, extend: false)
+    }
+
+    override func moveToEndOfDocumentAndModifySelection(_ sender: Any?) {
+        moveCaretToDocumentBoundary(end: true, extend: true)
+    }
+
     /// The drawn x of the caret at `offset` within the row at `row`.
     func caretX(forOffset offset: Int, row: Int) -> CGFloat {
         var result: CGFloat = 0
