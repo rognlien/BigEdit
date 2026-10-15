@@ -132,4 +132,21 @@ final class CommandLineToolTests: XCTestCase {
         FileManager.default.createFile(atPath: loose.path, contents: Data())
         XCTAssertNil(try CommandLineTool.applicationURL(forExecutableAt: loose.path))
     }
+
+    // MARK: - Choosing which copy gets the files
+
+    func testARunningCopyWinsOverTheToolsOwnBundle() {
+        let running = URL(fileURLWithPath: "/Applications/BigEdit.app")
+        let bundled = URL(fileURLWithPath: "/Users/dev/BigEdit/BigEdit.app")
+        XCTAssertEqual(CommandLineTool.applicationToUse(running: running, bundled: bundled), running)
+    }
+
+    func testTheToolsOwnBundleIsLaunchedWhenNothingRuns() {
+        let bundled = URL(fileURLWithPath: "/Applications/BigEdit.app")
+        XCTAssertEqual(CommandLineTool.applicationToUse(running: nil, bundled: bundled), bundled)
+    }
+
+    func testNoBundleAtAllFallsBackToNil() {
+        XCTAssertNil(CommandLineTool.applicationToUse(running: nil, bundled: nil))
+    }
 }

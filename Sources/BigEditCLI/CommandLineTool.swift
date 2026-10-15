@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 /// The `bigedit` command line tool.
@@ -47,7 +48,9 @@ public enum CommandLineTool {
                 print("bigedit \(toolVersion)")
             case .open(let paths):
                 let files = try paths.map { try prepareFile(at: $0) }
-                let application = try applicationURL(forExecutableAt: executablePath)
+                let bundled = try applicationURL(forExecutableAt: executablePath)
+                let application = applicationToUse(
+                    running: runningApplicationURL(), bundled: bundled)
                 status = launch(application: application, files: files)
             }
         } catch {
@@ -135,6 +138,24 @@ public enum CommandLineTool {
             }
         }
         return result
+    }
+
+    /// The identifier every copy of BigEdit ships under, however it was built
+    /// or wherever it was installed.
+    static let bundleIdentifier = "io.maendeleo.BigEdit"
+
+    /// The bundle of a BigEdit that is already running, if there is one.
+    static func runningApplicationURL() -> URL? {
+        NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier)
+            .first?.bundleURL
+    }
+
+    /// A running BigEdit takes the files, even when the tool belongs to
+    /// another copy: `open` reuses the copy it is pointed at and would start
+    /// a second instance otherwise. With none running, the tool's own bundle
+    /// is launched.
+    static func applicationToUse(running: URL?, bundled: URL?) -> URL? {
+        running ?? bundled
     }
 
     /// Hands the files to BigEdit via `open`. A `nil` application means the
