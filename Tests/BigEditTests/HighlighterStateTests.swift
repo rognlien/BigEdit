@@ -98,4 +98,32 @@ final class HighlighterStateTests: XCTestCase {
     func testShellHereStringIsNotAHereDocument() {
         XCTAssertEqual(ShellHighlighter.endState("cat <<< \"$x\"", start: .normal), .normal)
     }
+
+    // MARK: SQL comments, strings and dollar-quoted bodies
+
+    func testSQLBlockCommentCarriesAcrossRows() {
+        XCTAssertEqual(SQLHighlighter.endState("SELECT 1; /* start", start: .normal), .blockComment)
+        XCTAssertEqual(SQLHighlighter.endState("-- not a close */", start: .blockComment), .normal)
+        XCTAssertEqual(SQLHighlighter.endState("'*/' still", start: .blockComment), .singleQuotedString)
+    }
+
+    func testSQLStringCarriesAcrossRows() {
+        XCTAssertEqual(SQLHighlighter.endState("VALUES ('line one", start: .normal), .singleQuotedString)
+        XCTAssertEqual(SQLHighlighter.endState("it''s -- inside", start: .singleQuotedString),
+                       .singleQuotedString)
+        XCTAssertEqual(SQLHighlighter.endState("end'); -- x", start: .singleQuotedString), .normal)
+        XCTAssertEqual(SQLHighlighter.endState("'a\\' b'", start: .normal), .normal)
+    }
+
+    func testSQLDollarQuotedBodyRunsToItsDelimiter() {
+        let open = HighlightState.dollarQuotedString(delimiter: "$body$")
+        XCTAssertEqual(SQLHighlighter.endState("AS $body$", start: .normal), open)
+        XCTAssertEqual(SQLHighlighter.endState("SELECT 'x $$ y", start: open), open)
+        XCTAssertEqual(SQLHighlighter.tokens("$body$ LANGUAGE sql;", startState: open).0, [
+            Token(kind: .string, range: 0..<6),
+            Token(kind: .keyword, range: 7..<15),
+            Token(kind: .punctuation, range: 19..<20)
+        ])
+        XCTAssertEqual(SQLHighlighter.endState("AS $$ SELECT 1 $$;", start: .normal), .normal)
+    }
 }

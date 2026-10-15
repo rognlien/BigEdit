@@ -12,4 +12,5 @@ enum HighlightState: Equatable {
     case singleQuotedString
     case doubleQuotedString
     case hereDocument(delimiter: String, stripsTabs: Bool, expands: Bool)
+    case dollarQuotedString(delimiter: String)
 }

@@ -110,6 +110,7 @@ extension DocumentView {
             "md", "markdown", "mdown", "mkd", "mdx"
         ]
         let yamlExtensions: Set<String> = ["yaml", "yml"]
+        let sqlExtensions: Set<String> = ["sql", "ddl", "pgsql", "mysql"]
         var mode = SyntaxMode.plain
         let fileExtension = (file.path as NSString).pathExtension.lowercased()
         if xmlExtensions.contains(fileExtension) {
@@ -120,6 +121,8 @@ extension DocumentView {
             mode = .markdown
         } else if yamlExtensions.contains(fileExtension) {
             mode = .yaml
+        } else if sqlExtensions.contains(fileExtension) {
+            mode = .sql
         } else if ShellScript.isShellScript(named: (file.path as NSString).lastPathComponent)
                     || ShellScript.startsWithShellInterpreter(file) {
             mode = .shell

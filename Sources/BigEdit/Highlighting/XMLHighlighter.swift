@@ -8,6 +8,7 @@ enum SyntaxMode {
     case markdown
     case yaml
     case shell
+    case sql
 }
 
 /// A small XML syntax highlighter. It tokenizes one row of text at a time,

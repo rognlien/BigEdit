@@ -273,6 +273,7 @@ extension ViewportView {
         case .markdown: return MarkdownHighlighter.tokens(text, startState: startState)
         case .yaml: return YAMLHighlighter.tokens(text, startState: startState)
         case .shell: return ShellHighlighter.tokens(text, startState: startState)
+        case .sql: return SQLHighlighter.tokens(text, startState: startState)
         case .plain: return ([], .normal)
         }
     }
@@ -286,6 +287,7 @@ extension ViewportView {
         case .markdown: return MarkdownHighlighter.endState(text, start: startState)
         case .yaml: return YAMLHighlighter.endState(text, start: startState)
         case .shell: return ShellHighlighter.endState(text, start: startState)
+        case .sql: return SQLHighlighter.endState(text, start: startState)
         case .plain: return .normal
         }
     }
