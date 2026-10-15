@@ -62,8 +62,22 @@ the streaming rule above it.
       - Raise the Replace All materialisation cap by moving the layout's prefix
         sums into a balanced tree (same pattern as `PieceTable`).
 - [ ] **Regular-expression search.** One match cannot span more than one
-      scan window (~8 MB of lines), and Replace All with a pattern works only
-      under the materialisation cap — there is no streaming form of it.
+      scan window (~4 MB of lines); the streaming Replace All has the same
+      bound, and writes to a file rather than landing as an undoable edit.
+- [ ] **Compare Documents.** Both lists are held in memory (256 MB each);
+      a gap with no unique lines larger than the Myers limit is reported as
+      one replacement rather than diffed. A view-only diff over two line
+      indexes would lift the ceiling.
+- [ ] **Apple Intelligence.** Only patterns: a sentence to a regular
+      expression and back. Describing a whole Process Lines operation
+      ("remove lines that look like timestamps") would need the sheet's
+      choices generated too. Writing Tools on the custom-drawn viewport
+      would need `NSWritingToolsCoordinator` adopted — useful for Markdown,
+      not for logs.
+- [ ] **iCloud.** The saved patterns sync as a plain file in iCloud Drive.
+      `NSUbiquitousKeyValueStore` for preferences, or CloudKit, needs an
+      iCloud container and an embedded provisioning profile in the Developer
+      ID build; deferred until the App Store question is decided.
 - [ ] **Follow File.** Only a clean document follows; an append to a file
       with unsaved edits would have to be spliced in behind every edit.
 - [ ] **Windows-1252 / Latin-1 files are read-only**, since edits are made in
@@ -214,6 +228,24 @@ they are not proposed again.
       is created by the first character typed into it.
 - [x] **Process Lines runs under CSV columns**, like sorting: it rewrites the
       whole document, which needs no caret.
+- [x] **Set operations** — subtract, intersect, union, symmetric difference
+      against another open document or a file, matched by whole line, trimmed,
+      case-folded, or a regex key; subtract and intersect stream to a new file
+      above the ceiling. Checked against `grep -Fxf` by
+      `scripts/verify-process-lines.sh`.
+- [x] **Compare Documents** — three-way line-set compare plus a patience /
+      Myers sequence diff with unified export.
+- [x] **Saved patterns** — one JSON library shared by the find bar, the Find
+      menu and the Process Lines sheet, with a manage window and an iCloud
+      Drive location.
+- [x] **Live regular-expression feedback** — problems explained as typed,
+      live search under 64 MB, `$1` preview, Dot Matches Newline, reference
+      card.
+- [x] **Streaming regular-expression Replace All** — no match cap; checked
+      against `perl -pe` by `scripts/verify-replace-regex.sh`.
+- [x] **iCloud Drive placeholders** are downloaded before opening.
+- [x] **Apple Intelligence** — describe a pattern, explain a pattern, behind
+      `canImport(FoundationModels)` and an availability check.
 
 ## Verification scripts to keep around
 
@@ -237,3 +269,5 @@ independent implementation.
   `grep -oE`.
 - `scripts/verify-encodings.sh` — Windows-1252 and Latin-1 decoding against
   `iconv`.
+- `scripts/verify-replace-regex.sh` — the streaming regular-expression
+  replace against `perl -pe 's///g'`.
