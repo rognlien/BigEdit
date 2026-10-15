@@ -49,7 +49,7 @@ extension ViewportView {
                               width: bounds.width - textOriginX, height: bounds.height - pinnedHeaderHeight)
         NSGraphicsContext.current?.saveGraphicsState()
         NSBezierPath(rect: textArea).addClip()
-        NSColor.gridColor.setStroke()
+        ViewportView.csvGridColor.setStroke()
         let grid = NSBezierPath()
         let dividers = csvDividerPositions()
         let tableRight = min(textArea.maxX, dividers.last ?? textArea.maxX)  // no grid past the last column
@@ -64,6 +64,14 @@ extension ViewportView {
         }
         grid.stroke()
         NSGraphicsContext.current?.restoreGraphicsState()
+    }
+
+    /// The system grid colour in light mode. In dark mode the system one is
+    /// darker than the editor background, so the lines step up from the
+    /// background by the same amount light mode steps down.
+    private static let csvGridColor = NSColor(name: nil) { appearance in
+        let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        return isDark ? NSColor(white: 0.22, alpha: 1) : NSColor.gridColor
     }
 
     private func drawCSVColumnDividers(gutterWidth: CGFloat) {
