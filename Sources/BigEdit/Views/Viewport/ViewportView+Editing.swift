@@ -176,6 +176,12 @@ extension ViewportView {
         }
     }
 
+    /// Option-Tab types a tab even under CSV columns, where Tab moves
+    /// between cells — the system's binding for a literal tab.
+    override func insertTabIgnoringFieldEditor(_ sender: Any?) {
+        insertBytesAtSelection([0x09])
+    }
+
     override func insertBacktab(_ sender: Any?) {
         if isCSVRenderingActive {
             moveToAdjacentCSVCell(forward: false)

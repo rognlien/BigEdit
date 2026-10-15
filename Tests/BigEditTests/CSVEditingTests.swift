@@ -78,6 +78,17 @@ final class CSVEditingTests: XCTestCase {
         XCTAssertEqual(text(of: document), "name,age\nbob,42\n", "moving edits nothing")
     }
 
+    func testOptionTabTypesATabInsideACell() {
+        let (viewport, document) = makeViewport("name,age\nbob,42\n")
+        let secondRow = viewport.layout!.visualLines(forRows: 1..<2).first!
+        let insideBob = secondRow.byteRange.lowerBound + 1
+        viewport.selection = TextSelection(anchorOffset: insideBob, activeOffset: insideBob)
+
+        viewport.insertTabIgnoringFieldEditor(nil)
+
+        XCTAssertEqual(text(of: document), "name,age\nb\tob,42\n")
+    }
+
     func testTabPastTheLastColumnAddsOne() {
         let (viewport, document) = makeViewport("name,age\nbob,42\nann,7\n")
         let secondRow = viewport.layout!.visualLines(forRows: 1..<2).first!
