@@ -42,16 +42,39 @@ final class CompareDocumentsSheet: NSObject {
     func present(in parent: NSWindow, lists: [OtherLineList], activeIndex: Int,
                  completion: @escaping (CompareRequest?) -> Void) {
         self.completion = completion
+        load(lists: lists, activeIndex: activeIndex)
+        parent.beginSheet(window) { _ in }
+    }
+
+    /// Fills both menus without showing the sheet. Items are tagged with
+    /// their index into `lists`, so documents that share a name each keep
+    /// their own item.
+    func load(lists: [OtherLineList], activeIndex: Int) {
         self.lists = lists
         for popUp in [firstPopUp, secondPopUp] {
             popUp.removeAllItems()
-            popUp.addItems(withTitles: lists.map(\.name))
+            for (position, list) in lists.enumerated() {
+                popUp.addItem(title: list.name, tag: position)
+            }
         }
         let first = lists.indices.contains(activeIndex) ? activeIndex : 0
         let second = lists.count > 1 ? (first + 1) % lists.count : first
+        firstPopUp.selectItem(withTag: first)
+        secondPopUp.selectItem(withTag: second)
+    }
+
+    /// The menus' item counts and selected lists — for tests.
+    var menuItemCounts: (first: Int, second: Int) {
+        (firstPopUp.numberOfItems, secondPopUp.numberOfItems)
+    }
+
+    func choose(firstAtMenuPosition first: Int, secondAtMenuPosition second: Int) {
         firstPopUp.selectItem(at: first)
         secondPopUp.selectItem(at: second)
-        parent.beginSheet(window) { _ in }
+    }
+
+    var selectedIndexes: (first: Int, second: Int) {
+        (firstPopUp.selectedTag(), secondPopUp.selectedTag())
     }
 
     // MARK: - Building
@@ -121,8 +144,8 @@ final class CompareDocumentsSheet: NSObject {
     }
 
     @objc private func compareTapped() {
-        let first = firstPopUp.indexOfSelectedItem
-        let second = secondPopUp.indexOfSelectedItem
+        let first = firstPopUp.selectedTag()
+        let second = secondPopUp.selectedTag()
         guard lists.indices.contains(first), lists.indices.contains(second) else {
             NSSound.beep()
             return
