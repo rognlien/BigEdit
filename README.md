@@ -54,7 +54,8 @@ The package opens directly in Xcode (`File ▸ Open…` the `BigEdit` folder).
   The list is built row by row as you scroll it, so a million matches cost
   nothing until they are looked at; the first 100,000 are listed.
 - **Text / CSV / Markdown** — the selector at the top right of the editor. The CSV side
-  becomes available when the file is detected as delimited data, and turns it
+  works on any file — when the file is not detected as delimited data, it
+  first asks for the delimiter, quote and header row — and turns it
   into aligned columns on a faint grid, with options for the delimiter,
   quote character, header row, pinning the header while scrolling, and
   trimming field spaces. Clicks, selection, search highlights and typing

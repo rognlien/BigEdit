@@ -13,11 +13,11 @@ protocol FormatBarDelegate: AnyObject {
 /// its right-hand end.
 ///
 /// The selector is a three-segment radio control: **Text**, **CSV** or
-/// **Markdown**. CSV stays disabled until detection finds delimited data, and
-/// Markdown until the document is known to be Markdown small enough to render,
-/// so an ordinary file cannot be put into a mode that would make no sense for
-/// it. Choosing CSV reveals a second row with the options that decide how the
-/// file is split into columns.
+/// **Markdown**. CSV can always be chosen; when detection found no delimited
+/// data, choosing it first asks how the file is split into columns. Markdown
+/// stays disabled until the document is known to be Markdown small enough to
+/// render. Choosing CSV reveals a second row with the options that decide how
+/// the file is split into columns.
 final class FormatBar: NSView {
 
     enum Mode {
@@ -36,8 +36,9 @@ final class FormatBar: NSView {
     private(set) var mode: Mode = .text
     private(set) var dialect = CSVDialect()
 
-    /// Whether detection found delimited data in the current document.
-    private var isCSVAvailable = false
+    /// Whether the dialect was detected in the current document or chosen
+    /// for it, so CSV can be shown without asking.
+    private var isDialectKnown = false
 
     /// Why Markdown cannot be rendered for the current document, or nil when
     /// it can.
@@ -54,7 +55,7 @@ final class FormatBar: NSView {
     private let trimCheckbox = NSButton()
 
     /// The named delimiters offered, in menu order. `nil` marks the custom entry.
-    private static let delimiterChoices: [(title: String, character: Character?)] = [
+    static let delimiterChoices: [(title: String, character: Character?)] = [
         ("Comma  ,", ","),
         ("Semicolon  ;", ";"),
         ("Tab", "\t"),
@@ -62,7 +63,7 @@ final class FormatBar: NSView {
         ("Custom…", nil)
     ]
 
-    private static let quoteChoices: [(title: String, character: Character?)] = [
+    static let quoteChoices: [(title: String, character: Character?)] = [
         ("Double  \"", "\""),
         ("Single  '", "'"),
         ("None", nil)
@@ -86,7 +87,7 @@ final class FormatBar: NSView {
     /// and with which dialect. Passing `nil` removes the CSV option and returns
     /// the bar to plain text.
     func setDetectedDialect(_ detected: CSVDialect?) {
-        isCSVAvailable = detected != nil
+        isDialectKnown = detected != nil
         if let detected {
             dialect = detected
         }
@@ -121,7 +122,7 @@ final class FormatBar: NSView {
     private func availableMode(_ requested: Mode) -> Mode {
         var available = requested
         switch requested {
-        case .csv where !isCSVAvailable,
+        case .csv where !isDialectKnown,
              .markdown where markdownUnavailableReason != nil:
             available = .text
         default:
@@ -193,14 +194,13 @@ final class FormatBar: NSView {
     private static let segmentModes: [Mode] = [.text, .csv, .markdown]
 
     /// Every choice is always visible, so the control never changes width;
-    /// CSV and Markdown stay disabled until the document supports them, which
-    /// is what "detection enables the selector" looks like on screen.
+    /// Markdown stays disabled until the document supports it.
     private func updateModeSelector() {
         modeSelector.setEnabled(true, forSegment: 0)
-        modeSelector.setEnabled(isCSVAvailable, forSegment: 1)
+        modeSelector.setEnabled(true, forSegment: 1)
         modeSelector.setEnabled(markdownUnavailableReason == nil, forSegment: 2)
         modeSelector.selectedSegment = FormatBar.segmentModes.firstIndex(of: mode) ?? 0
-        modeSelector.setToolTip(isCSVAvailable ? nil : "This file does not look like delimited data",
+        modeSelector.setToolTip(isDialectKnown ? nil : "Choose how to split this file into columns",
                                 forSegment: 1)
         modeSelector.setToolTip(markdownUnavailableReason, forSegment: 2)
     }
@@ -234,10 +234,41 @@ final class FormatBar: NSView {
     // MARK: - Actions
 
     @objc private func modeChanged() {
-        mode = FormatBar.segmentModes[modeSelector.selectedSegment]
+        let requested = FormatBar.segmentModes[modeSelector.selectedSegment]
+        if requested == .csv && !isDialectKnown {
+            updateModeSelector()
+            askForDialect()
+        } else {
+            select(requested)
+        }
+    }
+
+    private func select(_ newMode: Mode) {
+        mode = newMode
+        updateModeSelector()
         applyModeVisibility()
         layoutChildren()
         delegate?.formatBar(self, didSelect: mode)
+    }
+
+    /// Shows CSV once the prompt says how to split the file; cancelling it
+    /// leaves the mode as it was.
+    private func askForDialect() {
+        if let window {
+            CSVStructurePrompt(proposing: dialect).present(in: window) { [weak self] chosen in
+                if let self, let chosen {
+                    self.useChosenDialect(chosen)
+                }
+            }
+        }
+    }
+
+    /// Takes `chosen` as the document's dialect and shows it as columns.
+    func useChosenDialect(_ chosen: CSVDialect) {
+        dialect = chosen
+        isDialectKnown = true
+        applyDialectToControls()
+        select(.csv)
     }
 
     @objc private func delimiterChanged() {
