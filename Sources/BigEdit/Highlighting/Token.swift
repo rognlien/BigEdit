@@ -9,6 +9,8 @@ enum TokenKind {
     case string
     case number
     case literal
+    case keyword
+    case variable
     case key
     case tag
     case attributeName

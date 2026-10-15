@@ -41,15 +41,66 @@ extension DocumentView {
         }
     }
 
+    /// Documents up to this size are searched as the query is typed; above
+    /// it the search waits for Enter, since a full scan of a large file is
+    /// not something to start on every keystroke.
+    static let liveSearchSizeLimit = 64 * 1024 * 1024
+
     // MARK: - FindBarDelegate
 
-    func findBar(_ bar: FindBar, didSubmitQuery query: String) {
+    /// Checks a pattern as it is typed and, on a small document, runs it
+    /// after a pause — without moving the viewport, so typing does not
+    /// scroll the reader away from where they were.
+    func findBar(_ bar: FindBar, queryDidChange query: String) {
+        liveSearchTimer?.invalidate()
+        liveSearchTimer = nil
         if query.isEmpty {
             resetSearch()
+            return
+        }
+        if bar.isRegularExpression,
+           let problem = RegexDiagnostics.problem(in: query, options: bar.regularExpressionOptions) {
+            searchScan?.cancel()
+            searchScan = nil
+            currentQuery = ""
+            currentMatchIndex = -1
+            viewport.setSearch(scan: nil, currentMatchOffset: nil)
+            findBar.updateStatus(problem, isProblem: true)
+            refreshResultsPanel()
+            return
+        }
+        guard let document = viewport.document, document.length <= DocumentView.liveSearchSizeLimit else {
+            return
+        }
+        if findBar.statusShowsProblem {
+            findBar.updateStatus("")
+        }
+        liveSearchTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: false) { [weak self] _ in
+            guard let self, self.findBar.query == query, query != self.currentQuery else {
+                return
+            }
+            self.startSearch(query, caseSensitive: self.findBar.isCaseSensitive, jumpToFirstMatch: false)
+        }
+    }
+
+    func findBar(_ bar: FindBar, replacementDidChange replacement: String) {
+        updateReplacementPreview()
+    }
+
+    func findBar(_ bar: FindBar, didSubmitQuery query: String) {
+        liveSearchTimer?.invalidate()
+        liveSearchTimer = nil
+        if query.isEmpty {
+            resetSearch()
+        } else if bar.isRegularExpression,
+                  let problem = RegexDiagnostics.problem(in: query, options: bar.regularExpressionOptions) {
+            resetSearch()
+            findBar.updateStatus(problem, isProblem: true)
         } else {
             let caseSensitive = bar.isCaseSensitive
             let modeChanged = searchScan?.caseSensitive != caseSensitive
                 || searchScan?.isRegularExpression != bar.isRegularExpression
+                || searchScan?.dotMatchesNewline != (bar.isRegularExpression && bar.isDotMatchingNewline)
             if query != currentQuery || modeChanged {
                 startSearch(query, caseSensitive: caseSensitive)
             } else {
@@ -77,6 +128,31 @@ extension DocumentView {
 
     func findBarRequestedResultsToggle(_ bar: FindBar) {
         setResultsVisible(!resultsVisible)
+    }
+
+    func findBarRequestedManagePatterns(_ bar: FindBar) {
+        (NSApp.delegate as? AppDelegate)?.showPatternLibrary()
+    }
+
+    func findBarSampleText(_ bar: FindBar) -> String? {
+        sampleText()
+    }
+
+    /// The first few lines of the document, for the pattern assistant: at
+    /// most `maxBytes`, cut at a line boundary, so it fits the model's
+    /// small context whatever the file's size.
+    func sampleText(maxBytes: Int = 1500, maxLines: Int = 12) -> String? {
+        guard let document = viewport.document, document.length > 0 else {
+            return nil
+        }
+        let bytes = document.bytes(in: 0..<min(document.length, maxBytes))
+        var text = textEncoding.decode(bytes)
+        var lines = text.components(separatedBy: "\n")
+        if lines.count > maxLines || bytes.count < document.length {
+            lines = Array(lines.prefix(min(maxLines, max(1, lines.count - 1))))
+        }
+        text = lines.joined(separator: "\n")
+        return text.isEmpty ? nil : text
     }
 
     /// Called on the main queue as the replacement scan finds more occurrences.
@@ -134,7 +210,8 @@ extension DocumentView {
         } else {
             resetSearch()
             if findBar.isRegularExpression && !query.isEmpty {
-                findBar.updateStatus("Invalid pattern")
+                findBar.updateStatus(RegexDiagnostics.problem(in: query) ?? "Invalid pattern",
+                                     isProblem: true)
             }
         }
     }
@@ -145,7 +222,7 @@ extension DocumentView {
     func makeSearchScan(_ query: String, caseSensitive: Bool) -> SearchScan? {
         findBar.isRegularExpression
             ? SearchScan(regularExpression: query, caseSensitive: caseSensitive,
-                         encoding: textEncoding)
+                         dotMatchesNewline: findBar.isDotMatchingNewline, encoding: textEncoding)
             : SearchScan(query: query, caseSensitive: caseSensitive, encoding: textEncoding)
     }
 
@@ -170,6 +247,7 @@ extension DocumentView {
             viewport.setSearch(scan: scan, currentMatchOffset: offset)
             viewport.scrollToRow(row)
             updateMatchStatus()
+            updateReplacementPreview()
             if resultsVisible {
                 resultsPanel.select(index: index)
             }

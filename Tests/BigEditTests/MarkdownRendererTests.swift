@@ -54,7 +54,7 @@ final class MarkdownRendererTests: XCTestCase {
     }
 
     func testPageForbidsScripts() {
-        let page = MarkdownRenderer.page(from: Array("Hello".utf8))
+        let page = MarkdownRenderer.page(from: Array("Hello".utf8), loadsRemoteImages: true)
 
         XCTAssertTrue(page.contains("default-src 'none'"), page)
         XCTAssertFalse(page.contains("script-src"), page)

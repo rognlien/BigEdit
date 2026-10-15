@@ -27,6 +27,11 @@ enum LineOperation: Equatable {
     /// Replaces every match of `pattern` within each line. `replacement` may
     /// use `$1`-style group references. Streams; holds nothing.
     case replaceWithinLines(pattern: String, replacement: String)
+
+    /// Combines the lines with `other` as sets — see `LineSetOperation`.
+    /// Holds the other list's keys; union and symmetric difference hold the
+    /// document's keys as well.
+    case setOperation(SetOperationKind, other: [String], options: LineMatchOptions)
 }
 
 /// Applies a `LineOperation` to a document's lines.
@@ -61,6 +66,9 @@ enum LineProcessor {
         case .replaceWithinLines(let pattern, let replacement):
             result = try replace(in: lines, pattern: pattern, replacement: replacement,
                                  isCancelled: isCancelled)
+        case .setOperation(let kind, let other, let options):
+            result = try LineSetOperation.apply(kind, to: lines, other: other,
+                                                options: options, isCancelled: isCancelled)
         }
         return result
     }
@@ -166,15 +174,7 @@ enum LineProcessor {
     /// one — so a key pattern can point at part of the line.
     private static func firstMatch(of expression: NSRegularExpression,
                                    in line: String) -> String? {
-        var key: String?
-        let range = NSRange(line.startIndex..., in: line)
-        if let match = expression.firstMatch(in: line, range: range) {
-            let wanted = match.numberOfRanges > 1 ? 1 : 0
-            if let matchRange = Range(match.range(at: wanted), in: line) {
-                key = String(line[matchRange])
-            }
-        }
-        return key
+        LineKeyMaker.firstMatch(of: expression, in: line)
     }
 
     /// Compares two strings treating runs of digits as numbers, so `file9`

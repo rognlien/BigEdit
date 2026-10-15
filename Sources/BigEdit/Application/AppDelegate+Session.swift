@@ -55,6 +55,7 @@ extension AppDelegate {
                      forKey: AppDelegate.scrollRowsDefaultsKey)
         defaults.set(activeIndex ?? 0, forKey: AppDelegate.activeIndexDefaultsKey)
         defaults.set(documents.last?.url.path, forKey: AppDelegate.lastFilePathDefaultsKey)
+        persistSidebarWidth()
         // Flush so an abrupt termination (e.g. Sparkle's update relaunch) keeps it.
         defaults.synchronize()
     }

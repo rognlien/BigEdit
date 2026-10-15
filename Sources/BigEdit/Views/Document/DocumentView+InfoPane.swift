@@ -95,9 +95,9 @@ extension DocumentView {
         return fileExtension.uppercased()
     }
 
-    /// Picks a syntax mode from the file extension, falling back to a content
-    /// sniff that looks at the first non-whitespace byte (`<` → XML, `{` or
-    /// `[` → JSON).
+    /// Picks a syntax mode from the file extension or a shell's dotfile name,
+    /// falling back to a content sniff: a shell `#!` line, or the first
+    /// non-whitespace byte (`<` → XML, `{` or `[` → JSON).
     static func syntaxMode(for file: MappedFile) -> SyntaxMode {
         let xmlExtensions: Set<String> = [
             "xml", "svg", "xhtml", "html", "htm", "plist",
@@ -120,6 +120,9 @@ extension DocumentView {
             mode = .markdown
         } else if yamlExtensions.contains(fileExtension) {
             mode = .yaml
+        } else if ShellScript.isShellScript(named: (file.path as NSString).lastPathComponent)
+                    || ShellScript.startsWithShellInterpreter(file) {
+            mode = .shell
         } else if let leadingByte = firstNonWhitespaceByte(file) {
             if leadingByte == 0x3C {                            // '<'
                 mode = .xml

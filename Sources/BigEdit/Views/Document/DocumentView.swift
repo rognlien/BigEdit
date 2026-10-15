@@ -21,6 +21,8 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
     /// Counts Markdown renders, so a render that finishes after the reader
     /// has moved on is dropped.
     var markdownRenderGeneration = 0
+    /// Whether rendered Markdown shows pictures from the web; set from Settings.
+    var loadsRemoteImages = true
     let infoPane = InfoPane(frame: .zero)
     private let infoDivider = InfoPaneDivider(frame: .zero)
     let statusBar = StatusBar(frame: .zero)
@@ -63,6 +65,9 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
     var currentMatchIndex = -1
     var jumpToFirstMatch = true
     var searchRefreshTimer: Timer?
+    /// Runs the query as it is typed, after a pause, on documents small
+    /// enough for that to feel instant.
+    var liveSearchTimer: Timer?
     private var statisticsRefreshTimer: Timer?
     var replaceAllScan: SearchScan?
 
@@ -242,6 +247,8 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
     /// Cancels all background work for this document. Call before dropping the
     /// document so its `MappedFile` can be unmapped cleanly.
     func close() {
+        liveSearchTimer?.invalidate()
+        liveSearchTimer = nil
         resetSearch()
         replaceAllScan?.cancel()
         replaceAllScan = nil

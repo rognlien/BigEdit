@@ -69,7 +69,16 @@ extension DocumentView {
             let formatted = numberFormatter.string(from: NSNumber(value: count)) ?? "\(count)"
             findBar.updateReplaceStatus("\(formatted) replaced")
         } else if scan.isRegularExpression {
-            findBar.updateReplaceStatus("Too many matches for a pattern to replace")
+            // Too many to hold as edits: the streaming form writes the
+            // result to a file instead, with no cap at all.
+            if let rule = RegexReplacementRule(pattern: pattern, template: replacement,
+                                               options: findBar.regularExpressionOptions) {
+                findBar.updateReplaceStatus("")
+                (NSApp.delegate as? AppDelegate)?.offerStreamedRegexReplace(
+                    rule, matchCount: count, isTruncated: scan.isTruncated, in: self)
+            } else {
+                findBar.updateReplaceStatus("Invalid pattern")
+            }
         } else if !document.hasEdits,
                   let rule = ReplacementRule(pattern: pattern, replacement: replacement) {
             // Too many occurrences to hold as positional edits — fall back to
@@ -98,6 +107,28 @@ extension DocumentView {
         document.undoStack.endGrouping()
         viewport.documentDidChangeProgrammatically()
         documentWasEdited()
+    }
+
+    /// Shows what the replacement template makes of the current match, so
+    /// `$1` can be checked before Replace All. Only a pattern has groups to
+    /// expand; a literal replacement is what it says. Nothing is shown while
+    /// a rule's count is on display, which has the same label.
+    func updateReplacementPreview() {
+        guard editModel.rule == nil, findBar.mode == .findAndReplace else {
+            return
+        }
+        var preview = ""
+        if findBar.isRegularExpression, let scan = searchScan, currentMatchIndex >= 0,
+           let document = viewport.document, let offset = scan.matchOffset(at: currentMatchIndex) {
+            let length = scan.matchLength(at: currentMatchIndex)
+            let matched = textEncoding.decode(document.bytes(in: offset..<(offset + length)))
+            if let expansion = ReplacementPreview.expansion(
+                of: findBar.replacementField.stringValue, for: matched,
+                pattern: currentQuery, options: findBar.regularExpressionOptions) {
+                preview = "→ " + expansion.replacingOccurrences(of: "\n", with: "⏎")
+            }
+        }
+        findBar.updateReplaceStatus(preview)
     }
 
     func findBarRequestedRevert(_ bar: FindBar) {

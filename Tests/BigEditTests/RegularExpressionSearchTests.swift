@@ -22,6 +22,20 @@ final class RegularExpressionSearchTests: XCTestCase {
         return MappedFile(path: url.path)!
     }
 
+    func testDotMatchesNewlineLetsAPatternSpanLines() {
+        let file = mapped("start\nmiddle\nend\n")
+        let stops = SearchScan(regularExpression: "start.*end")!
+        stops.runSynchronously(in: file)
+        XCTAssertEqual(stops.matchCount, 0)
+        XCTAssertFalse(stops.dotMatchesNewline)
+
+        let spans = SearchScan(regularExpression: "start.*end", dotMatchesNewline: true)!
+        spans.runSynchronously(in: file)
+        XCTAssertEqual(spans.matchCount, 1)
+        XCTAssertEqual(spans.matches(beginningIn: 0..<100), [0..<16])
+        XCTAssertTrue(spans.dotMatchesNewline)
+    }
+
     private func document(_ content: String) -> EditedDocument {
         let file = mapped(content)
         let index = LineIndex()

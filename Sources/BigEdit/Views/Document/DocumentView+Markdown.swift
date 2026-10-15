@@ -42,34 +42,51 @@ extension DocumentView {
         }
     }
 
-    /// Follows the editor's zoom, so both modes grow and shrink together.
-    func setEditorFontSize(_ size: CGFloat) {
-        viewport.setFontSize(size)
+    /// Re-renders the page shown, e.g. after a setting changed, keeping the
+    /// reader's place.
+    func rerenderMarkdown() {
+        if let preview = markdownPreview, isMarkdownRenderingActive {
+            let fallbackLine = topDocumentLine() + 1
+            preview.topSourceLine { [weak self] line in
+                self?.renderMarkdown(into: preview, sourceLine: line ?? fallbackLine)
+            }
+        }
+    }
+
+    /// Scales the page with the editor's zoom, so both modes grow and shrink
+    /// together.
+    func updateMarkdownZoom() {
         markdownPreview?.zoom = viewport.editorFontSize / ViewportView.defaultFontSize
     }
 
-    /// Renders the document as it stands, edits included, off the main
-    /// thread, and opens the page at the line at the top of the viewport.
+    /// Opens the page at the line at the top of the viewport.
     private func showRenderedMarkdown() {
+        if viewport.document != nil {
+            if findBarVisible {
+                hideFindBar()
+            }
+            setResultsVisible(false)
+            let preview = markdownPreview ?? makeMarkdownPreview()
+            updateMarkdownZoom()
+            setMarkdownPreviewVisible(true)
+            renderMarkdown(into: preview, sourceLine: topDocumentLine() + 1)
+        }
+    }
+
+    /// Renders the document as it stands, edits included, off the main thread.
+    private func renderMarkdown(into preview: MarkdownPreview, sourceLine: Int) {
         guard let document = viewport.document else {
             return
         }
-        if findBarVisible {
-            hideFindBar()
-        }
-        setResultsVisible(false)
         markdownRenderGeneration += 1
         let generation = markdownRenderGeneration
-        let sourceLine = topDocumentLine() + 1
         let bytes = document.bytes(in: 0..<document.length)
         let encoding = textEncoding
+        let loadsRemoteImages = loadsRemoteImages
         let baseURL = URL(fileURLWithPath: document.file.path).deletingLastPathComponent()
-        let preview = markdownPreview ?? makeMarkdownPreview()
-        preview.zoom = viewport.editorFontSize / ViewportView.defaultFontSize
-        setMarkdownPreviewVisible(true)
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let utf8 = encoding == .utf8 ? bytes : Array(encoding.decode(bytes).utf8)
-            let page = MarkdownRenderer.page(from: utf8)
+            let page = MarkdownRenderer.page(from: utf8, loadsRemoteImages: loadsRemoteImages)
             DispatchQueue.main.async {
                 guard let self, generation == self.markdownRenderGeneration else {
                     return
