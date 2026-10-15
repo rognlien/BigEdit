@@ -212,10 +212,13 @@ final class ViewportView: NSView {
     private(set) var fontFamily: String?
     var lineHeight: CGFloat
     var characterWidth: CGFloat
+    /// Tab stops every `tabWidth` characters of the editor font.
+    private(set) var tabStops: NSParagraphStyle
     var fontSize: CGFloat
     let gutterPadding: CGFloat = 10
 
     static let defaultFontSize: CGFloat = 12
+    static let tabWidth = 4
     static let minFontSize: CGFloat = 8
     static let maxFontSize: CGFloat = 28
 
@@ -230,6 +233,7 @@ final class ViewportView: NSView {
         self.boldFont = EditorFont.bold(editorFont)
         self.lineHeight = ViewportView.lineHeight(for: editorFont)
         self.characterWidth = ViewportView.characterWidth(for: editorFont)
+        self.tabStops = ViewportView.tabStops(characterWidth: characterWidth)
         super.init(frame: frameRect)
     }
 
@@ -239,6 +243,16 @@ final class ViewportView: NSView {
 
     static func characterWidth(for font: NSFont) -> CGFloat {
         ("0" as NSString).size(withAttributes: [.font: font]).width
+    }
+
+    /// Tabs stop at whole characters, as in other editors, rather than at the
+    /// system's fixed 28-point interval, which in a monospaced font can leave
+    /// a tab narrower than one character.
+    static func tabStops(characterWidth: CGFloat) -> NSParagraphStyle {
+        let style = NSMutableParagraphStyle()
+        style.tabStops = []
+        style.defaultTabInterval = characterWidth * CGFloat(tabWidth)
+        return style
     }
 
     // MARK: - Font
@@ -257,6 +271,7 @@ final class ViewportView: NSView {
             boldFont = EditorFont.bold(font)
             lineHeight = ViewportView.lineHeight(for: font)
             characterWidth = ViewportView.characterWidth(for: font)
+            tabStops = ViewportView.tabStops(characterWidth: characterWidth)
             widestDrawnRowWidth = 0
             updateWrapBytes()
             setScrollRow(scrollRow)            // re-clamp: rowsPerPage changed
@@ -725,7 +740,7 @@ final class ViewportView: NSView {
         var width: CGFloat = 0
         if let document, !range.isEmpty {
             let text = textEncoding.decode(document.bytes(in: range)) as NSString
-            width = text.size(withAttributes: [.font: font]).width
+            width = text.size(withAttributes: [.font: font, .paragraphStyle: tabStops]).width
         }
         return width
     }

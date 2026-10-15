@@ -4,11 +4,12 @@ import AppKit
 extension NSMutableAttributedString {
 
     /// A row in the default text colour, ready to be coloured token by token.
-    static func plainRow(_ text: String, font: NSFont) -> NSMutableAttributedString {
-        return NSMutableAttributedString(
-            string: text,
-            attributes: [.font: font, .foregroundColor: NSColor.textColor]
-        )
+    /// `paragraphStyle`, when given, sets where its tabs stop.
+    static func plainRow(_ text: String, font: NSFont,
+                         paragraphStyle: NSParagraphStyle? = nil) -> NSMutableAttributedString {
+        var attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.textColor]
+        attributes[.paragraphStyle] = paragraphStyle
+        return NSMutableAttributedString(string: text, attributes: attributes)
     }
 
     /// Colours `range`, given in UTF-16 offsets. An empty range is a no-op.
