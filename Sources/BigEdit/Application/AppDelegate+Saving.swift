@@ -256,7 +256,7 @@ extension AppDelegate {
         document.reload(url: url, file: file, index: index)
         document.hasDiskChanges = false
         document.view.load(file: file, index: index, inheritingHistory: inheritingHistory)
-        document.view.viewport.setFontSize(editorFontSize)
+        document.view.apply(settings)
         document.view.setInfoPaneWidth(infoPaneWidth)
         document.view.setFileFormat(document.format)
         if preserveScroll {

@@ -202,6 +202,10 @@ final class ViewportView: NSView {
     var lastDragLocationInWindow: NSPoint?
 
     var font: NSFont
+    /// The bold face of `font`, for the CSV header row.
+    var boldFont: NSFont
+    /// The font family chosen in Settings, or nil for the system monospaced font.
+    private(set) var fontFamily: String?
     var lineHeight: CGFloat
     var characterWidth: CGFloat
     var fontSize: CGFloat
@@ -219,6 +223,7 @@ final class ViewportView: NSView {
         let editorFont = NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
         self.fontSize = size
         self.font = editorFont
+        self.boldFont = EditorFont.bold(editorFont)
         self.lineHeight = ViewportView.lineHeight(for: editorFont)
         self.characterWidth = ViewportView.characterWidth(for: editorFont)
         super.init(frame: frameRect)
@@ -232,18 +237,20 @@ final class ViewportView: NSView {
         ("0" as NSString).size(withAttributes: [.font: font]).width
     }
 
-    // MARK: - Font size
+    // MARK: - Font
 
     /// The current editor font size in points.
     var editorFontSize: CGFloat { fontSize }
 
-    /// Sets the editor font size (clamped), re-wrapping long lines and keeping
+    /// Sets the editor font (size clamped), re-wrapping long lines and keeping
     /// the scroll position valid for the new row height.
-    func setFontSize(_ size: CGFloat) {
+    func setEditorFont(family: String?, size: CGFloat) {
         let clamped = min(max(size, ViewportView.minFontSize), ViewportView.maxFontSize)
-        if clamped != fontSize {
+        if clamped != fontSize || family != fontFamily {
             fontSize = clamped
-            font = NSFont.monospacedSystemFont(ofSize: clamped, weight: .regular)
+            fontFamily = family
+            font = EditorFont.font(family: family, size: clamped)
+            boldFont = EditorFont.bold(font)
             lineHeight = ViewportView.lineHeight(for: font)
             characterWidth = ViewportView.characterWidth(for: font)
             widestDrawnRowWidth = 0

@@ -251,9 +251,7 @@ extension ViewportView {
     /// table rather than as padded text.
     private func csvAttributedRow(_ text: String, documentLine: Int) -> NSAttributedString {
         let isHeader = csvDialect?.hasHeaderRow == true && documentLine == 0
-        let rowFont = isHeader
-            ? NSFont.monospacedSystemFont(ofSize: fontSize, weight: .bold)
-            : font
+        let rowFont = isHeader ? boldFont : font
         return NSAttributedString(
             string: text, attributes: [.font: rowFont, .foregroundColor: NSColor.textColor])
     }
@@ -274,6 +272,7 @@ extension ViewportView {
         case .json: return JSONHighlighter.tokens(text, startState: startState)
         case .markdown: return MarkdownHighlighter.tokens(text, startState: startState)
         case .yaml: return YAMLHighlighter.tokens(text, startState: startState)
+        case .shell: return ShellHighlighter.tokens(text, startState: startState)
         case .plain: return ([], .normal)
         }
     }
@@ -286,6 +285,7 @@ extension ViewportView {
         case .json: return JSONHighlighter.endState(text, start: startState)
         case .markdown: return MarkdownHighlighter.endState(text, start: startState)
         case .yaml: return YAMLHighlighter.endState(text, start: startState)
+        case .shell: return ShellHighlighter.endState(text, start: startState)
         case .plain: return .normal
         }
     }

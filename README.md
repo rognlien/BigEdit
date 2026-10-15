@@ -76,6 +76,10 @@ The package opens directly in Xcode (`File ▸ Open…` the `BigEdit` folder).
   Go to Line and Process Lines switch back to Text on their own. Raw HTML
   in the source is left out and the page runs no scripts; links open in
   your browser.
+- **⌘,** — Settings: appearance (System, Light or Dark), the editor's font
+  family and size (fixed-width fonts only; ⌘+ / ⌘− / ⌘0 change the same
+  size), whether rendered Markdown loads pictures from the web, and
+  automatic update checks. Changes apply at once to every open document.
 
 - **⇧⌘L** — Edit ▸ Process Lines: remove duplicates, keep or remove lines
   containing text, sort (plain, natural, or by a regex key), replace within
@@ -205,8 +209,9 @@ App shell (window, menu, open panel) is in `AppDelegate.swift` / `main.swift`.
   match cannot span more than ~8 MB of lines. Matches beyond the 1,000,000th
   are not collected (shown as `N+`), and Replace All with a pattern only
   works under the materialisation cap — there is no streaming form of it.
-- Syntax highlighting covers XML, JSON, Markdown, and YAML; other files draw
-  as plain text.
+- Syntax highlighting covers XML, JSON, Markdown, YAML, and shell scripts
+  (sh, bash, zsh and ksh, recognised by extension, dotfile name or `#!`
+  line); other files draw as plain text.
 - Files are read as UTF-8, or as Windows-1252 when they are not valid UTF-8
   (the status bar says which). A Windows-1252 file reads, copies, searches
   and counts correctly but stays read-only, since edits are made in UTF-8.

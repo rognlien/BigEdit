@@ -9,4 +9,7 @@ enum HighlightState: Equatable {
     case blockComment
     case fencedCode
     case blockScalar(indent: Int)
+    case singleQuotedString
+    case doubleQuotedString
+    case hereDocument(delimiter: String, stripsTabs: Bool, expands: Bool)
 }

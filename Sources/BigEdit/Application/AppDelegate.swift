@@ -14,8 +14,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
     /// relaunch). Started on first access (menu build / launch check).
     lazy var updaterController = SPUStandardUpdaterController(
         startingUpdater: true, updaterDelegate: self, userDriverDelegate: nil)
-    private let splitView = NSSplitView()
-    let sidebar = DocumentListView(frame: NSRect(x: 0, y: 0, width: 220, height: 640))
+    let splitView = SidebarSplitView()
+    let sidebar = DocumentListView(frame: NSRect(x: 0, y: 0, width: AppDelegate.defaultSidebarWidth, height: 640))
     let contentContainer = ContentContainerView(frame: NSRect(x: 0, y: 0, width: 680, height: 640))
     let titleLabel = NSTextField(labelWithString: "")
 
@@ -47,13 +47,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
     static let activeIndexDefaultsKey = "BigEditActiveIndex"
     static let recentDocumentsDefaultsKey = "BigEditRecentDocuments"
     static let maxRecentDocuments = 15
-    static let fontSizeDefaultsKey = "BigEditFontSize"
 
-    /// The editor font size shared by all open documents, persisted across launches.
-    lazy var editorFontSize: CGFloat = {
-        let stored = UserDefaults.standard.double(forKey: AppDelegate.fontSizeDefaultsKey)
-        return stored > 0 ? CGFloat(stored) : ViewportView.defaultFontSize
-    }()
+    /// The preferences from the Settings window, applied to every document.
+    let settings = AppSettings()
+    var settingsWindowController: SettingsWindowController?
 
     static let infoPaneWidthDefaultsKey = "BigEditInfoPaneWidth"
 
@@ -69,8 +66,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         return formatter
     }()
 
-    private static let minSidebarWidth: CGFloat = 190
-    private static let minContentWidth: CGFloat = 360
+    /// The sidebar width the user last dragged to, persisted across launches.
+    lazy var sidebarWidth: CGFloat = {
+        let stored = UserDefaults.standard.double(forKey: AppDelegate.sidebarWidthDefaultsKey)
+        return stored > 0 ? CGFloat(stored) : AppDelegate.defaultSidebarWidth
+    }()
+
+    static let minSidebarWidth: CGFloat = 190
+    static let minContentWidth: CGFloat = 360
 
     // MARK: - Active document accessors
 
@@ -90,6 +93,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         // that opens a document (e.g. dropping a file on the Dock icon) delivers
         // application(_:open:) before didFinishLaunching, and that path touches
         // the window — which must already exist.
+        NSApp.appearance = settings.appearance.appearance
+        settings.onChange = { [weak self] in
+            self?.applySettings()
+        }
         PatternLibrary.shared.adoptRememberedLocation()
         buildMenu()
         buildWindow()
@@ -109,8 +116,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         }
 
         // Check for updates on every launch (silent — only surfaces UI if an
-        // update is available), in addition to Sparkle's scheduled checks.
-        updaterController.updater.checkForUpdatesInBackground()
+        // update is available), in addition to Sparkle's scheduled checks,
+        // unless automatic checks are turned off in Settings.
+        if updaterController.updater.automaticallyChecksForUpdates {
+            updaterController.updater.checkForUpdatesInBackground()
+        }
     }
 
     @objc private func applicationDidBecomeActiveForPatterns() {
@@ -131,15 +141,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         // Keep the window object alive after the user closes it, so a Dock
         // click can reopen the same documents instead of relaunching the app.
         window.isReleasedWhenClosed = false
-        window.setFrameAutosaveName("BigEditMainWindow")
 
         splitView.isVertical = true
         splitView.dividerStyle = .thin
         splitView.delegate = self
+        splitView.onDividerDragged = { [weak self] in
+            self?.rememberSidebarWidth()
+        }
         splitView.addArrangedSubview(sidebar)
         splitView.addArrangedSubview(contentContainer)
         splitView.setHoldingPriority(.defaultLow + 1, forSubviewAt: 0)
-        splitView.autosaveName = "BigEditSplit"
 
         sidebar.onSelect = { [weak self] index in
             self?.selectDocument(at: index)
@@ -156,8 +167,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
 
         window.contentView = splitView
         installToolbar()
-        window.center()
+        restoreWindowFrame()
         window.makeKeyAndOrderFront(nil)
+        restoreSidebarWidth()
         NSApp.activate(ignoringOtherApps: true)
     }
 
