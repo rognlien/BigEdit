@@ -112,6 +112,10 @@ final class ProcessLinesSheet: NSObject {
 
     private static let contentSize = NSSize(width: 460, height: 300)
 
+    /// The tag of the "Choose File…" item and of the pull-down's title item;
+    /// every other item's tag is its index into the list it stands for.
+    private static let actionItemTag = -1
+
     private let window: NSWindow
     private let operationPopUp = NSPopUpButton()
     private let otherListLabel = NSTextField(labelWithString: "Other list")
@@ -162,12 +166,17 @@ final class ProcessLinesSheet: NSObject {
     func present(in parent: NSWindow, otherLists: [OtherLineList] = [],
                  completion: @escaping (ProcessLinesRequest?) -> Void) {
         self.completion = completion
+        load(otherLists: otherLists)
+        parent.beginSheet(window) { _ in }
+        window.makeFirstResponder(patternField)
+    }
+
+    /// Fills the menus for `otherLists` without showing the sheet.
+    func load(otherLists: [OtherLineList]) {
         self.otherLists = otherLists
         rebuildOtherListMenu(selecting: 0)
         rebuildSavedPatternsMenu()
         applyChoiceVisibility()
-        parent.beginSheet(window) { _ in }
-        window.makeFirstResponder(patternField)
     }
 
     // MARK: - Building
@@ -269,35 +278,33 @@ final class ProcessLinesSheet: NSObject {
     /// document, then the item that picks a file.
     private func rebuildOtherListMenu(selecting index: Int) {
         otherListPopUp.removeAllItems()
-        for list in availableLists {
-            otherListPopUp.addItem(withTitle: list.name)
+        for (position, list) in availableLists.enumerated() {
+            otherListPopUp.addItem(title: list.name, tag: position)
         }
         if !availableLists.isEmpty {
             otherListPopUp.menu?.addItem(NSMenuItem.separator())
         }
-        otherListPopUp.addItem(withTitle: "Choose File…")
-        if index < availableLists.count {
-            otherListPopUp.selectItem(at: index)
-        }
+        otherListPopUp.addItem(title: "Choose File…", tag: ProcessLinesSheet.actionItemTag)
+        otherListPopUp.selectItem(withTag: availableLists.indices.contains(index)
+                                  ? index : ProcessLinesSheet.actionItemTag)
     }
 
     /// A pull-down's first item is its title; the patterns follow it.
     private func rebuildSavedPatternsMenu() {
         savedPatternsButton.removeAllItems()
-        savedPatternsButton.addItem(withTitle: "Saved Patterns")
-        for pattern in patternLibrary.patterns {
-            savedPatternsButton.addItem(withTitle: pattern.name)
+        savedPatternsButton.addItem(title: "Saved Patterns", tag: ProcessLinesSheet.actionItemTag)
+        for (position, pattern) in patternLibrary.patterns.enumerated() {
+            savedPatternsButton.addItem(title: pattern.name, tag: position)
         }
         savedPatternsButton.isEnabled = !patternLibrary.patterns.isEmpty
     }
 
-    /// Fills the fields from the chosen saved pattern. Item 0 is the title.
+    /// Fills the fields from the chosen saved pattern.
     @objc private func savedPatternChosen(_ sender: NSPopUpButton) {
-        let index = sender.indexOfSelectedItem - 1
-        guard patternLibrary.patterns.indices.contains(index) else {
-            return
+        let index = sender.selectedTag()
+        if patternLibrary.patterns.indices.contains(index) {
+            apply(patternLibrary.patterns[index])
         }
-        apply(patternLibrary.patterns[index])
     }
 
     /// Puts `pattern` into the pattern and replacement fields, and the case
@@ -322,8 +329,28 @@ final class ProcessLinesSheet: NSObject {
     /// The list the menu currently names, or `nil` while only "Choose File…"
     /// is there.
     private var selectedOtherList: OtherLineList? {
-        let index = otherListPopUp.indexOfSelectedItem
+        let index = otherListPopUp.selectedTag()
         return availableLists.indices.contains(index) ? availableLists[index] : nil
+    }
+
+    /// The other-list menu's titles in menu order, separator excluded, and
+    /// choosing one by its position — for tests.
+    var otherListTitles: [String] {
+        otherListPopUp.itemArray.filter { !$0.isSeparatorItem }.map(\.title)
+    }
+
+    func chooseOtherList(atMenuPosition position: Int) {
+        let items = otherListPopUp.itemArray.filter { !$0.isSeparatorItem }
+        otherListPopUp.select(items[position])
+    }
+
+    var selectedOtherListName: String? {
+        selectedOtherList?.name
+    }
+
+    /// Whether the selected list is the one at `index` in what `load` was given.
+    func isSelectedOtherList(at index: Int) -> Bool {
+        chosenFile == nil && otherListPopUp.selectedTag() == index
     }
 
     private var choice: Choice {
@@ -337,7 +364,7 @@ final class ProcessLinesSheet: NSObject {
     /// "Choose File…" is the last item: picking it opens a panel over the
     /// sheet, and the file it returns becomes the selected list.
     @objc private func otherListChanged() {
-        guard otherListPopUp.indexOfSelectedItem == otherListPopUp.numberOfItems - 1 else {
+        guard otherListPopUp.selectedTag() == ProcessLinesSheet.actionItemTag else {
             return
         }
         let panel = NSOpenPanel()
