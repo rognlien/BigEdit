@@ -113,6 +113,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         // any pending open-URL event has a chance to fire first.
         DispatchQueue.main.async { [weak self] in
             self?.restoreSessionIfNeeded()
+            self?.removeStaleJournals()
         }
 
         // Check for updates on every launch (silent — only surfaces UI if an
@@ -120,6 +121,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         // unless automatic checks are turned off in Settings.
         if updaterController.updater.automaticallyChecksForUpdates {
             updaterController.updater.checkForUpdatesInBackground()
+        }
+    }
+
+    /// Runs after the session is restored, so the journals of the documents
+    /// it reopened are in use and kept.
+    private func removeStaleJournals() {
+        DispatchQueue.global(qos: .utility).async {
+            EditJournal.removeStaleJournals()
         }
     }
 

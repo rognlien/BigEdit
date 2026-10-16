@@ -42,12 +42,22 @@ final class EditJournal {
     private static let spliceKind: UInt8 = 1
     private static let unreplayableKind: UInt8 = 0xFF
 
+    /// Identifies the directory in the registry of journals in use.
+    private let registryKey: String
+
     private init(directory: URL) {
         self.directory = directory
         self.bytesURL = directory.appendingPathComponent("bytes")
         self.operationsURL = directory.appendingPathComponent("ops")
-        self.manifestURL = directory.appendingPathComponent("manifest.json")
+        self.manifestURL = directory.appendingPathComponent(EditJournal.manifestName)
+        self.registryKey = EditJournal.register(directory)
     }
+
+    deinit {
+        EditJournal.unregister(registryKey)
+    }
+
+    private static let manifestName = "manifest.json"
 
     // MARK: - Locating
 
@@ -68,9 +78,85 @@ final class EditJournal {
     /// touched: a pending journal from a crashed run stays pending until the
     /// caller decides to recover it or start fresh.
     static func open(for path: String, in root: URL = EditJournal.root) -> EditJournal {
-        let directory = directory(for: path, in: root)
+        EditJournal(directory: directory(for: path, in: root))
+    }
+
+    // MARK: - Journals in use
+
+    private static let registryLock = NSLock()
+    private static var instancesInUse: [String: Int] = [:]
+
+    /// Creates `directory` and marks it in use, under the lock the cleanup
+    /// takes, so a journal is never removed between being found and opened.
+    private static func register(_ directory: URL) -> String {
+        registryLock.lock()
+        defer { registryLock.unlock() }
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        return EditJournal(directory: directory)
+        let key = registryKey(for: directory)
+        instancesInUse[key, default: 0] += 1
+        return key
+    }
+
+    private static func unregister(_ key: String) {
+        registryLock.lock()
+        defer { registryLock.unlock() }
+        instancesInUse[key, default: 1] -= 1
+        if instancesInUse[key] == 0 {
+            instancesInUse[key] = nil
+        }
+    }
+
+    private static func registryKey(for directory: URL) -> String {
+        directory.resolvingSymlinksInPath().standardizedFileURL.path
+    }
+
+    // MARK: - Cleaning up
+
+    /// How long a journal may go untouched before it is assumed abandoned.
+    static let maximumAge: TimeInterval = 30 * 24 * 60 * 60
+
+    /// Removes journals no document can use any more: those whose file is
+    /// gone, and those untouched for longer than `maximumAge`. A journal an
+    /// open document holds is never removed. It reads only listings and
+    /// manifests, but it touches the disk: call it off the main thread.
+    static func removeStaleJournals(in root: URL = EditJournal.root, now: Date = Date()) {
+        let cutoff = now.addingTimeInterval(-maximumAge)
+        for directory in journalDirectories(in: root) where isStale(directory, cutoff: cutoff) {
+            removeUnlessInUse(directory)
+        }
+    }
+
+    private static func journalDirectories(in root: URL) -> [URL] {
+        let contents = (try? FileManager.default.contentsOfDirectory(
+            at: root, includingPropertiesForKeys: [.isDirectoryKey])) ?? []
+        return contents.filter { url in
+            (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
+        }
+    }
+
+    private static func isStale(_ directory: URL, cutoff: Date) -> Bool {
+        let manifest = readManifest(at: directory.appendingPathComponent(manifestName))
+        let fileIsGone = manifest.map { !FileManager.default.fileExists(atPath: $0.path) } ?? false
+        return fileIsGone || lastModified(directory) < cutoff
+    }
+
+    /// The latest modification of the directory or anything in it: the ops
+    /// and bytes files are appended to on every edit.
+    private static func lastModified(_ directory: URL) -> Date {
+        let files = (try? FileManager.default.contentsOfDirectory(
+            at: directory, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
+        let dates = ([directory] + files).compactMap { url in
+            try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+        }
+        return dates.max() ?? .distantPast
+    }
+
+    private static func removeUnlessInUse(_ directory: URL) {
+        registryLock.lock()
+        defer { registryLock.unlock() }
+        if instancesInUse[registryKey(for: directory)] == nil {
+            try? FileManager.default.removeItem(at: directory)
+        }
     }
 
     // MARK: - The baseline
@@ -164,8 +250,12 @@ final class EditJournal {
     }
 
     private func readManifest() -> Manifest? {
+        EditJournal.readManifest(at: manifestURL)
+    }
+
+    private static func readManifest(at url: URL) -> Manifest? {
         var result: Manifest?
-        if let data = try? Data(contentsOf: manifestURL) {
+        if let data = try? Data(contentsOf: url) {
             result = try? JSONDecoder().decode(Manifest.self, from: data)
         }
         return result

@@ -205,7 +205,9 @@ piece-table search vs naive search. Run with `swift test`.
   Recover Anyway; a file that has changed is never replayed onto, and its journal can be kept
   for when the earlier version is restored (that document is then not journaled). Appends are not
   fsynced: an app crash keeps them, a power loss may lose the last few. Choosing Don't Save,
-  Reload and Discard, or Quit Anyway removes the journal, as does a clean close.
+  Reload and Discard, or Quit Anyway removes the journal, as does a clean close. At launch, after
+  the session is restored, a background pass removes journals whose file is gone or that have been
+  untouched for 30 days, skipping any an open document holds.
 - Editing inside a single multi-GB line re-scans that line's span per splice — no worse than the viewer's own cost profile in a megaline file, but noticeable.
 - CSV column widths are dragged per session and reset whenever a CSV option changes, since changing the delimiter, quote or trim re-measures the columns from scratch.
 - CSV mode edits text, not cells: a delimiter typed into a cell splits it and deleting across a divider merges cells. Column widths come from a bounded head sample (a much wider field further down is truncated until that row is edited). A quoted field containing a newline is not joined across rows.

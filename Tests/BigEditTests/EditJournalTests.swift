@@ -285,6 +285,82 @@ final class EditJournalTests: XCTestCase {
         XCTAssertEqual(state(reopening: url), .baselineChanged)
     }
 
+    // MARK: - Cleaning up
+
+    /// Leaves a journal with pending edits behind, as a crash does, and
+    /// returns its directory once nothing holds it.
+    private func abandonJournal(_ content: String) -> (directory: URL, file: URL) {
+        let (document, url) = openFresh(content)
+        document.replace(0..<0, with: Array("+".utf8))
+        return (document.journal!.directory, url)
+    }
+
+    private func age(_ directory: URL, by interval: TimeInterval) {
+        let date = Date(timeIntervalSinceNow: -interval)
+        let files = try! FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+        for url in files + [directory] {
+            setModificationDate(date, of: url)
+        }
+    }
+
+    private func exists(_ directory: URL) -> Bool {
+        FileManager.default.fileExists(atPath: directory.path)
+    }
+
+    func testCleanupKeepsARecentJournalWhoseFileExists() {
+        let (directory, _) = abandonJournal("kept\n")
+        EditJournal.removeStaleJournals(in: root)
+        XCTAssertTrue(exists(directory))
+    }
+
+    func testCleanupRemovesAJournalWhoseFileIsGone() {
+        let (directory, url) = abandonJournal("gone\n")
+        try! FileManager.default.removeItem(at: url)
+        EditJournal.removeStaleJournals(in: root)
+        XCTAssertFalse(exists(directory))
+    }
+
+    func testCleanupRemovesAJournalUntouchedForTooLong() {
+        let (directory, _) = abandonJournal("old\n")
+        age(directory, by: EditJournal.maximumAge + 60)
+        EditJournal.removeStaleJournals(in: root)
+        XCTAssertFalse(exists(directory))
+    }
+
+    func testCleanupKeepsAJournalEditedRecentlyInAnOldDirectory() {
+        let (directory, _) = abandonJournal("old\n")
+        age(directory, by: EditJournal.maximumAge + 60)
+        setModificationDate(Date(), of: directory.appendingPathComponent("ops"))
+        EditJournal.removeStaleJournals(in: root)
+        XCTAssertTrue(exists(directory))
+    }
+
+    func testCleanupNeverRemovesTheJournalOfAnOpenDocument() {
+        let (document, url) = openFresh("open\n")
+        document.replace(0..<0, with: Array("+".utf8))
+        let directory = document.journal!.directory
+        age(directory, by: EditJournal.maximumAge + 60)
+        try! FileManager.default.removeItem(at: url)
+
+        EditJournal.removeStaleJournals(in: root)
+        XCTAssertTrue(exists(directory))
+        XCTAssertNotNil(document.journal)
+    }
+
+    func testCleanupRemovesAnOldJournalWithoutAManifest() {
+        let directory = root.appendingPathComponent("orphan", isDirectory: true)
+        try! FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try! Data([1]).write(to: directory.appendingPathComponent("ops"))
+        age(directory, by: EditJournal.maximumAge + 60)
+        EditJournal.removeStaleJournals(in: root)
+        XCTAssertFalse(exists(directory))
+    }
+
+    func testCleanupOfAMissingRootDoesNothing() {
+        EditJournal.removeStaleJournals(in: root.appendingPathComponent("absent"))
+        XCTAssertFalse(exists(root.appendingPathComponent("absent")))
+    }
+
     func testJournalDirectoriesAreKeyedByPath() {
         let one = EditJournal.directory(for: "/a/b.txt", in: root)
         let two = EditJournal.directory(for: "/a/c.txt", in: root)
