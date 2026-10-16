@@ -3,11 +3,10 @@
 What is actually left. Everything above the "Done" section is open work;
 `[x]` items in Done are recorded so this file stops re-proposing them.
 
-Last audited against the code on 2026-09-12, at v0.1.20 plus editable CSV
-mode: the seven improvements, the source split into folders and per-concern
-files, the system-style find bar and toolbar, CSV sorting, grid, exact cell
-mapping, editing with Tab between cells, the MIT license, and CI on demand
-only.
+Last audited against the code on 2026-10-16, at v0.1.24 plus the CSV and
+tab work that followed it: CSV mode for any file, Tab adding a column,
+Option-Tab, tab stops by character, the view mode kept across a reload, and
+columns measured from the edited text.
 
 ## Syntax highlighting — making it extendable
 
@@ -152,7 +151,7 @@ they are not proposed again.
 - [x] **Dock-click reopen** (`applicationShouldHandleReopen`).
 - [x] **Cancel `LineIndex` indexing** when the file changes — `LineIndex` has
       `cancel()` alongside `SearchScan` and `StatisticsScan`.
-- [x] **Unit tests.** 309 XCTests, run by the release workflow and on demand
+- [x] **Unit tests.** 508 XCTests, run by the release workflow and on demand
       from the Actions tab (CI no longer runs per push: macOS minutes are
       billed 10× for a private repository), plus the headless cross-checks
       below.
@@ -165,8 +164,8 @@ they are not proposed again.
 - [x] **Stage 2 of the lazy editor.** Piece table, edit-aware layout, IME
       input, undo/redo, piece-walking save, search over edits, Replace All
       materialised under a 2,000-match cap.
-- [x] **CSV support.** Detection enables a Text / CSV radio selector at the top
-      right; CSV mode draws aligned columns with delimiter, quote, header,
+- [x] **CSV support.** A Text / CSV radio selector at the top right, enabled
+      for any file (a file with no detected dialect asks how to split it); CSV mode draws aligned columns with delimiter, quote, header,
       pin-header and trim options, and columns resize by dragging their
       trailing edge.
 - [x] **Process lines — the engine.** `LineProcessor` does remove duplicates,
@@ -245,7 +244,19 @@ they are not proposed again.
       against `perl -pe` by `scripts/verify-replace-regex.sh`.
 - [x] **iCloud Drive placeholders** are downloaded before opening.
 - [x] **Apple Intelligence** — describe a pattern, explain a pattern, behind
-      `canImport(FoundationModels)` and an availability check.
+      `canImport(FoundationModels)` and an availability check. Releases are
+      built with the macOS 26 SDK so it ships.
+- [x] **Settings window** — appearance, font, images and updates; syntax
+      colours with readable contrast in light and dark mode.
+- [x] **Window frame and sidebar width** remembered between launches.
+- [x] **Shell script and SQL colouring.**
+- [x] **Command-arrows** move and select to line and document ends.
+- [x] **Column selections** can be deleted and cut, not just copied.
+- [x] **Tabs** — Option-Tab types one everywhere, stops fall on whole
+      characters, and text mode marks each with a faint arrow.
+- [x] **CSV keyboard and reload** — Tab past the last column adds one, the
+      grid is visible in dark mode, a reload keeps the view mode and CSV
+      options, and columns are measured from the edited text.
 
 ## Verification scripts to keep around
 
