@@ -92,6 +92,40 @@ enum TextEncoding: Equatable {
         return result
     }
 
+    /// `bytes` in this encoding rewritten as UTF-8. The single-byte encodings
+    /// convert byte by byte, so a window cut anywhere converts exactly as the
+    /// whole would, and a byte Windows-1252 leaves undefined becomes its
+    /// Latin-1 character, as it does when decoded for display.
+    func transcodedToUTF8(_ bytes: [UInt8]) -> [UInt8] {
+        var result: [UInt8]
+        switch self {
+        case .utf8:
+            result = bytes
+        case .windows1252:
+            result = TextEncoding.transcode(bytes, with: TextEncoding.windows1252ToUTF8)
+        case .latin1:
+            result = TextEncoding.transcode(bytes, with: TextEncoding.latin1ToUTF8)
+        }
+        return result
+    }
+
+    private static let windows1252ToUTF8 = utf8Table(for: .windows1252)
+    private static let latin1ToUTF8 = utf8Table(for: .latin1)
+
+    /// The UTF-8 bytes of every one of the 256 single-byte characters.
+    private static func utf8Table(for encoding: TextEncoding) -> [[UInt8]] {
+        (0...255).map { Array(encoding.decode([UInt8($0)]).utf8) }
+    }
+
+    private static func transcode(_ bytes: [UInt8], with table: [[UInt8]]) -> [UInt8] {
+        var result: [UInt8] = []
+        result.reserveCapacity(bytes.count + bytes.count / 4)
+        for byte in bytes {
+            result.append(contentsOf: table[Int(byte)])
+        }
+        return result
+    }
+
     /// How many bytes `scalar` occupies in this encoding. This is what turns a
     /// character position back into a byte offset.
     func byteLength(of scalar: Unicode.Scalar) -> Int {

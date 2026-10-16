@@ -250,6 +250,34 @@ final class TextEncodingTests: XCTestCase {
                        "the line operations decode lines as UTF-8")
     }
 
+    // MARK: - Converting to UTF-8
+
+    func testTranscodesToUTF8() {
+        XCTAssertEqual(TextEncoding.windows1252.transcodedToUTF8(sample), Array(sampleText.utf8))
+        XCTAssertEqual(TextEncoding.latin1.transcodedToUTF8([0x80, 0xE9]), [0xC2, 0x80, 0xC3, 0xA9])
+    }
+
+    func testAnUndefinedByteDoesNotChangeHowItsNeighboursConvert() {
+        // 0x81 means nothing in Windows-1252; the € beside it is still €.
+        let converted = TextEncoding.windows1252.transcodedToUTF8([0x80, 0x81])
+        XCTAssertEqual(converted, Array("€".utf8) + [0xC2, 0x81])
+    }
+
+    func testConvertingAnEditedDocumentStreamsItAsUTF8() throws {
+        let (viewport, document) = viewport(sample, encoding: .windows1252, caret: 0)
+        viewport.insertText("Ærø € ", replacementRange: NSRange(location: NSNotFound, length: 0))
+        let destination = FileManager.default.temporaryDirectory
+            .appendingPathComponent("BigEditTest-\(UUID().uuidString)")
+        temporaryFiles.append(destination)
+
+        let result = FileWriter.saveSynchronously(document: document, convertingFrom: .windows1252,
+                                                  to: destination, windowSize: 3)
+
+        XCTAssertNoThrow(try result.get())
+        let converted = try Data(contentsOf: destination)
+        XCTAssertEqual(String(data: converted, encoding: .utf8), "Ærø € " + sampleText)
+    }
+
     func testAnEditedSingleByteDocumentSavesItsBytesUnchanged() throws {
         let (viewport, document) = viewport(sample, encoding: .windows1252, caret: 0)
         viewport.insertText("Ærø € ", replacementRange: NSRange(location: NSNotFound, length: 0))
