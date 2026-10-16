@@ -200,7 +200,8 @@ enum HeadlessCommands {
         var exitCode: Int32 = 0
 
         if let file = MappedFile(path: path),
-           let rule = ReplacementRule(pattern: pattern, replacement: replacement) {
+           let rule = ReplacementRule(pattern: pattern, replacement: replacement,
+                                      encoding: FileFormat(scanning: file).textEncoding ?? .utf8) {
             let index = LineIndex()
             index.buildSynchronously(from: file)
             let editModel = EditModel()
@@ -241,7 +242,8 @@ enum HeadlessCommands {
         var exitCode: Int32 = 0
 
         if let file = MappedFile(path: inputPath),
-           let rule = ReplacementRule(pattern: pattern, replacement: replacement) {
+           let rule = ReplacementRule(pattern: pattern, replacement: replacement,
+                                      encoding: FileFormat(scanning: file).textEncoding ?? .utf8) {
             let destination = URL(fileURLWithPath: outputPath)
             let start = Date()
             let result = FileWriter.saveSynchronously(file: file, rule: rule, to: destination)

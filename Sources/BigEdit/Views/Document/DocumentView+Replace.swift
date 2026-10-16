@@ -19,7 +19,8 @@ extension DocumentView {
         } else if viewport.document?.hasEdits == true {
             // The deferred rule and positional edits are mutually exclusive.
             findBar.updateReplaceStatus("Save your edits first")
-        } else if let rule = ReplacementRule(pattern: pattern, replacement: replacement),
+        } else if let rule = ReplacementRule(pattern: pattern, replacement: replacement,
+                                             encoding: textEncoding),
                   let file = viewport.file {
             editModel.setRule(rule, file: file) { [weak self] in
                 self?.editScanDidProgress()
@@ -80,7 +81,8 @@ extension DocumentView {
                 findBar.updateReplaceStatus("Invalid pattern")
             }
         } else if !document.hasEdits,
-                  let rule = ReplacementRule(pattern: pattern, replacement: replacement) {
+                  let rule = ReplacementRule(pattern: pattern, replacement: replacement,
+                                             encoding: textEncoding) {
             // Too many occurrences to hold as positional edits — fall back to
             // the deferred rule, applied streaming at save time.
             editModel.setRule(rule, file: document.file) { [weak self] in

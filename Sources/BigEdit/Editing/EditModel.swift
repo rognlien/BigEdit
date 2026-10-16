@@ -23,7 +23,7 @@ final class EditModel {
     func setRule(_ rule: ReplacementRule, file: MappedFile, onProgress: @escaping () -> Void) {
         matches?.cancel()
         self.rule = rule
-        if let scan = SearchScan(query: rule.pattern) {
+        if let scan = SearchScan(query: rule.pattern, encoding: rule.encoding) {
             matches = scan
             scan.start(in: file, onProgress: onProgress)
         } else {
@@ -35,7 +35,7 @@ final class EditModel {
     func setRuleSynchronously(_ rule: ReplacementRule, file: MappedFile) {
         matches?.cancel()
         self.rule = rule
-        let scan = SearchScan(query: rule.pattern)
+        let scan = SearchScan(query: rule.pattern, encoding: rule.encoding)
         scan?.runSynchronously(in: file)
         matches = scan
     }
