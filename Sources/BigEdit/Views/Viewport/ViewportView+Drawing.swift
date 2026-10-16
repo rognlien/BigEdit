@@ -270,7 +270,7 @@ extension ViewportView {
             if recordsCheckpoints {
                 highlightCheckpoints.record(state, atRow: rows.lowerBound + offset)
             }
-            state = language.endState(decodeChunk(visualLine), start: state)
+            state = rowTokenCache.endState(decodeChunk(visualLine), start: state)
         }
         if recordsCheckpoints {
             highlightCheckpoints.record(state, atRow: rows.upperBound)
@@ -319,7 +319,7 @@ extension ViewportView {
     /// theme, returning its colouring and the carried state at the row's end.
     func highlightedRow(_ text: String, startState: HighlightState)
         -> (NSAttributedString, HighlightState) {
-        let (tokens, endState) = language.tokens(text, startState: startState)
+        let (tokens, endState) = rowTokenCache.tokens(text, startState: startState)
         return (theme.attributedRow(text, tokens: tokens, font: font, paragraphStyle: tabStops), endState)
     }
 

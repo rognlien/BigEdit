@@ -53,10 +53,13 @@ final class ViewportView: NSView {
     var currentMatchOffset: Int?
 
     /// The language whose highlighter colours each row.
-    var language = Language.plain
+    private(set) var language = Language.plain
 
     /// Exact start states for rows above the viewport, replayed so far.
     var highlightCheckpoints = HighlightCheckpoints()
+
+    /// Rows lexed recently, so a redraw does not lex them again.
+    let rowTokenCache = RowTokenCache()
 
     /// Maps the highlighters' tokens to colours and fonts.
     let theme = HighlightTheme.standard
@@ -655,6 +658,7 @@ final class ViewportView: NSView {
     /// Sets the language the current document is coloured as.
     func setLanguage(_ language: Language) {
         self.language = language
+        rowTokenCache.language = language
         highlightCheckpoints.reset()
         needsDisplay = true
     }
