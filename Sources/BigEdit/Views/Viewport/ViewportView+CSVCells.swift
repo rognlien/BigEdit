@@ -63,24 +63,35 @@ extension ViewportView {
     @discardableResult
     func deleteKeepingCells(_ range: Range<Int>) -> Bool {
         var deleted = true
-        if let csvDialect, let document, isCSVRenderingActive {
-            let lines = lineContentRange(containing: range.lowerBound).lowerBound
-                ..< lineContentRange(containing: range.upperBound).upperBound
-            if lines.count > 64 * 1024 * 1024 {
-                presentSelectionTooLarge()
-                deleted = false
-            } else if let edit = CSVCellEditing.clearing(
-                (range.lowerBound - lines.lowerBound)..<(range.upperBound - lines.lowerBound),
-                in: document.bytes(in: lines), dialect: csvDialect, encoding: textEncoding) {
-                let shifted = edit.shifted(by: lines.lowerBound)
-                performEdit(replacing: shifted.range, with: shifted.bytes, bytesAfterCaret: shifted.bytesAfterCaret)
-            } else {
-                selection = TextSelection(anchorOffset: range.lowerBound, activeOffset: range.lowerBound)
-            }
+        if isCSVRenderingActive && csvLines(around: range).count > 64 * 1024 * 1024 {
+            presentSelectionTooLarge()
+            deleted = false
+        } else if let edit = deletionKeepingCells(range) {
+            performEdit(replacing: edit.range, with: edit.bytes, bytesAfterCaret: edit.bytesAfterCaret)
         } else {
-            performEdit(replacing: range, with: [])
+            selection = TextSelection(anchorOffset: range.lowerBound, activeOffset: range.lowerBound)
         }
         return deleted
+    }
+
+    /// The edit that deletes `range`: under CSV columns the one clearing the
+    /// cells it covers, nil when it covers no cell content.
+    func deletionKeepingCells(_ range: Range<Int>) -> CSVCellEdit? {
+        var result: CSVCellEdit? = CSVCellEdit(range: range, bytes: [], bytesAfterCaret: 0)
+        if let csvDialect, let document, isCSVRenderingActive {
+            let lines = csvLines(around: range)
+            result = CSVCellEditing.clearing(
+                (range.lowerBound - lines.lowerBound)..<(range.upperBound - lines.lowerBound),
+                in: document.bytes(in: lines), dialect: csvDialect, encoding: textEncoding)?
+                .shifted(by: lines.lowerBound)
+        }
+        return result
+    }
+
+    /// The whole lines `range` touches, without the last one's ending.
+    private func csvLines(around range: Range<Int>) -> Range<Int> {
+        lineContentRange(containing: range.lowerBound).lowerBound
+            ..< lineContentRange(containing: range.upperBound).upperBound
     }
 
     private func liesInOneCSVField(_ range: Range<Int>) -> Bool {
