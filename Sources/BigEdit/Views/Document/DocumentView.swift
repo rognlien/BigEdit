@@ -47,6 +47,11 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
     /// widths can be re-measured when an option changes.
     var mappedFile: MappedFile?
 
+    /// A journal from an earlier run the user chose to keep rather than
+    /// recover or discard. Held so it is not cleaned up while this document
+    /// is open; while it is, this document is not journaled.
+    var keptJournal: EditJournal?
+
     var findBarVisible = false
     var infoPaneVisible = false
 
@@ -156,7 +161,7 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
         } else {
             document = EditedDocument(file: file, editModel: editModel, lineIndex: index)
         }
-        document.journal = EditJournal.open(for: file.path)
+        document.journal = openJournal(for: file)
         viewport.load(document: document)
         viewport.setLanguage(LanguageRegistry.language(for: file))
         mappedFile = file

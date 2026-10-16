@@ -230,29 +230,97 @@ extension AppDelegate {
         return document
     }
 
-    /// If an earlier run left unsaved edits for this file, asks whether to
-    /// bring them back; otherwise the journal starts fresh from the file.
+    /// What to do with unsaved edits an earlier run left for a file.
+    private enum RecoveryChoice {
+        case recover(adoptingBaseline: Bool)
+        case keepForLater
+        case discard
+    }
+
+    /// If an earlier run left unsaved edits for this file, asks what to do
+    /// with them; otherwise the journal starts fresh from the file.
     private func offerRecoveryIfPending(for document: Document) {
-        let view = document.view
-        var recovered = false
-        if view.hasRecoverableEdits {
-            let alert = NSAlert()
-            alert.messageText = "Recover unsaved changes to \(document.fileName)?"
-            alert.informativeText = "BigEdit did not quit normally the last time this file was "
-                + "open, and the changes made then were not saved. They can be restored now."
-            alert.addButton(withTitle: "Recover")
-            alert.addButton(withTitle: "Discard")
-            alert.alertStyle = .warning
-            if alert.runModal() == .alertFirstButtonReturn {
-                recovered = view.recoverEdits()
-                if !recovered {
-                    presentError("The unsaved changes to \(document.fileName) could not be recovered.")
-                }
-            }
+        var choice = RecoveryChoice.discard
+        switch document.view.journalRecoveryState {
+        case .nothingPending:
+            break
+        case .recoverable:
+            choice = askToRecover(document)
+        case .baselineUncertain:
+            choice = askToRecoverOntoModifiedFile(document)
+        case .baselineChanged:
+            choice = askToKeepUnrecoverableEdits(document)
         }
-        if !recovered {
+        apply(choice, to: document)
+    }
+
+    private func apply(_ choice: RecoveryChoice, to document: Document) {
+        let view = document.view
+        switch choice {
+        case .recover(let adoptingBaseline):
+            if !view.recoverEdits(adoptingBaseline: adoptingBaseline) {
+                presentError("The unsaved changes to \(document.fileName) could not be recovered.")
+                view.startJournalFromCurrentFile()
+            }
+        case .keepForLater:
+            view.keepPendingJournal()
+        case .discard:
             view.startJournalFromCurrentFile()
         }
+    }
+
+    private func askToRecover(_ document: Document) -> RecoveryChoice {
+        let alert = NSAlert()
+        alert.messageText = "Recover unsaved changes to \(document.fileName)?"
+        alert.informativeText = "BigEdit did not quit normally the last time this file was "
+            + "open, and the changes made then were not saved. They can be restored now."
+        alert.addButton(withTitle: "Recover")
+        alert.addButton(withTitle: "Discard")
+        alert.alertStyle = .warning
+        let response = alert.runModal()
+        return response == .alertFirstButtonReturn ? .recover(adoptingBaseline: false) : .discard
+    }
+
+    /// The file is the same size with the same text at both ends, but its
+    /// date or identity changed: it may be untouched, or edited in the middle.
+    private func askToRecoverOntoModifiedFile(_ document: Document) -> RecoveryChoice {
+        let alert = NSAlert()
+        alert.messageText = "Recover unsaved changes to \(document.fileName)?"
+        alert.informativeText = "BigEdit did not quit normally the last time this file was "
+            + "open, and the changes made then were not saved. The file has been modified "
+            + "since then. If its contents changed, the recovered changes will be put in the "
+            + "wrong places, so check the document before you save it."
+        alert.addButton(withTitle: "Not Now")
+        alert.addButton(withTitle: "Recover Anyway")
+        alert.addButton(withTitle: "Discard")
+        alert.alertStyle = .warning
+        var choice = RecoveryChoice.keepForLater
+        switch alert.runModal() {
+        case .alertSecondButtonReturn:
+            choice = .recover(adoptingBaseline: true)
+        case .alertThirdButtonReturn:
+            choice = .discard
+        default:
+            break
+        }
+        return choice
+    }
+
+    /// The edits are splices onto bytes the file no longer has, so they are
+    /// never applied; kept, they can still be recovered if the earlier
+    /// version of the file comes back.
+    private func askToKeepUnrecoverableEdits(_ document: Document) -> RecoveryChoice {
+        let alert = NSAlert()
+        alert.messageText = "The unsaved changes to \(document.fileName) can’t be recovered"
+        alert.informativeText = "BigEdit did not quit normally the last time this file was "
+            + "open, and the file has been changed since then. The unsaved changes were made "
+            + "to the earlier version and can’t be applied to this one. If you restore the "
+            + "earlier version, they can be recovered the next time you open it."
+        alert.addButton(withTitle: "Not Now")
+        alert.addButton(withTitle: "Discard")
+        alert.alertStyle = .warning
+        let response = alert.runModal()
+        return response == .alertSecondButtonReturn ? .discard : .keepForLater
     }
 
     /// Marks a document as changed on disk and surfaces it (sidebar + title).

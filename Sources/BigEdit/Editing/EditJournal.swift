@@ -9,11 +9,14 @@ import Foundation
 ///   in-memory add buffer, so offsets in one are offsets in the other;
 /// - `ops` — every splice since the last save, as a logical range and the
 ///   pieces put there;
-/// - `manifest` — which file the ops apply to: its path, size, inode and
-///   modification date. That is the *baseline*.
+/// - `manifest` — which file the ops apply to: its path, size, inode,
+///   modification date and a digest of its head and tail. That is the
+///   *baseline*.
 ///
 /// On relaunch, if the file on disk still matches the baseline, replaying the
-/// ops over it rebuilds the document as it was. A save moves the baseline to
+/// ops over it rebuilds the document as it was. If it does not, the ops
+/// describe edits to bytes that are no longer there, and are never applied
+/// without the user's say. A save moves the baseline to
 /// the freshly written file and empties the ops; the bytes file keeps growing,
 /// as the add buffer does, until the document is closed cleanly.
 ///
@@ -35,7 +38,7 @@ final class EditJournal {
     /// discarded at the next opportunity.
     private(set) var isReplayable = true
 
-    private static let manifestFormatVersion = 1
+    private static let manifestFormatVersion = 2
     private static let spliceKind: UInt8 = 1
     private static let unreplayableKind: UInt8 = 0xFF
 
@@ -78,7 +81,38 @@ final class EditJournal {
         var size: Int
         var inode: UInt64
         var modified: Double
+        /// A digest of the file's head and tail. Absent from manifests written
+        /// before it was recorded.
+        var sample: String?
     }
+
+    /// How the file on disk compares with the baseline the ops apply to.
+    enum BaselineComparison {
+        /// The same file, unchanged: the ops replay onto exactly the bytes
+        /// they were made against.
+        case identical
+        /// The same size and sampled content, but a different identity or
+        /// modification date — touched, restored from a backup, or rewritten
+        /// with the same length. Replaying may or may not be right.
+        case uncertain
+        /// A different file: the ops would splice onto the wrong bytes.
+        case different
+    }
+
+    /// What an earlier run left for `file` — the question asked when a
+    /// document is opened.
+    enum RecoveryState {
+        case nothingPending
+        /// Unsaved edits against `file` exactly as it is now.
+        case recoverable
+        /// Unsaved edits against a file that may have changed since.
+        case baselineUncertain
+        /// Unsaved edits against a file that has since changed.
+        case baselineChanged
+    }
+
+    /// The bytes sampled from each end of the file for its fingerprint.
+    static let sampleLength = 64 * 1024
 
     /// Makes `file` the baseline: records what it is and empties the ops.
     /// Called on open (when nothing is pending) and after every save.
@@ -96,23 +130,43 @@ final class EditJournal {
             try? Data().write(to: bytesURL)
         }
         isReplayable = true
+        adoptBaseline(file)
+    }
+
+    /// Records `file` as the baseline without touching the ops: after the
+    /// user chose to recover onto a file that may have changed, the ops now
+    /// stand against the file as it is.
+    func adoptBaseline(_ file: MappedFile) {
         if let manifest = EditJournal.manifest(describing: file),
            let data = try? JSONEncoder().encode(manifest) {
             try? data.write(to: manifestURL)
         }
     }
 
-    /// Whether `file` is still the file the ops apply to.
-    func matchesBaseline(_ file: MappedFile) -> Bool {
-        var result = false
-        if let data = try? Data(contentsOf: manifestURL),
-           let saved = try? JSONDecoder().decode(Manifest.self, from: data),
-           let current = EditJournal.manifest(describing: file) {
-            result = saved.version == EditJournal.manifestFormatVersion
-                && saved.path == current.path
-                && saved.size == current.size
-                && saved.inode == current.inode
-                && saved.modified == current.modified
+    /// How `file` compares with the file the ops apply to. A missing or
+    /// unreadable manifest gives no grounds to replay, so it is `different`.
+    func compareBaseline(_ file: MappedFile) -> BaselineComparison {
+        var result = BaselineComparison.different
+        if let saved = readManifest(), let current = EditJournal.manifest(describing: file) {
+            result = EditJournal.compare(saved, with: current)
+        }
+        return result
+    }
+
+    private static func compare(_ saved: Manifest, with current: Manifest) -> BaselineComparison {
+        let sampleDiffers = saved.sample != nil && saved.sample != current.sample
+        let sameIdentity = saved.inode == current.inode && saved.modified == current.modified
+        var result = BaselineComparison.different
+        if saved.path == current.path && saved.size == current.size && !sampleDiffers {
+            result = sameIdentity ? .identical : .uncertain
+        }
+        return result
+    }
+
+    private func readManifest() -> Manifest? {
+        var result: Manifest?
+        if let data = try? Data(contentsOf: manifestURL) {
+            result = try? JSONDecoder().decode(Manifest.self, from: data)
         }
         return result
     }
@@ -124,17 +178,44 @@ final class EditJournal {
         }
         let modified = Double(info.st_mtimespec.tv_sec) + Double(info.st_mtimespec.tv_nsec) / 1e9
         return Manifest(version: manifestFormatVersion, path: file.path, size: Int(info.st_size),
-                        inode: UInt64(info.st_ino), modified: modified)
+                        inode: UInt64(info.st_ino), modified: modified, sample: sample(of: file))
     }
 
-    /// Whether there are unsaved operations recorded against `file` as it is
-    /// now — the question asked when a document is opened.
-    func hasRecoverableEdits(for file: MappedFile) -> Bool {
-        var result = false
-        if matchesBaseline(file), let operations = readOperations(), !operations.isEmpty {
-            result = true
+    /// A digest of the first and last `sampleLength` bytes and the size, so a
+    /// rewrite that kept the length and dates is still caught at either end.
+    /// Constant work whatever the file's size.
+    private static func sample(of file: MappedFile) -> String {
+        let buffer = file.buffer
+        let headLength = min(sampleLength, buffer.count)
+        let tailStart = max(headLength, buffer.count - sampleLength)
+        var hasher = SHA256()
+        hasher.update(data: withUnsafeBytes(of: Int64(buffer.count).littleEndian) { Data($0) })
+        hasher.update(bufferPointer: UnsafeRawBufferPointer(rebasing: buffer[0..<headLength]))
+        hasher.update(bufferPointer: UnsafeRawBufferPointer(rebasing: buffer[tailStart..<buffer.count]))
+        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// Whether there are unsaved operations recorded for this file, and
+    /// whether the file is still the one they were made against.
+    func recoveryState(for file: MappedFile) -> RecoveryState {
+        var result = RecoveryState.nothingPending
+        if let operations = readOperations(), !operations.isEmpty {
+            switch compareBaseline(file) {
+            case .identical:
+                result = .recoverable
+            case .uncertain:
+                result = .baselineUncertain
+            case .different:
+                result = .baselineChanged
+            }
         }
         return result
+    }
+
+    /// Whether there are unsaved operations recorded against `file` exactly
+    /// as it is now.
+    func hasRecoverableEdits(for file: MappedFile) -> Bool {
+        recoveryState(for: file) == .recoverable
     }
 
     // MARK: - Recording

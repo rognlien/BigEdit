@@ -200,7 +200,10 @@ piece-table search vs naive search. Run with `swift test`.
 - Word boundaries for double-click are ASCII-only.
 - Unsaved edits are journaled to `~/Library/Application Support/BigEdit/Journals/` — every inserted
   byte and every splice — and offered for recovery when the file is next opened, provided it is
-  still the file they were made against (size, inode and modification date). Appends are not
+  still the file they were made against (size, inode, modification date and a digest of the first
+  and last 64 KB). A file with the same size and sampled content but a new date or inode offers
+  Recover Anyway; a file that has changed is never replayed onto, and its journal can be kept
+  for when the earlier version is restored (that document is then not journaled). Appends are not
   fsynced: an app crash keeps them, a power loss may lose the last few. Choosing Don't Save,
   Reload and Discard, or Quit Anyway removes the journal, as does a clean close.
 - Editing inside a single multi-GB line re-scans that line's span per splice — no worse than the viewer's own cost profile in a megaline file, but noticeable.

@@ -165,6 +165,126 @@ final class EditJournalTests: XCTestCase {
         XCTAssertFalse(recovered)
     }
 
+    // MARK: - The baseline fingerprint
+
+    private func state(reopening url: URL) -> EditJournal.RecoveryState {
+        let document = open(url)
+        return document.journal!.recoveryState(for: document.file)
+    }
+
+    private func setModificationDate(_ date: Date, of url: URL) {
+        try! FileManager.default.setAttributes([.modificationDate: date], ofItemAtPath: url.path)
+    }
+
+    private func modificationDate(of url: URL) -> Date {
+        try! FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate] as! Date
+    }
+
+    private func manifestURL(of document: EditedDocument) -> URL {
+        document.journal!.directory.appendingPathComponent("manifest.json")
+    }
+
+    /// Rewrites the manifest as the first format wrote it: no content sample.
+    private func makeLegacyManifest(of document: EditedDocument) {
+        let url = manifestURL(of: document)
+        var manifest = try! JSONSerialization.jsonObject(with: Data(contentsOf: url)) as! [String: Any]
+        manifest["sample"] = nil
+        manifest["version"] = 1
+        try! JSONSerialization.data(withJSONObject: manifest).write(to: url)
+    }
+
+    func testAnUnchangedFileIsRecoverable() {
+        let (first, url) = openFresh("same\n")
+        first.replace(0..<0, with: Array("+".utf8))
+        XCTAssertEqual(state(reopening: url), .recoverable)
+    }
+
+    func testAFileOfAnotherSizeIsReportedAsChangedAndKeepsItsEdits() {
+        let (first, url) = openFresh("original\n")
+        first.replace(0..<0, with: Array("edit ".utf8))
+        try! Data("rewritten elsewhere\n".utf8).write(to: url)
+
+        XCTAssertEqual(state(reopening: url), .baselineChanged)
+        XCTAssertEqual(first.journal!.readOperations()?.count, 1, "asking does not discard")
+    }
+
+    func testSameSizeDifferentContentIsReportedAsChanged() {
+        let (first, url) = openFresh("abcdef\n")
+        first.replace(0..<0, with: Array("+".utf8))
+        let date = modificationDate(of: url)
+        try! Data("ABCDEF\n".utf8).write(to: url)
+        setModificationDate(date, of: url)
+
+        XCTAssertEqual(state(reopening: url), .baselineChanged, "the sample catches it")
+    }
+
+    func testAChangeAtTheTailOfALargeFileIsCaught() {
+        let length = EditJournal.sampleLength * 3
+        let (first, url) = openFresh(String(repeating: "x", count: length))
+        first.replace(0..<0, with: Array("+".utf8))
+        let date = modificationDate(of: url)
+        try! Data((String(repeating: "x", count: length - 1) + "y").utf8).write(to: url)
+        setModificationDate(date, of: url)
+
+        XCTAssertEqual(state(reopening: url), .baselineChanged)
+    }
+
+    func testATouchedFileIsUncertain() {
+        let (first, url) = openFresh("touched\n")
+        first.replace(0..<0, with: Array("+".utf8))
+        setModificationDate(Date(timeIntervalSinceNow: 60), of: url)
+
+        XCTAssertEqual(state(reopening: url), .baselineUncertain)
+    }
+
+    func testRecoveringOntoAnUncertainFileAdoptsItAsTheBaseline() {
+        let (first, url) = openFresh("touched\n")
+        first.replace(0..<0, with: Array("+".utf8))
+        setModificationDate(Date(timeIntervalSinceNow: 60), of: url)
+        let second = open(url)
+        XCTAssertTrue(second.recover(from: second.journal!))
+        second.journal!.adoptBaseline(second.file)
+
+        let (third, recovered) = reopenAndRecover(url)
+        XCTAssertTrue(recovered)
+        XCTAssertEqual(text(third), "+touched\n")
+    }
+
+    func testALegacyManifestStillRecoversAnUnchangedFile() {
+        let (first, url) = openFresh("legacy\n")
+        first.replace(0..<0, with: Array("+".utf8))
+        makeLegacyManifest(of: first)
+
+        let (second, recovered) = reopenAndRecover(url)
+        XCTAssertTrue(recovered)
+        XCTAssertEqual(text(second), "+legacy\n")
+    }
+
+    func testALegacyManifestCannotVouchForATouchedFile() {
+        let (first, url) = openFresh("legacy\n")
+        first.replace(0..<0, with: Array("+".utf8))
+        makeLegacyManifest(of: first)
+        setModificationDate(Date(timeIntervalSinceNow: 60), of: url)
+
+        XCTAssertEqual(state(reopening: url), .baselineUncertain)
+    }
+
+    func testAMissingManifestIsTreatedAsChanged() {
+        let (first, url) = openFresh("orphan\n")
+        first.replace(0..<0, with: Array("+".utf8))
+        try! FileManager.default.removeItem(at: manifestURL(of: first))
+
+        XCTAssertEqual(state(reopening: url), .baselineChanged)
+    }
+
+    func testAnUnreadableManifestDoesNotCrash() {
+        let (first, url) = openFresh("garbled\n")
+        first.replace(0..<0, with: Array("+".utf8))
+        try! Data("{not json".utf8).write(to: manifestURL(of: first))
+
+        XCTAssertEqual(state(reopening: url), .baselineChanged)
+    }
+
     func testJournalDirectoriesAreKeyedByPath() {
         let one = EditJournal.directory(for: "/a/b.txt", in: root)
         let two = EditJournal.directory(for: "/a/c.txt", in: root)
