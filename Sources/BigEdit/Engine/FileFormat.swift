@@ -14,7 +14,7 @@ struct FileFormat {
     /// decoded at all (binary, or UTF-16, which is labelled but not read).
     let textEncoding: TextEncoding?
 
-    /// Whether the content is UTF-8 — the only encoding edits can be made in.
+    /// Whether the content is UTF-8.
     var isUTF8: Bool { textEncoding == .utf8 }
 
     private static let sampleLimit = 64 * 1024

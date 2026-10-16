@@ -39,6 +39,10 @@ extension DocumentView {
         in document: EditedDocument, pattern: String, replacement: String
     ) {
         replaceAllScan?.cancel()
+        if let status = unrepresentableReplacementStatus(replacement) {
+            findBar.updateReplaceStatus(status)
+            return
+        }
         guard let scan = makeSearchScan(pattern, caseSensitive: true) else {
             findBar.updateReplaceStatus("Invalid pattern")
             return
@@ -69,6 +73,9 @@ extension DocumentView {
             materializeReplaceAll(scan: scan, replacement: replacement, in: document)
             let formatted = numberFormatter.string(from: NSNumber(value: count)) ?? "\(count)"
             findBar.updateReplaceStatus("\(formatted) replaced")
+        } else if scan.isRegularExpression && !textEncoding.isUTF8 {
+            // The streaming form rewrites lines decoded as UTF-8.
+            findBar.updateReplaceStatus("Too many matches to replace in \(textEncoding.label)")
         } else if scan.isRegularExpression {
             // Too many to hold as edits: the streaming form writes the
             // result to a file instead, with no cap at all.
@@ -101,7 +108,7 @@ extension DocumentView {
         scan: SearchScan, replacement: String, in document: EditedDocument
     ) {
         let matches = scan.matches(beginningIn: 0..<Int.max)
-        let replacementBytes = Array(replacement.utf8)
+        let replacementBytes = textEncoding.encode(replacement) ?? []
         document.undoStack.beginGrouping()
         for match in matches.reversed() {
             document.replace(match, with: replacementBytes)

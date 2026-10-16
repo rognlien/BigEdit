@@ -43,6 +43,10 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
         fileFormat?.textEncoding ?? .utf8
     }
 
+    /// Whether this document has explained why text its encoding cannot
+    /// write was refused. The explanation is shown once; the beep remains.
+    var hasExplainedUnrepresentableText = false
+
     /// The mapped file behind the current document, kept so CSV column
     /// widths can be re-measured when an option changes.
     var mappedFile: MappedFile?
@@ -130,6 +134,9 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
         }
         viewport.onEdit = { [weak self] in
             self?.documentWasEdited()
+        }
+        viewport.onUnrepresentableText = { [weak self] text in
+            self?.explainUnrepresentableText(text)
         }
         viewport.onCSVSortRequest = { [weak self] column, descending in
             self?.sortCSV(byColumn: column, descending: descending)

@@ -7,23 +7,34 @@ import CoreText
 /// of the marked text; composition bytes live in the document itself.
 extension ViewportView: NSTextInputClient {
 
+    /// Text the document's encoding cannot write is not inserted; any
+    /// composition it was meant to replace is removed with it.
     func insertText(_ string: Any, replacementRange: NSRange) {
         let text = ViewportView.plainString(from: string)
         let target = editTargetRange(for: replacementRange)
+        let isCommittingComposition = markedByteRange != nil
         markedByteRange = nil
-        if let target {
-            insertKeepingCells(Array(text.utf8), replacing: target)
+        if let target, isEditingAllowed {
+            if let bytes = encodedForInsertion(text) {
+                insertKeepingCells(bytes, replacing: target)
+            } else if isCommittingComposition && !target.isEmpty {
+                performEdit(replacing: target, with: [])
+            }
         } else {
             NSSound.beep()
         }
     }
 
+    /// Composition the document's encoding cannot write — a dead key's
+    /// accent that has no character of its own there — is tracked as an
+    /// empty marked range, so the committed character still lands at the
+    /// caret.
     func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
         let text = ViewportView.plainString(from: string)
         if isEditingAllowed, let target = editTargetRange(for: replacementRange) {
-            let bytes = Array(text.utf8)
+            let bytes = textEncoding.encode(text) ?? []
             performEdit(replacing: target, with: bytes)
-            markedByteRange = bytes.isEmpty
+            markedByteRange = text.isEmpty
                 ? nil
                 : target.lowerBound..<(target.lowerBound + bytes.count)
         }
@@ -41,7 +52,7 @@ extension ViewportView: NSTextInputClient {
     func markedRange() -> NSRange {
         var result = NSRange(location: NSNotFound, length: 0)
         if let marked = markedByteRange, let document {
-            let text = String(decoding: document.bytes(in: marked), as: UTF8.self)
+            let text = textEncoding.decode(document.bytes(in: marked))
             result = NSRange(location: 0, length: text.utf16.count)
         }
         return result
@@ -97,10 +108,12 @@ extension ViewportView: NSTextInputClient {
         if let marked = markedByteRange, let document {
             result = marked
             if replacementRange.location != NSNotFound {
-                let text = String(decoding: document.bytes(in: marked), as: UTF8.self)
-                let start = ViewportView.byteOffset(forUTF16Index: replacementRange.location, in: text)
+                let text = textEncoding.decode(document.bytes(in: marked))
+                let start = ViewportView.byteOffset(forUTF16Index: replacementRange.location,
+                                                    in: text, encoding: textEncoding)
                 let end = ViewportView.byteOffset(
-                    forUTF16Index: replacementRange.location + replacementRange.length, in: text)
+                    forUTF16Index: replacementRange.location + replacementRange.length,
+                    in: text, encoding: textEncoding)
                 result = (marked.lowerBound + start)..<(marked.lowerBound + end)
             }
         } else if let selection {

@@ -4,13 +4,13 @@ import AppKit
 extension DocumentView {
 
     /// Sets the detected format (encoding / line endings) shown on the right,
-    /// and derives editability from it: only UTF-8 / ASCII text accepts
-    /// positional edits, and Return inserts the detected line ending.
+    /// and derives editability from it: text in an encoding BigEdit decodes
+    /// accepts positional edits, and Return inserts the detected line ending.
     func setFileFormat(_ format: FileFormat?) {
         fileFormat = format
         viewport.setTextEncoding(textEncoding)
         if let document = viewport.document {
-            document.isEditable = format?.isUTF8 ?? false
+            document.isEditable = format?.textEncoding != nil
             document.encoding = textEncoding
             document.newlineBytes = format?.lineEnding == "CRLF" ? [0x0D, 0x0A] : [0x0A]
         }

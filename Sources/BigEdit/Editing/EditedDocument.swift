@@ -97,8 +97,8 @@ final class EditedDocument {
     }
 
     /// Whether the document accepts positional edits. Set from the detected
-    /// file format at load: only UTF-8 / ASCII text is editable, since the
-    /// viewport decodes UTF-8 and edits are spliced as UTF-8 bytes.
+    /// file format at load: text in any encoding BigEdit decodes is editable,
+    /// with edits spliced in as bytes of that encoding.
     var isEditable = false
 
     /// The encoding the bytes are in, set from the detected file format. In

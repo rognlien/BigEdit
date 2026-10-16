@@ -14,10 +14,25 @@ extension ViewportView {
     }
 
     /// A rewrite of the whole document needs no caret, so it is possible
-    /// under aligned CSV columns too; the only bar is a format that cannot be
-    /// edited at all, or a deferred replacement rule already transforming it.
+    /// under aligned CSV columns too. The bars are a format that cannot be
+    /// edited at all, a deferred replacement rule already transforming it,
+    /// and an encoding other than UTF-8, since the line operations work on
+    /// lines decoded as UTF-8.
     var isWholeDocumentReplacementAllowed: Bool {
         document?.isEditable == true && document?.hasDisplayTransform != true
+            && document?.encoding.isUTF8 == true
+    }
+
+    /// `text` as bytes in the document's encoding, or `nil` — after a beep
+    /// and a report to `onUnrepresentableText` — when the encoding cannot
+    /// write some of it.
+    func encodedForInsertion(_ text: String) -> [UInt8]? {
+        let bytes = textEncoding.encode(text)
+        if bytes == nil {
+            NSSound.beep()
+            onUnrepresentableText?(text)
+        }
+        return bytes
     }
 
     /// Replaces the whole document in one undoable step.
@@ -229,7 +244,7 @@ extension ViewportView {
     @objc func paste(_ sender: Any?) {
         if isEditingAllowed, selection != nil,
            let text = NSPasteboard.general.string(forType: .string) {
-            insertBytesAtSelection(pasteBytes(from: text))
+            insertTextAtSelection(text)
         } else {
             NSSound.beep()
         }
@@ -274,20 +289,27 @@ extension ViewportView {
     /// Control-Y: inserts the text last deleted with Control-K.
     override func yank(_ sender: Any?) {
         if isEditingAllowed, selection != nil, let text = ViewportView.killBuffer {
-            insertBytesAtSelection(pasteBytes(from: text))
+            insertTextAtSelection(text)
         } else {
             NSSound.beep()
         }
     }
 
-    /// Pasted text normalised to the document's detected line ending, as
-    /// UTF-8 bytes.
-    func pasteBytes(from text: String) -> [UInt8] {
+    /// Inserts pasted or yanked text at the selection, unless the document's
+    /// encoding cannot write it.
+    private func insertTextAtSelection(_ text: String) {
+        if let bytes = encodedForInsertion(normalizingLineEndings(of: text)) {
+            insertBytesAtSelection(bytes)
+        }
+    }
+
+    /// Pasted text normalised to the document's detected line ending.
+    func normalizingLineEndings(of text: String) -> String {
         var normalized = text.replacingOccurrences(of: "\r\n", with: "\n")
         normalized = normalized.replacingOccurrences(of: "\r", with: "\n")
         if document?.newlineBytes == [0x0D, 0x0A] {
             normalized = normalized.replacingOccurrences(of: "\n", with: "\r\n")
         }
-        return Array(normalized.utf8)
+        return normalized
     }
 }

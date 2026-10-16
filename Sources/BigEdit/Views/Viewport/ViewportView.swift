@@ -631,6 +631,10 @@ final class ViewportView: NSView {
     /// state, the scroller, and content-dependent scans.
     var onEdit: (() -> Void)?
 
+    /// Invoked with typed or pasted text that was not inserted because the
+    /// document's encoding has no way to write it.
+    var onUnrepresentableText: ((String) -> Void)?
+
     // MARK: - Configuration
 
     override func setFrameSize(_ newSize: NSSize) {

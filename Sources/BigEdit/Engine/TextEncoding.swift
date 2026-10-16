@@ -2,12 +2,11 @@ import Foundation
 
 /// The text encodings BigEdit decodes.
 ///
-/// UTF-8 is the native one: it is what editing produces and what every byte
-/// offset in the app assumes. The single-byte encodings are decoded for
-/// reading, copying, searching and counting — one byte is one character,
-/// which keeps every byte↔character mapping exact — but a document in one
-/// stays read-only, since edits are spliced as UTF-8 bytes. UTF-16 is
-/// detected and labelled but not decoded: the line index finds newlines by
+/// A document's bytes stay in its own encoding: typed and pasted text is
+/// encoded before it is spliced in, so a save writes the bytes unchanged and
+/// every byte offset keeps its meaning. In the single-byte encodings one byte
+/// is one character, which keeps every byte↔character mapping exact. UTF-16
+/// is detected and labelled but not decoded: the line index finds newlines by
 /// the `0x0A` byte, and two-byte units would need an indexer that understands
 /// them.
 enum TextEncoding: Equatable {
@@ -79,6 +78,16 @@ enum TextEncoding: Equatable {
             result = Array(text.utf8)
         case .windows1252, .latin1:
             result = text.data(using: foundationEncoding).map(Array.init)
+        }
+        return result
+    }
+
+    /// The first character of `text` this encoding has no representation
+    /// for, or `nil` when all of it can be written.
+    func firstUnrepresentableCharacter(in text: String) -> Character? {
+        var result: Character?
+        if encode(text) == nil {
+            result = text.first { encode(String($0)) == nil }
         }
         return result
     }
