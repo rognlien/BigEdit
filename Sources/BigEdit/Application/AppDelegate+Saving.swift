@@ -187,7 +187,6 @@ extension AppDelegate {
                 if reloading {
                     document.view.discardJournal()
                     self.reload(document, from: destination, preserveScroll: true)
-                    document.view.startJournalFromCurrentFile()
                     let formatted = self.numberFormatter.string(from: NSNumber(value: count)) ?? "\(count)"
                     document.view.findBar.updateReplaceStatus("\(formatted) replaced")
                 } else {
@@ -207,7 +206,6 @@ extension AppDelegate {
     /// its edit history so ⌘Z still works.
     private func reloadDocument(_ document: Document, from destination: URL) {
         reload(document, from: destination, preserveScroll: false, inheritingHistory: true)
-        document.view.startJournalFromCurrentFile()
         addRecentDocument(destination)
     }
 
@@ -232,7 +230,6 @@ extension AppDelegate {
                     if response == .alertFirstButtonReturn {
                         document.view.discardJournal()
                         self?.reload(document, from: document.url, preserveScroll: true)
-                        document.view.startJournalFromCurrentFile()
                     }
                 }
             } else {
@@ -257,6 +254,7 @@ extension AppDelegate {
         document.hasDiskChanges = false
         document.view.load(file: file, index: index, inheritingHistory: inheritingHistory,
                            keepingViewMode: true)
+        document.view.startJournalFromCurrentFile()
         document.view.apply(settings)
         document.view.setInfoPaneWidth(infoPaneWidth)
         document.view.setFileFormat(document.format)

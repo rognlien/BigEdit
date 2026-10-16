@@ -19,8 +19,10 @@ extension DocumentView {
     /// longer looks scrolled to the end of anything.
     func adoptGrownFile(_ grown: MappedFile, index: LineIndex, pinToEnd: Bool) {
         let document = EditedDocument(file: grown, editModel: editModel, lineIndex: index)
+        document.journal = viewport.document?.journal
         mappedFile = grown
         viewport.replaceDocumentKeepingPosition(document)
+        startJournalFromCurrentFile()
         setFileFormat(fileFormat)
         syncScroller()
         if pinToEnd {
