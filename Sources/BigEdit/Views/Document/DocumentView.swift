@@ -57,6 +57,9 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
     /// The language the user chose in place of the detected one, if any.
     var chosenLanguage: Language?
 
+    /// Where each file's view mode, CSV options and language are remembered.
+    var viewStateStore = DocumentViewStateStore.shared
+
     /// A journal from an earlier run the user chose to keep rather than
     /// recover or discard. Held so it is not cleaned up while this document
     /// is open; while it is, this document is not journaled.
@@ -141,6 +144,9 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
         viewport.onCSVSortRequest = { [weak self] column, descending in
             self?.sortCSV(byColumn: column, descending: descending)
         }
+        viewport.onCSVColumnResize = { [weak self] in
+            self?.rememberViewState()
+        }
         statusBar.languageMenuItems = { [weak self] in
             self?.languageMenuItems() ?? []
         }
@@ -194,6 +200,8 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
         hideRenderedMarkdown(keepingPlace: false)
         if keepingViewMode {
             formatBar(formatBar, didSelect: formatBar.mode)
+        } else {
+            restoreViewState(for: file)
         }
         layoutComponents()
         syncScroller()

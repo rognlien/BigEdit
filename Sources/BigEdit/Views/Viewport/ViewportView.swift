@@ -72,6 +72,9 @@ final class ViewportView: NSView {
     /// for a header click, which toggles the direction on the sorted column.
     var onCSVSortRequest: ((_ column: Int, _ descending: Bool?) -> Void)?
 
+    /// The user resized a column, by dragging its edge or double-clicking it.
+    var onCSVColumnResize: (() -> Void)?
+
     /// The column the table was last sorted by, drawn as an arrow in its
     /// header until the mode or document changes.
     private(set) var csvSortIndicator: (column: Int, descending: Bool)?
@@ -427,6 +430,33 @@ final class ViewportView: NSView {
             csvColumnLayout = csvColumnLayout?.settingWidth(measured.columnWidths[column],
                                                             forColumn: column)
             widestDrawnRowWidth = 0      // the table's width just changed
+            window?.invalidateCursorRects(for: self)
+            needsDisplay = true
+            onCSVColumnResize?()
+        }
+    }
+
+    /// The widths, by column, that differ from the ones measured from the
+    /// file — the columns the user resized or that grew while typing.
+    var csvChosenColumnWidths: [Int: Int] {
+        var chosen: [Int: Int] = [:]
+        if let csvColumnLayout, let measured = csvMeasuredColumnLayout {
+            for (column, width) in csvColumnLayout.columnWidths.enumerated()
+            where column >= measured.columnWidths.count || measured.columnWidths[column] != width {
+                chosen[column] = width
+            }
+        }
+        return chosen
+    }
+
+    /// Gives the columns that exist the widths chosen for them.
+    func applyCSVChosenColumnWidths(_ chosen: [Int: Int]) {
+        if var layout = csvColumnLayout {
+            for (column, width) in chosen where column < layout.columnWidths.count {
+                layout = layout.settingWidth(width, forColumn: column)
+            }
+            csvColumnLayout = layout
+            widestDrawnRowWidth = 0
             window?.invalidateCursorRects(for: self)
             needsDisplay = true
         }

@@ -20,7 +20,7 @@ protocol FormatBarDelegate: AnyObject {
 /// the file is split into columns.
 final class FormatBar: NSView {
 
-    enum Mode {
+    enum Mode: String {
         case text
         case csv
         case markdown

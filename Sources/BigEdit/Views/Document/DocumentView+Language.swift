@@ -22,6 +22,7 @@ extension DocumentView {
             }
         }
         updateStatusBar()
+        rememberViewState()
     }
 
     /// Automatic, Plain Text and every language, the current choice ticked.

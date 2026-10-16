@@ -146,6 +146,7 @@ extension ViewportView {
     override func mouseUp(with event: NSEvent) {
         if columnDrag != nil {
             columnDrag = nil
+            onCSVColumnResize?()
             return
         }
         stopAutoscrollTimer()

@@ -22,6 +22,7 @@ final class LanguageChoiceTests: XCTestCase {
         let index = LineIndex()
         index.buildSynchronously(from: file)
         let view = DocumentView(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
+        view.viewStateStore = TestHelpers.isolatedViewStateStore()
         view.load(file: file, index: index)
         return (view, file)
     }
@@ -67,14 +68,15 @@ final class LanguageChoiceTests: XCTestCase {
         XCTAssertEqual(view.viewport.language, LanguageRegistry.json)
     }
 
-    func testAReloadKeepsTheChoiceAndOpeningAFileDoesNot() {
+    func testAReloadKeepsTheChoiceAndOpeningAnotherFileDoesNot() {
         let (view, file) = makeView("SELECT 1;", extension: "txt")
         choose("SQL", in: view)
 
         reload(view, file, keepingViewMode: true)
         XCTAssertEqual(view.viewport.language, LanguageRegistry.sql)
 
-        reload(view, file, keepingViewMode: false)
+        let (other, _) = makeView("SELECT 2;", extension: "txt")
+        reload(view, other.mappedFile!, keepingViewMode: false)
         XCTAssertEqual(view.viewport.language, .plain)
     }
 

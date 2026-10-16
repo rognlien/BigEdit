@@ -7,12 +7,21 @@ extension DocumentView {
     func formatBar(_ bar: FormatBar, didSelect mode: FormatBar.Mode) {
         applyCSVRendering(enabled: mode == .csv, dialect: bar.dialect)
         applyMarkdownRendering(enabled: mode == .markdown)
+        rememberViewState()
     }
 
     /// Re-measures the columns when an option changes, since a different
-    /// delimiter, quote, or trim setting moves every field boundary.
+    /// delimiter, quote, or trim setting moves every field boundary. Resized
+    /// columns keep their widths unless the delimiter changed, which makes
+    /// them different columns.
     func formatBar(_ bar: FormatBar, didChange dialect: CSVDialect) {
+        let chosenWidths = viewport.csvChosenColumnWidths
+        let keepsColumns = viewport.csvDialect?.delimiter == dialect.delimiter
         applyCSVRendering(enabled: bar.mode == .csv, dialect: dialect)
+        if keepsColumns {
+            viewport.applyCSVChosenColumnWidths(chosenWidths)
+        }
+        rememberViewState()
     }
 
     /// Sorts the table by `column` as one undoable edit. With `descending`

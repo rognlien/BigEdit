@@ -3,7 +3,7 @@ import XCTest
 @testable import BigEdit
 
 /// Saving reloads the document from disk; the view mode and the CSV options
-/// it was shown with survive that, while opening a file starts in text.
+/// it was shown with survive that, while opening another file starts in text.
 final class ReloadViewModeTests: XCTestCase {
 
     private var temporaryFiles: [URL] = []
@@ -21,6 +21,7 @@ final class ReloadViewModeTests: XCTestCase {
         let index = LineIndex()
         index.buildSynchronously(from: file)
         let view = DocumentView(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
+        view.viewStateStore = TestHelpers.isolatedViewStateStore()
         view.load(file: file, index: index)
         view.formatBar.setMode(.csv)
         view.formatBar(view.formatBar, didSelect: .csv)
@@ -47,10 +48,12 @@ final class ReloadViewModeTests: XCTestCase {
         XCTAssertEqual(view.formatBar.dialect.trimsFieldWhitespace, true)
     }
 
-    func testLoadingAFileStartsInText() {
-        let (view, file) = makeColumnsView()
+    func testLoadingAnotherFileStartsInText() {
+        let (view, _) = makeColumnsView()
+        let url = TestHelpers.writeTempFile("name,age\nann,37\n")
+        temporaryFiles.append(url)
 
-        reload(view, file, keepingViewMode: false)
+        reload(view, MappedFile(path: url.path)!, keepingViewMode: false)
 
         XCTAssertEqual(view.formatBar.mode, .text)
         XCTAssertFalse(view.viewport.isCSVRenderingActive)

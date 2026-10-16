@@ -19,6 +19,15 @@ enum TestHelpers {
     static func remove(_ url: URL) {
         try? FileManager.default.removeItem(at: url)
     }
+
+    /// An emptied view-state store, so a test does not read what other tests
+    /// remembered. One suite is reused, so runs leave a single file behind.
+    static func isolatedViewStateStore() -> DocumentViewStateStore {
+        let suiteName = "BigEditTests"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        return DocumentViewStateStore(defaults: defaults)
+    }
 }
 
 /// A deterministic random generator (SplitMix64) so fuzz tests are
