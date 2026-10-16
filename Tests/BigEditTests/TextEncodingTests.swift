@@ -278,6 +278,29 @@ final class TextEncodingTests: XCTestCase {
         XCTAssertEqual(String(data: converted, encoding: .utf8), "Ærø € " + sampleText)
     }
 
+    private func documentView(_ bytes: [UInt8]) -> DocumentView {
+        let file = mapped(bytes)
+        let index = LineIndex()
+        index.buildSynchronously(from: file)
+        let view = DocumentView(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
+        view.load(file: file, index: index)
+        view.setFileFormat(FileFormat(scanning: file))
+        return view
+    }
+
+    func testASingleByteDocumentIsEditableAndCanBeConverted() {
+        let view = documentView(sample)
+        XCTAssertEqual(view.editedDocument?.isEditable, true)
+        XCTAssertEqual(view.editedDocument?.encoding, .windows1252)
+        XCTAssertTrue(view.canConvertToUTF8)
+    }
+
+    func testAUTF8DocumentHasNothingToConvert() {
+        let view = documentView(Array(sampleText.utf8))
+        XCTAssertEqual(view.editedDocument?.isEditable, true)
+        XCTAssertFalse(view.canConvertToUTF8)
+    }
+
     func testAnEditedSingleByteDocumentSavesItsBytesUnchanged() throws {
         let (viewport, document) = viewport(sample, encoding: .windows1252, caret: 0)
         viewport.insertText("Ærø € ", replacementRange: NSRange(location: NSNotFound, length: 0))

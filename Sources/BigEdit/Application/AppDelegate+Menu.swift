@@ -226,6 +226,11 @@ extension AppDelegate {
         saveAsItem.target = self
         fileMenu.addItem(saveAsItem)
 
+        let convertItem = NSMenuItem(title: "Convert to UTF-8…", action: #selector(convertToUTF8),
+                                     keyEquivalent: "")
+        convertItem.target = self
+        fileMenu.addItem(convertItem)
+
         fileMenu.addItem(NSMenuItem.separator())
 
         let reloadItem = NSMenuItem(

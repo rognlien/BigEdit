@@ -17,6 +17,8 @@ extension AppDelegate {
             enabled = canCompareDocuments
         case #selector(save), #selector(saveAs):
             enabled = activeDocument?.isEdited == true
+        case #selector(convertToUTF8):
+            enabled = activeView?.canConvertToUTF8 == true
         case #selector(closeActiveDocument), #selector(reloadActiveFromDisk),
              #selector(revealInFinder):
             enabled = activeDocument != nil
