@@ -478,4 +478,17 @@ final class CSVEditingTests: XCTestCase {
 
         XCTAssertEqual(text(of: document), "name,age\n\n")
     }
+
+    func testDeletingAColumnSelectionClearsItsCells() {
+        let original = "name,age,city\nbob,42,Oslo\nann,7,Rome\n"
+        let (viewport, document) = makeViewport(original)
+        let width = viewport.characterWidth
+        viewport.columnSelection = ColumnSelection(anchorRow: 1, activeRow: 2, anchorX: 2 * width, activeX: 8 * width)
+
+        viewport.deleteBackward(nil)
+
+        XCTAssertEqual(text(of: document), "name,age,city\nbo,,Oslo\nan,,Rome\n")
+        viewport.undo(nil)
+        XCTAssertEqual(text(of: document), original, "one undo step")
+    }
 }

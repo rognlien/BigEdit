@@ -115,14 +115,17 @@ extension ViewportView {
 
     /// Deletes every row's slice as one undoable step, bottom row first so
     /// the offsets above stay valid, and leaves the caret at the top-left
-    /// corner.
+    /// corner. Under CSV columns each slice clears the cells it covers and
+    /// keeps their delimiters.
     func deleteColumnSelection() {
         let slices = columnSelectionSlices()
         if let document, isEditingAllowed, let caret = slices.first?.lowerBound {
             let selectionBefore = selection
             document.undoStack.beginGrouping()
             for slice in slices.reversed() where !slice.isEmpty {
-                document.replace(slice, with: [], selectionBefore: selectionBefore)
+                if let edit = deletionKeepingCells(slice) {
+                    document.replace(edit.range, with: edit.bytes, selectionBefore: selectionBefore)
+                }
             }
             document.undoStack.endGrouping()
             documentContentChanged()
