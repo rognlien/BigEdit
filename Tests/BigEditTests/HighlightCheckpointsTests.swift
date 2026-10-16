@@ -65,9 +65,15 @@ final class HighlightCheckpointsTests: XCTestCase {
         return viewport
     }
 
-    /// A comment opened 1,000 rows above the viewport, beyond the replay
-    /// window, scrolled down to a page at a time.
+    /// A comment opened 1,000 rows above row 1,000, beyond the replay window.
     private let longComment = "/*\n" + String(repeating: "inside\n", count: 1_000) + "*/\n{}\n"
+
+    /// The same, followed by enough rows to make the document too large to
+    /// replay whole.
+    private var largeLongComment: String {
+        longComment + String(repeating: String(repeating: "x", count: 1023) + "\n",
+                             count: SmallDocument.byteLimit / 1024 + 1)
+    }
 
     private func scrollDown(_ viewport: ViewportView, to row: Int) -> HighlightState {
         var state = HighlightState.normal
@@ -78,19 +84,25 @@ final class HighlightCheckpointsTests: XCTestCase {
     }
 
     func testAConstructOpenedFarAboveIsSeenWhenScrolledTo() {
-        let viewport = makeViewport(longComment)
+        let viewport = makeViewport(largeLongComment)
 
         XCTAssertEqual(scrollDown(viewport, to: 1_000), inComment)
     }
 
-    func testAJumpPastTheReplayWindowStillGuesses() {
-        let viewport = makeViewport(longComment)
+    func testAJumpPastTheReplayWindowOfALargeDocumentStillGuesses() {
+        let viewport = makeViewport(largeLongComment)
 
         XCTAssertEqual(viewport.seedState(forFirstRow: 1_000, layout: viewport.layout!), .normal)
     }
 
-    func testAnEditAboveTheViewportIsTakenIntoAccount() {
+    func testAJumpInASmallDocumentIsExact() {
         let viewport = makeViewport(longComment)
+
+        XCTAssertEqual(viewport.seedState(forFirstRow: 1_000, layout: viewport.layout!), inComment)
+    }
+
+    func testAnEditAboveTheViewportIsTakenIntoAccount() {
+        let viewport = makeViewport(largeLongComment)
         _ = scrollDown(viewport, to: 1_000)
 
         viewport.document!.replace(0..<2, with: Array("//".utf8))

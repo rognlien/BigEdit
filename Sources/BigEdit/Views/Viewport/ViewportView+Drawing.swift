@@ -259,8 +259,11 @@ extension ViewportView {
         return state
     }
 
-    /// How many rows above the viewport may be replayed to find its start state.
-    private var highlightReplayRows: Int { 400 }
+    /// How many rows above the viewport may be replayed to find its start
+    /// state: all of them in a small document, so its colouring is exact.
+    private var highlightReplayRows: Int {
+        SmallDocument.includes(length: layout?.length ?? 0) ? Int.max : 400
+    }
 
     /// The state at the end of `rows`, replayed from `start`.
     private func replayRows(_ rows: Range<Int>, from start: HighlightState, layout: EditedLayout,
