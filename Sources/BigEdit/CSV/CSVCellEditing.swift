@@ -99,7 +99,7 @@ enum CSVCellEditing {
     /// inside a quoted field a doubled quote.
     private static func characterUnits(of field: [UInt8], quote: [UInt8], isSingleByte: Bool) -> [Range<Int>] {
         let isQuoted = !quote.isEmpty && field.starts(with: quote)
-        let value = isQuoted ? valueRange(of: field, quote: quote) : 0..<field.count
+        let value = fieldValueRange(of: field, quote: quote)
         let doubledQuote = quote + quote
         var units: [Range<Int>] = []
         var index = value.lowerBound
