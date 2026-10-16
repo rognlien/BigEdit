@@ -250,7 +250,7 @@ extension AppDelegate {
         let index = LineIndex()
         document.watcher?.cancel()
         document.view.close()
-        document.reload(url: url, file: file, index: index)
+        document.reload(url: url, file: file, index: index, keepingEncoding: inheritingHistory)
         document.hasDiskChanges = false
         document.view.load(file: file, index: index, inheritingHistory: inheritingHistory,
                            keepingViewMode: true)

@@ -29,6 +29,24 @@ struct FileFormat {
         lineEnding = FileFormat.detectLineEnding(buffer, count: count)
     }
 
+    private init(encoding: String, lineEnding: String, textEncoding: TextEncoding?) {
+        self.encoding = encoding
+        self.lineEnding = lineEnding
+        self.textEncoding = textEncoding
+    }
+
+    /// This format, but in `previous`'s single-byte encoding where the scan
+    /// took the bytes for UTF-8. For a file BigEdit has just written from a
+    /// single-byte document that is still what the bytes are in — the head
+    /// sample may simply have no byte above 0x7F left in it.
+    func keepingSingleByteEncoding(of previous: FileFormat) -> FileFormat {
+        var result = self
+        if let kept = previous.textEncoding, kept.isSingleByte, isUTF8 {
+            result = FileFormat(encoding: previous.encoding, lineEnding: lineEnding, textEncoding: kept)
+        }
+        return result
+    }
+
     /// Text that is neither UTF-8 nor binary is read as Windows-1252: the
     /// superset of Latin-1 that legacy logs and exports on every platform
     /// actually use, and one in which every byte decodes to something.

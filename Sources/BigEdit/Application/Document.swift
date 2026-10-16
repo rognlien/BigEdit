@@ -45,13 +45,16 @@ final class Document {
 
     /// Re-points an existing document at `newURL` after a save, swapping in a
     /// freshly mapped file and index. The caller restarts indexing and reloads
-    /// the view.
-    func reload(url newURL: URL, file newFile: MappedFile, index newIndex: LineIndex) {
+    /// the view. With `keepingEncoding`, the file is one just written from
+    /// this document, so it is still in the encoding the document was in.
+    func reload(url newURL: URL, file newFile: MappedFile, index newIndex: LineIndex,
+                keepingEncoding: Bool = false) {
         url = newURL
         fileName = newURL.lastPathComponent
         file = newFile
         index = newIndex
-        format = FileFormat(scanning: newFile)
+        let scanned = FileFormat(scanning: newFile)
+        format = keepingEncoding ? scanned.keepingSingleByteEncoding(of: format) : scanned
     }
 
     /// Swaps in a larger mapping of the same file after an append. The index

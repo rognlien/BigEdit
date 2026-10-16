@@ -24,6 +24,25 @@ final class FileFormatTests: XCTestCase {
         XCTAssertEqual(f?.lineEnding, "CRLF")
     }
 
+    func testASavedSingleByteDocumentKeepsItsEncoding() {
+        let before = format(Data([0x63, 0x61, 0x66, 0xE9, 0x0A]))!
+        let after = format(Data("cafe\n".utf8))!
+
+        let kept = after.keepingSingleByteEncoding(of: before)
+
+        XCTAssertEqual(kept.textEncoding, .windows1252)
+        XCTAssertEqual(kept.encoding, "Windows-1252")
+        XCTAssertEqual(kept.lineEnding, "LF")
+    }
+
+    func testOnlyASingleByteEncodingIsKept() {
+        let before = format(Data("café\n".utf8))!
+        let after = format(Data([0x63, 0xE9, 0x0A]))!
+
+        XCTAssertEqual(after.keepingSingleByteEncoding(of: before).textEncoding, .windows1252)
+        XCTAssertEqual(before.keepingSingleByteEncoding(of: before).textEncoding, .utf8)
+    }
+
     func testMultiByteIsStillUTF8() {
         let f = format(Data("Юн Фосэ\n".utf8))
         XCTAssertEqual(f?.encoding, "UTF-8")
