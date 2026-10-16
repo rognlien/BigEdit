@@ -9,7 +9,15 @@ import Foundation
 /// / `null` / `yes` / `no` / `on` / `off` / `~`), anchors and aliases
 /// (`&name` / `*name`), tags (`!tag` / `!!tag`), block-scalar indicators
 /// (`|` / `>`), and `#` comments.
-enum YAMLHighlighter {
+enum YAMLHighlighter: Highlighter {
+
+    /// Whether the row may continue a `|` / `>` block scalar opened at `indent`.
+    enum State: Hashable {
+        case normal
+        case blockScalar(indent: Int)
+    }
+
+    static let initialState = State.normal
 
     private static let hash = unichar(UInt8(ascii: "#"))
     private static let colon = unichar(UInt8(ascii: ":"))
@@ -33,7 +41,7 @@ enum YAMLHighlighter {
     /// Stateful entry: when `startState` is `.blockScalar` the row may be a
     /// continuation line of a `|` / `>` block scalar (a string). Returns the
     /// row's tokens and the state at its end.
-    static func tokens(_ text: String, startState: HighlightState) -> ([Token], HighlightState) {
+    static func tokens(_ text: String, startState: State) -> ([Token], State) {
         let scanner = RowScanner(text)
         if case .blockScalar(let parentIndent) = startState,
            continuesBlockScalar(scanner, parentIndent: parentIndent) {
@@ -46,7 +54,7 @@ enum YAMLHighlighter {
 
     /// Computes the block-scalar state at the end of `text`. A `key: |` (or `>`)
     /// opens a scalar whose continuation lines are those indented past the key.
-    static func endState(_ text: String, start: HighlightState) -> HighlightState {
+    static func endState(_ text: String, start: State) -> State {
         let scanner = RowScanner(text)
         if case .blockScalar(let parentIndent) = start,
            continuesBlockScalar(scanner, parentIndent: parentIndent) {

@@ -7,7 +7,15 @@ import Foundation
 /// Recognises strings (keys and values are told apart), numbers, the literals
 /// `true` / `false` / `null`, structural punctuation, and `//` or `/* */`
 /// comments (a JSONC convenience).
-enum JSONHighlighter {
+enum JSONHighlighter: Highlighter {
+
+    /// Whether the row begins inside a `/* */` comment.
+    enum State: Hashable {
+        case normal
+        case blockComment
+    }
+
+    static let initialState = State.normal
 
     private static let openBrace = unichar(UInt8(ascii: "{"))
     private static let closeBrace = unichar(UInt8(ascii: "}"))
@@ -24,7 +32,7 @@ enum JSONHighlighter {
 
     /// Stateful entry: when `startState` is `.blockComment` the row begins inside
     /// a `/* */` comment. Returns the row's tokens and the state at its end.
-    static func tokens(_ text: String, startState: HighlightState) -> ([Token], HighlightState) {
+    static func tokens(_ text: String, startState: State) -> ([Token], State) {
         if startState == .blockComment {
             let scanner = RowScanner(text)
             var tokens: [Token] = []
@@ -42,7 +50,7 @@ enum JSONHighlighter {
 
     /// Computes the comment state at the end of `text`, given the state at its
     /// start. Mirrors the comment/string handling in `tokens`.
-    static func endState(_ text: String, start: HighlightState) -> HighlightState {
+    static func endState(_ text: String, start: State) -> State {
         let scanner = RowScanner(text)
         let length = scanner.length
         var index = 0

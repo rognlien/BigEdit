@@ -1,21 +1,18 @@
 import Foundation
 
-/// The syntax-highlighting mode for a document.
-enum SyntaxMode {
-    case plain
-    case xml
-    case json
-    case markdown
-    case yaml
-    case shell
-    case sql
-}
-
 /// A small XML syntax highlighter. It tokenizes one row of text at a time,
 /// which keeps it viewport-cheap; the only thing carried between rows is
 /// whether a `<!-- -->` comment is still open, so a comment broken across
 /// several lines is coloured on every one of them.
-enum XMLHighlighter {
+enum XMLHighlighter: Highlighter {
+
+    /// Whether the row begins inside a `<!-- -->` comment.
+    enum State: Hashable {
+        case normal
+        case blockComment
+    }
+
+    static let initialState = State.normal
 
     private static let lessThan = unichar(UInt8(ascii: "<"))
     private static let greaterThan = unichar(UInt8(ascii: ">"))
@@ -29,7 +26,7 @@ enum XMLHighlighter {
 
     /// Stateful entry: when `startState` is `.blockComment` the row begins inside
     /// an `<!-- -->` comment. Returns the row's tokens and the state at its end.
-    static func tokens(_ text: String, startState: HighlightState) -> ([Token], HighlightState) {
+    static func tokens(_ text: String, startState: State) -> ([Token], State) {
         if startState == .blockComment {
             let scanner = RowScanner(text)
             var tokens: [Token] = []
@@ -47,7 +44,7 @@ enum XMLHighlighter {
 
     /// Computes the comment state at the end of `text`. XML comments can't nest
     /// and `<!--` can't appear in attribute values, so a plain scan suffices.
-    static func endState(_ text: String, start: HighlightState) -> HighlightState {
+    static func endState(_ text: String, start: State) -> State {
         let scanner = RowScanner(text)
         var index = 0
         if start == .blockComment {

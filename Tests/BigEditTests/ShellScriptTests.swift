@@ -4,12 +4,12 @@ import XCTest
 final class ShellScriptTests: XCTestCase {
 
     func testRecognisedByExtensionOrDotfileName() {
-        XCTAssertTrue(ShellScript.isShellScript(named: "make-app.sh"))
-        XCTAssertTrue(ShellScript.isShellScript(named: "setup.ZSH"))
-        XCTAssertTrue(ShellScript.isShellScript(named: ".zshrc"))
-        XCTAssertTrue(ShellScript.isShellScript(named: ".bash_profile"))
-        XCTAssertFalse(ShellScript.isShellScript(named: "notes.txt"))
-        XCTAssertFalse(ShellScript.isShellScript(named: "zshrc"))
+        XCTAssertTrue(LanguageRegistry.shell.matches(fileName: "make-app.sh"))
+        XCTAssertTrue(LanguageRegistry.shell.matches(fileName: "setup.ZSH"))
+        XCTAssertTrue(LanguageRegistry.shell.matches(fileName: ".zshrc"))
+        XCTAssertTrue(LanguageRegistry.shell.matches(fileName: ".bash_profile"))
+        XCTAssertFalse(LanguageRegistry.shell.matches(fileName: "notes.txt"))
+        XCTAssertFalse(LanguageRegistry.shell.matches(fileName: "zshrc"))
     }
 
     func testRecognisedByInterpreterLine() {

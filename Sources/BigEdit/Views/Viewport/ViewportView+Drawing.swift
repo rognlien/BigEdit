@@ -244,13 +244,13 @@ extension ViewportView {
     /// than the window won't be detected until scrolled nearer — a deliberate
     /// bound so cost stays tied to the viewport, not the file.
     private func seedState(forFirstRow firstRow: Int, layout: EditedLayout) -> HighlightState {
-        guard syntaxMode != .plain, firstRow > 0 else { return .normal }
+        guard !language.isPlain, firstRow > 0 else { return .normal }
         let lookback = 400
         let start = max(0, firstRow - lookback)
         let rows = layout.visualLines(forRows: start..<firstRow)
         var state = HighlightState.normal
         for visualLine in rows {
-            state = rowEndState(decodeChunk(visualLine), startState: state)
+            state = language.endState(decodeChunk(visualLine), start: state)
         }
         return state
     }
@@ -296,36 +296,8 @@ extension ViewportView {
     /// theme, returning its colouring and the carried state at the row's end.
     func highlightedRow(_ text: String, startState: HighlightState)
         -> (NSAttributedString, HighlightState) {
-        let (tokens, endState) = rowTokens(text, startState: startState)
+        let (tokens, endState) = language.tokens(text, startState: startState)
         return (theme.attributedRow(text, tokens: tokens, font: font, paragraphStyle: tabStops), endState)
-    }
-
-    /// Dispatches a row to the active highlighter for its tokens and the
-    /// carried state at the row's end.
-    private func rowTokens(_ text: String, startState: HighlightState) -> ([Token], HighlightState) {
-        switch syntaxMode {
-        case .xml: return XMLHighlighter.tokens(text, startState: startState)
-        case .json: return JSONHighlighter.tokens(text, startState: startState)
-        case .markdown: return MarkdownHighlighter.tokens(text, startState: startState)
-        case .yaml: return YAMLHighlighter.tokens(text, startState: startState)
-        case .shell: return ShellHighlighter.tokens(text, startState: startState)
-        case .sql: return SQLHighlighter.tokens(text, startState: startState)
-        case .plain: return ([], .normal)
-        }
-    }
-
-    /// The carried state at the end of a row, without building its colouring
-    /// (used to seed the visible region cheaply).
-    private func rowEndState(_ text: String, startState: HighlightState) -> HighlightState {
-        switch syntaxMode {
-        case .xml: return XMLHighlighter.endState(text, start: startState)
-        case .json: return JSONHighlighter.endState(text, start: startState)
-        case .markdown: return MarkdownHighlighter.endState(text, start: startState)
-        case .yaml: return YAMLHighlighter.endState(text, start: startState)
-        case .shell: return ShellHighlighter.endState(text, start: startState)
-        case .sql: return SQLHighlighter.endState(text, start: startState)
-        case .plain: return .normal
-        }
     }
 
     private func drawMatchHighlights(

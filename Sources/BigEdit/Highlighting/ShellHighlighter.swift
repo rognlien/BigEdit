@@ -9,11 +9,21 @@ import Foundation
 /// command substitution, reserved words and the declaring builtins where a
 /// command can start, assignments, function definitions, numbers, operators
 /// and redirections, and here-documents.
-enum ShellHighlighter {
+enum ShellHighlighter: Highlighter {
+
+    /// Whether the row begins inside a string or a here-document.
+    enum State: Hashable {
+        case normal
+        case singleQuotedString
+        case doubleQuotedString
+        case hereDocument(delimiter: String, stripsTabs: Bool, expands: Bool)
+    }
+
+    static let initialState = State.normal
 
     /// Stateful entry: `startState` says whether the row begins inside a
     /// string or a here-document. Returns the row's tokens and its end state.
-    static func tokens(_ text: String, startState: HighlightState) -> ([Token], HighlightState) {
+    static func tokens(_ text: String, startState: ShellHighlighter.State) -> ([Token], ShellHighlighter.State) {
         var scan = ShellRowScan(text)
         scan.run(from: startState)
         return (scan.tokens, scan.state)
@@ -24,7 +34,7 @@ enum ShellHighlighter {
         return tokens(text, startState: .normal).0
     }
 
-    static func endState(_ text: String, start: HighlightState) -> HighlightState {
+    static func endState(_ text: String, start: ShellHighlighter.State) -> ShellHighlighter.State {
         return tokens(text, startState: start).1
     }
 }
@@ -65,17 +75,17 @@ private struct ShellRowScan {
 
     private let scanner: RowScanner
     private(set) var tokens: [Token] = []
-    private(set) var state = HighlightState.normal
+    private(set) var state = ShellHighlighter.State.normal
     private var index = 0
     private var expectation = Expectation.command
     private var expectsIn = false
-    private var pendingHereDocument: HighlightState?
+    private var pendingHereDocument: ShellHighlighter.State?
 
     init(_ text: String) {
         scanner = RowScanner(text)
     }
 
-    mutating func run(from startState: HighlightState) {
+    mutating func run(from startState: ShellHighlighter.State) {
         switch startState {
         case .hereDocument(let delimiter, let stripsTabs, let expands):
             continueHereDocument(delimiter: delimiter, stripsTabs: stripsTabs, expands: expands)

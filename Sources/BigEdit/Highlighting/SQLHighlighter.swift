@@ -9,12 +9,22 @@ import Foundation
 /// dollar-quoted bodies, quoted identifiers, keywords and type names in any
 /// case, the literals `NULL`, `TRUE` and `FALSE`, numbers, bind parameters and
 /// variables, and operators.
-enum SQLHighlighter {
+enum SQLHighlighter: Highlighter {
+
+    /// Whether the row begins inside a comment, a string or a dollar-quoted body.
+    enum State: Hashable {
+        case normal
+        case blockComment
+        case singleQuotedString
+        case dollarQuotedString(delimiter: String)
+    }
+
+    static let initialState = State.normal
 
     /// Stateful entry: `startState` says whether the row begins inside a
     /// comment, a string or a dollar-quoted body. Returns the row's tokens and
     /// its end state.
-    static func tokens(_ text: String, startState: HighlightState) -> ([Token], HighlightState) {
+    static func tokens(_ text: String, startState: SQLHighlighter.State) -> ([Token], SQLHighlighter.State) {
         var scan = SQLRowScan(text)
         scan.run(from: startState)
         return (scan.tokens, scan.state)
@@ -25,7 +35,7 @@ enum SQLHighlighter {
         return tokens(text, startState: .normal).0
     }
 
-    static func endState(_ text: String, start: HighlightState) -> HighlightState {
+    static func endState(_ text: String, start: SQLHighlighter.State) -> SQLHighlighter.State {
         return tokens(text, startState: start).1
     }
 }
@@ -74,14 +84,14 @@ private struct SQLRowScan {
 
     private let scanner: RowScanner
     private(set) var tokens: [Token] = []
-    private(set) var state = HighlightState.normal
+    private(set) var state = SQLHighlighter.State.normal
     private var index = 0
 
     init(_ text: String) {
         scanner = RowScanner(text)
     }
 
-    mutating func run(from startState: HighlightState) {
+    mutating func run(from startState: SQLHighlighter.State) {
         switch startState {
         case .blockComment:
             scanBlockComment(tokenStart: 0, contentStart: 0)

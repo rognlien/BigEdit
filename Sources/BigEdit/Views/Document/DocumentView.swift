@@ -158,7 +158,7 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
         }
         document.journal = EditJournal.open(for: file.path)
         viewport.load(document: document)
-        viewport.setSyntaxMode(DocumentView.syntaxMode(for: file))
+        viewport.setLanguage(LanguageRegistry.language(for: file))
         mappedFile = file
         viewport.setCSVRendering(dialect: nil, columnLayout: nil)
         let encoding = FileFormat(scanning: file).textEncoding ?? .utf8

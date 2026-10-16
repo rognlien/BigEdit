@@ -72,7 +72,7 @@ final class HighlighterStateTests: XCTestCase {
     }
 
     func testShellHereDocumentRunsToItsDelimiter() {
-        let open = HighlightState.hereDocument(delimiter: "EOF", stripsTabs: false, expands: true)
+        let open = ShellHighlighter.State.hereDocument(delimiter: "EOF", stripsTabs: false, expands: true)
         XCTAssertEqual(ShellHighlighter.endState("cat <<EOF > out", start: .normal), open)
         XCTAssertEqual(ShellHighlighter.endState("echo \"not code", start: open), open)
         XCTAssertEqual(ShellHighlighter.endState(" EOF", start: open), open)
@@ -80,7 +80,7 @@ final class HighlighterStateTests: XCTestCase {
     }
 
     func testShellQuotedHereDocumentDoesNotExpand() {
-        let open = HighlightState.hereDocument(delimiter: "END", stripsTabs: true, expands: false)
+        let open = ShellHighlighter.State.hereDocument(delimiter: "END", stripsTabs: true, expands: false)
         XCTAssertEqual(ShellHighlighter.endState("cat <<-'END'", start: .normal), open)
         XCTAssertEqual(ShellHighlighter.tokens("\t$HOME", startState: open).0,
                        [Token(kind: .string, range: 0..<6)])
@@ -88,7 +88,7 @@ final class HighlighterStateTests: XCTestCase {
     }
 
     func testShellHereDocumentExpandsParameters() {
-        let open = HighlightState.hereDocument(delimiter: "EOF", stripsTabs: false, expands: true)
+        let open = ShellHighlighter.State.hereDocument(delimiter: "EOF", stripsTabs: false, expands: true)
         XCTAssertEqual(ShellHighlighter.tokens("home: $HOME", startState: open).0, [
             Token(kind: .string, range: 0..<11),
             Token(kind: .variable, range: 6..<11)
@@ -116,7 +116,7 @@ final class HighlighterStateTests: XCTestCase {
     }
 
     func testSQLDollarQuotedBodyRunsToItsDelimiter() {
-        let open = HighlightState.dollarQuotedString(delimiter: "$body$")
+        let open = SQLHighlighter.State.dollarQuotedString(delimiter: "$body$")
         XCTAssertEqual(SQLHighlighter.endState("AS $body$", start: .normal), open)
         XCTAssertEqual(SQLHighlighter.endState("SELECT 'x $$ y", start: open), open)
         XCTAssertEqual(SQLHighlighter.tokens("$body$ LANGUAGE sql;", startState: open).0, [

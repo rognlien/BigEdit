@@ -48,8 +48,8 @@ final class ViewportView: NSView {
     /// The byte offset of the currently selected match, drawn emphasised.
     var currentMatchOffset: Int?
 
-    /// The syntax-highlighting mode applied when drawing each row.
-    var syntaxMode: SyntaxMode = .plain
+    /// The language whose highlighter colours each row.
+    var language = Language.plain
 
     /// Maps the highlighters' tokens to colours and fonts.
     let theme = HighlightTheme.standard
@@ -636,9 +636,9 @@ final class ViewportView: NSView {
         }
     }
 
-    /// Sets the syntax-highlighting mode for the current document.
-    func setSyntaxMode(_ mode: SyntaxMode) {
-        self.syntaxMode = mode
+    /// Sets the language the current document is coloured as.
+    func setLanguage(_ language: Language) {
+        self.language = language
         needsDisplay = true
     }
 

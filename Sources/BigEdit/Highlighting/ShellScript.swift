@@ -3,23 +3,17 @@ import Foundation
 /// Tells shell scripts apart by name or by their `#!` line.
 enum ShellScript {
 
-    private static let extensions: Set<String> = ["sh", "bash", "zsh", "ksh", "command", "bats"]
-    private static let fileNames: Set<String> = [
+    static let extensions: Set<String> = ["sh", "bash", "zsh", "ksh", "command", "bats"]
+    static let fileNames: Set<String> = [
         ".profile", ".bashrc", ".bash_profile", ".bash_login", ".bash_logout",
         ".zshrc", ".zshenv", ".zprofile", ".zlogin", ".zlogout", ".kshrc"
     ]
     private static let interpreters: Set<String> = ["sh", "bash", "zsh", "ksh", "dash", "ash", "mksh"]
     private static let interpreterLineLimit = 128
 
-    static func isShellScript(named fileName: String) -> Bool {
-        let fileExtension = (fileName as NSString).pathExtension.lowercased()
-        return extensions.contains(fileExtension) || fileNames.contains(fileName)
-    }
-
     /// True for a file whose first line is `#!/bin/sh`, `#!/usr/bin/env bash`
     /// or the like.
-    static func startsWithShellInterpreter(_ file: MappedFile) -> Bool {
-        let buffer = file.buffer
+    static func startsWithShellInterpreter(_ buffer: UnsafeRawBufferPointer) -> Bool {
         let limit = min(buffer.count, interpreterLineLimit)
         let lineEnd: Int = (0..<limit).first(where: { buffer[$0] == 0x0A }) ?? limit
         let line = String(decoding: UnsafeRawBufferPointer(rebasing: buffer[0..<lineEnd]), as: UTF8.self)

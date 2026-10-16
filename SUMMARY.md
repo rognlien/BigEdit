@@ -57,6 +57,15 @@ file and a 50 KB file cost the same to display and to edit.
 | `JSONHighlighter` | keys (string + colon), string values, numbers, `true` / `false` / `null`, `//` and `/* */` comments (JSONC) |
 | `MarkdownHighlighter` | headings (bold blue), bold (font), italic (colour), inline code, links (text teal + URL purple), strikethrough, fences, HR, blockquotes, list markers |
 | `YAMLHighlighter` | keys (bare and quoted), strings, numbers, literals (`true`/`false`/`null`/`yes`/`no`/`on`/`off`/`~`), comments, anchors / aliases / tags, block-scalar indicators, document separators |
+| `ShellHighlighter` | `#` comments, single / double / `$'…'` strings, parameter expansions, command substitution, reserved words and declaring builtins, assignments, functions, redirections, here-documents |
+| `SQLHighlighter` | `--` and `/* */` comments, strings, dollar-quoted bodies, quoted identifiers, keywords and type names, literals, numbers, bind parameters, operators |
+
+Each highlighter conforms to `Highlighter`: it carries its own `State` type
+between rows, which the viewport holds as an opaque `HighlightState`. A
+`Language` pairs a highlighter with its display name, file extensions, file
+names and a content sniff, and `LanguageRegistry` lists them all and picks one
+for a file — by name first, then by sniffing its head. Adding a language is a
+lexer plus one registry entry.
 
 Each highlighter turns one row into a list of `Token`s — a `TokenKind` plus a
 UTF-16 range — using the index-based helpers in `RowScanner`; it never touches

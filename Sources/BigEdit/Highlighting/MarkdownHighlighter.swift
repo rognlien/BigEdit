@@ -7,7 +7,15 @@ import Foundation
 /// Recognises headings, horizontal rules, fence markers, blockquote and list
 /// prefixes, and the inline tokens: inline code, bold, italic, links, and
 /// strikethrough.
-enum MarkdownHighlighter {
+enum MarkdownHighlighter: Highlighter {
+
+    /// Whether the row begins inside a fenced code block.
+    enum State: Hashable {
+        case normal
+        case fencedCode
+    }
+
+    static let initialState = State.normal
 
     private static let space = RowScanner.space
     private static let hash = unichar(UInt8(ascii: "#"))
@@ -26,7 +34,7 @@ enum MarkdownHighlighter {
 
     /// Stateful entry: when `startState` is `.fencedCode` the row is inside a
     /// ``` / ~~~ code block. Returns the row's tokens and the state at its end.
-    static func tokens(_ text: String, startState: HighlightState) -> ([Token], HighlightState) {
+    static func tokens(_ text: String, startState: State) -> ([Token], State) {
         if startState == .fencedCode {
             let scanner = RowScanner(text)
             var tokens: [Token] = []
@@ -41,7 +49,7 @@ enum MarkdownHighlighter {
     }
 
     /// Computes the fenced-code state at the end of `text` (line-based).
-    static func endState(_ text: String, start: HighlightState) -> HighlightState {
+    static func endState(_ text: String, start: State) -> State {
         let fence = isFenceLine(RowScanner(text))
         if start == .fencedCode {
             return fence ? .normal : .fencedCode
