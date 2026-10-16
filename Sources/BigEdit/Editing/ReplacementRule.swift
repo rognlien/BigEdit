@@ -28,9 +28,4 @@ struct ReplacementRule: Equatable {
         self.patternBytes = Array(pattern.utf8)
         self.replacementBytes = Array(replacement.utf8)
     }
-
-    /// The byte-length change each occurrence produces (negative if shrinking).
-    var lengthDelta: Int {
-        replacementBytes.count - patternBytes.count
-    }
 }
