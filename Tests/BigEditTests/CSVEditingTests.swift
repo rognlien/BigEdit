@@ -330,4 +330,78 @@ final class CSVEditingTests: XCTestCase {
 
         XCTAssertEqual(text(of: document), "name,age\nbob\n,42\n")
     }
+
+    func testBackspaceStopsAtTheStartOfACell() {
+        let original = "name,age\nbob,42\n"
+        let (viewport, document) = makeViewport(original)
+        placeCaret(viewport, at: "name,age\nbob,".utf8.count)
+
+        viewport.deleteBackward(nil)
+
+        XCTAssertEqual(text(of: document), original, "the delimiter stays")
+    }
+
+    func testBackspaceStopsAtTheStartOfARow() {
+        let original = "name,age\nbob,42\n"
+        let (viewport, document) = makeViewport(original)
+        placeCaret(viewport, at: "name,age\n".utf8.count)
+
+        viewport.deleteBackward(nil)
+
+        XCTAssertEqual(text(of: document), original, "the rows stay apart")
+    }
+
+    func testForwardDeleteStopsAtTheEndOfACell() {
+        let original = "name,age\nbob,42\n"
+        let (viewport, document) = makeViewport(original)
+        placeCaret(viewport, at: "name,age\nbob".utf8.count)
+
+        viewport.deleteForward(nil)
+        XCTAssertEqual(text(of: document), original, "the delimiter stays")
+
+        placeCaret(viewport, at: "name,age\nbob,42".utf8.count)
+        viewport.deleteForward(nil)
+        XCTAssertEqual(text(of: document), original, "the line ending stays")
+    }
+
+    func testDeletesInsideACellStillDelete() {
+        let (viewport, document) = makeViewport("name,age\nbob,42\n")
+        placeCaret(viewport, at: "name,age\nbo".utf8.count)
+
+        viewport.deleteBackward(nil)
+        viewport.deleteForward(nil)
+
+        XCTAssertEqual(text(of: document), "name,age\nb,42\n")
+    }
+
+    func testBackspaceKeepsTheQuotesOfAQuotedCell() {
+        let original = "name,age\n\"a,b\",2\n"
+        let (viewport, document) = makeViewport(original)
+        placeCaret(viewport, at: "name,age\n\"".utf8.count)
+
+        viewport.deleteBackward(nil)
+
+        XCTAssertEqual(text(of: document), original)
+    }
+
+    func testBackspaceInAParkedColumnBeeps() {
+        let original = "name,age,city\nbob\n"
+        let (viewport, document) = makeViewport(original)
+        placeCaret(viewport, at: "name,age,city\nbob".utf8.count)
+        viewport.csvCaretColumn = 2
+
+        viewport.deleteBackward(nil)
+
+        XCTAssertEqual(text(of: document), original, "the parked cell is empty")
+    }
+
+    func testTextModeBackspaceDeletesTheDelimiter() {
+        let (viewport, document) = makeViewport("name,age\nbob,42\n")
+        viewport.setCSVRendering(dialect: nil, columnLayout: nil)
+        placeCaret(viewport, at: "name,age\nbob,".utf8.count)
+
+        viewport.deleteBackward(nil)
+
+        XCTAssertEqual(text(of: document), "name,age\nbob42\n")
+    }
 }

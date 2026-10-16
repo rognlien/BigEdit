@@ -46,6 +46,20 @@ extension ViewportView {
         return result
     }
 
+    /// Backspace (`backward`) or Forward Delete at `caret` under CSV
+    /// columns: removes a character of the caret's cell, and at the cell's
+    /// edge beeps rather than delete the delimiter, as Numbers does.
+    func deleteCharacterInCell(backward: Bool, at caret: Int, in row: (start: Int, map: CSVRowMap)) {
+        if let csvDialect, let field = editedField(for: caret..<caret, in: row),
+           let range = CSVCellEditing.deletion(backward: backward, at: field.range.lowerBound,
+                                               inField: field.bytes, dialect: csvDialect,
+                                               encoding: textEncoding) {
+            performEdit(replacing: (field.start + range.lowerBound)..<(field.start + range.upperBound), with: [])
+        } else {
+            NSSound.beep()
+        }
+    }
+
     /// The field `range` lies in, or nil when it reaches beyond one. A caret
     /// parked in a column the row has no cell for is in an empty field at
     /// the line's end, which the edit creates.

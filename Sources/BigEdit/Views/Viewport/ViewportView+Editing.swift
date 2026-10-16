@@ -126,6 +126,8 @@ extension ViewportView {
         }
         if !selection.isEmpty {
             performEdit(replacing: selection.range, with: [])
+        } else if let row = csvRow(containing: selection.activeOffset) {
+            deleteCharacterInCell(backward: true, at: selection.activeOffset, in: row)
         } else if selection.activeOffset > 0 {
             let caret = selection.activeOffset
             var start = document.previousCharacterOffset(before: caret)
@@ -153,6 +155,8 @@ extension ViewportView {
         }
         if !selection.isEmpty {
             performEdit(replacing: selection.range, with: [])
+        } else if let row = csvRow(containing: selection.activeOffset) {
+            deleteCharacterInCell(backward: false, at: selection.activeOffset, in: row)
         } else if selection.activeOffset < document.length {
             let caret = selection.activeOffset
             var end = document.nextCharacterOffset(after: caret)

@@ -47,6 +47,40 @@ enum CSVCellEditing {
                            bytesAfterCaret: after.count)
     }
 
+    /// What Backspace (`backward`) or Forward Delete removes at `caret` in
+    /// the raw `field`: a character of its value, or a doubled quote as one.
+    /// Nil at the value's edge, which a delete stops at rather than remove a
+    /// quote or the delimiter beyond it.
+    static func deletion(backward: Bool, at caret: Int, inField field: [UInt8],
+                         dialect: CSVDialect, encoding: TextEncoding) -> Range<Int>? {
+        let units = characterUnits(of: field, quote: quoteBytes(of: dialect, encoding: encoding),
+                                   isSingleByte: encoding.isSingleByte)
+        return backward ? units.last { $0.lowerBound < caret } : units.first { $0.upperBound > caret }
+    }
+
+    /// The field's value cut into what one delete removes: a character, or
+    /// inside a quoted field a doubled quote.
+    private static func characterUnits(of field: [UInt8], quote: [UInt8], isSingleByte: Bool) -> [Range<Int>] {
+        let isQuoted = !quote.isEmpty && field.starts(with: quote)
+        let value = isQuoted ? valueRange(of: field, quote: quote) : 0..<field.count
+        let doubledQuote = quote + quote
+        var units: [Range<Int>] = []
+        var index = value.lowerBound
+        while index < value.upperBound {
+            var end = index + 1
+            if isQuoted, index + doubledQuote.count <= value.upperBound, field[index...].starts(with: doubledQuote) {
+                end = index + doubledQuote.count
+            } else {
+                while !isSingleByte, end < value.upperBound, field[end] & 0xC0 == 0x80 {
+                    end += 1
+                }
+            }
+            units.append(index..<end)
+            index = end
+        }
+        return units
+    }
+
     /// Whether `text` would end the field it is typed into unless quoted.
     static func needsQuoting(_ text: [UInt8], dialect: CSVDialect, encoding: TextEncoding) -> Bool {
         let delimiter = encoding.encode(String(dialect.delimiter)) ?? []

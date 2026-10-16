@@ -59,4 +59,37 @@ final class CSVCellEditingTests: XCTestCase {
         XCTAssertEqual(insert("§", at: 1..<1, in: "ab", dialect: CSVDialect(delimiter: "§"))?.bytes,
                        Array("\"a§b\"".utf8))
     }
+
+    private func delete(backward: Bool, at caret: Int, in field: String) -> Range<Int>? {
+        CSVCellEditing.deletion(backward: backward, at: caret, inField: Array(field.utf8),
+                                dialect: CSVDialect(), encoding: .utf8)
+    }
+
+    func testDeletesStopAtTheFieldEdges() {
+        XCTAssertNil(delete(backward: true, at: 0, in: "ab"))
+        XCTAssertNil(delete(backward: false, at: 2, in: "ab"))
+        XCTAssertEqual(delete(backward: true, at: 2, in: "ab"), 1..<2)
+        XCTAssertEqual(delete(backward: false, at: 0, in: "ab"), 0..<1)
+    }
+
+    func testDeletesStopInsideTheQuotes() {
+        XCTAssertNil(delete(backward: true, at: 1, in: "\"ab\""), "after the opening quote")
+        XCTAssertNil(delete(backward: false, at: 3, in: "\"ab\""), "before the closing quote")
+        XCTAssertEqual(delete(backward: true, at: 4, in: "\"ab\""), 2..<3, "past the closing quote")
+    }
+
+    func testADoubledQuoteDeletesAsOne() {
+        XCTAssertEqual(delete(backward: true, at: 4, in: "\"a\"\"b\""), 2..<4)
+        XCTAssertEqual(delete(backward: false, at: 2, in: "\"a\"\"b\""), 2..<4)
+    }
+
+    func testAMultiByteCharacterDeletesAsOne() {
+        XCTAssertEqual(delete(backward: true, at: 3, in: "aé"), 1..<3)
+        XCTAssertEqual(delete(backward: false, at: 1, in: "aé"), 1..<3)
+    }
+
+    func testAnEmptyFieldHasNothingToDelete() {
+        XCTAssertNil(delete(backward: true, at: 0, in: ""))
+        XCTAssertNil(delete(backward: false, at: 0, in: ""))
+    }
 }
