@@ -11,6 +11,7 @@ extension DocumentView {
         viewport.setTextEncoding(textEncoding)
         if let document = viewport.document {
             document.isEditable = format?.isUTF8 ?? false
+            document.encoding = textEncoding
             document.newlineBytes = format?.lineEnding == "CRLF" ? [0x0D, 0x0A] : [0x0A]
         }
         updateStatusBar()

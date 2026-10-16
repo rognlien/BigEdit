@@ -101,6 +101,10 @@ final class EditedDocument {
     /// viewport decodes UTF-8 and edits are spliced as UTF-8 bytes.
     var isEditable = false
 
+    /// The encoding the bytes are in, set from the detected file format. In
+    /// a single-byte encoding every byte is a character boundary.
+    var encoding: TextEncoding = .utf8
+
     /// The byte sequence Return inserts — the document's detected line ending.
     var newlineBytes: [UInt8] = [0x0A]
 
@@ -253,15 +257,15 @@ final class EditedDocument {
         return result
     }
 
-    // MARK: - UTF-8 character stepping
+    // MARK: - Character stepping
 
-    /// The logical offset of the next UTF-8 character boundary after `offset`.
+    /// The logical offset of the next character boundary after `offset`.
     func nextCharacterOffset(after offset: Int) -> Int {
         let size = length
         var result = size
         if offset < size {
             var candidate = offset + 1
-            while candidate < size, let byte = byte(at: candidate), (byte & 0xC0) == 0x80 {
+            while candidate < size, isContinuationByte(at: candidate) {
                 candidate += 1
             }
             result = candidate
@@ -269,16 +273,25 @@ final class EditedDocument {
         return result
     }
 
-    /// The logical offset of the previous UTF-8 character boundary before
-    /// `offset`.
+    /// The logical offset of the previous character boundary before `offset`.
     func previousCharacterOffset(before offset: Int) -> Int {
         var result = 0
         if offset > 0 {
             var candidate = offset - 1
-            while candidate > 0, let byte = byte(at: candidate), (byte & 0xC0) == 0x80 {
+            while candidate > 0, isContinuationByte(at: candidate) {
                 candidate -= 1
             }
             result = candidate
+        }
+        return result
+    }
+
+    /// Whether the byte at `offset` continues a UTF-8 sequence rather than
+    /// starting a character. Never true in a single-byte encoding.
+    func isContinuationByte(at offset: Int) -> Bool {
+        var result = false
+        if !encoding.isSingleByte, let byte = byte(at: offset) {
+            result = (byte & 0xC0) == 0x80
         }
         return result
     }

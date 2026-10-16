@@ -377,7 +377,7 @@ extension ViewportView {
         if visualLine.chunkIndex > 0, let document {
             var skipped = 0
             while start < visualLine.byteRange.upperBound && skipped < 3,
-                  let byte = document.byte(at: start), (byte & 0xC0) == 0x80 {
+                  document.isContinuationByte(at: start) {
                 start += 1
                 skipped += 1
             }

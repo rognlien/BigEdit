@@ -120,4 +120,30 @@ final class TextEncodingTests: XCTestCase {
         XCTAssertEqual(ViewportView.byteOffset(forUTF16Index: 2, in: "aøb", encoding: .latin1), 2)
         XCTAssertEqual(ViewportView.byteOffset(forUTF16Index: 2, in: "aøb", encoding: .utf8), 3)
     }
+
+    // MARK: - Caret stepping
+
+    private func document(_ bytes: [UInt8], encoding: TextEncoding) -> EditedDocument {
+        let file = mapped(bytes)
+        let index = LineIndex()
+        index.buildSynchronously(from: file)
+        let document = EditedDocument(file: file, editModel: EditModel(), lineIndex: index)
+        document.encoding = encoding
+        return document
+    }
+
+    func testTheCaretStepsOneByteAtATimeInASingleByteEncoding() {
+        // The € at byte 11 is 0x80, which UTF-8 would read as a continuation.
+        let document = document(sample, encoding: .windows1252)
+        XCTAssertEqual(document.nextCharacterOffset(after: 10), 11)
+        XCTAssertEqual(document.nextCharacterOffset(after: 11), 12)
+        XCTAssertEqual(document.previousCharacterOffset(before: 12), 11)
+    }
+
+    func testTheCaretStillStepsOverWholeUTF8Sequences() {
+        let document = document(Array("a€b".utf8), encoding: .utf8)
+        XCTAssertEqual(document.nextCharacterOffset(after: 0), 1)
+        XCTAssertEqual(document.nextCharacterOffset(after: 1), 4)
+        XCTAssertEqual(document.previousCharacterOffset(before: 4), 1)
+    }
 }
