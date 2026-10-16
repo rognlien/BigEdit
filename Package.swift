@@ -25,27 +25,13 @@ let package = Package(
             name: "BigEditHelperKit",
             path: "Sources/BigEditHelperKit"
         ),
-        // The privileged helper. Its embedded Info.plist and launchd.plist are
-        // linked in by make-app.sh's build, which SMJobBless requires; see the
-        // linker flags there.
+        // The privileged helper. Its launchd plist is not compiled in:
+        // make-app.sh copies it into the bundle's Contents/Library/LaunchDaemons.
         .executableTarget(
             name: "BigEditHelper",
             dependencies: ["BigEditHelperKit"],
             path: "Sources/BigEditHelper",
-            exclude: ["Info.plist", "Launchd.plist"],
-            linkerSettings: [
-                // SMJobBless will not install a helper unless these are
-                // embedded in the binary itself. Paths are relative to the
-                // package root, which is where swift build runs.
-                .unsafeFlags([
-                    "-Xlinker", "-sectcreate",
-                    "-Xlinker", "__TEXT", "-Xlinker", "__info_plist",
-                    "-Xlinker", "Sources/BigEditHelper/Info.plist",
-                    "-Xlinker", "-sectcreate",
-                    "-Xlinker", "__TEXT", "-Xlinker", "__launchd_plist",
-                    "-Xlinker", "Sources/BigEditHelper/Launchd.plist"
-                ])
-            ]
+            exclude: ["Launchd.plist"]
         ),
         .target(
             name: "BigEditCLI",

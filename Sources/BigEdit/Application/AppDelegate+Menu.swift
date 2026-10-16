@@ -485,16 +485,30 @@ extension AppDelegate {
                     + "If your shell cannot find it, add "
                     + "\(CommandLineToolInstaller.destinationDirectory) to your PATH."
             )
-        } catch PrivilegedHelperInstaller.HelperFailure.authorisationRefused {
-            // The user dismissed the password prompt; that is an answer, not
-            // an error worth an alarming dialog.
-            return
+        } catch PrivilegedHelperInstaller.HelperFailure.requiresApproval {
+            presentHelperApprovalRequest()
         } catch {
             presentInstallResult(
                 title: "Could Not Install the Command Line Tool",
                 message: "\(error)",
                 isError: true
             )
+        }
+    }
+
+    /// The helper is registered but waits for the user to allow it in Login
+    /// Items, which only System Settings can do.
+    private func presentHelperApprovalRequest() {
+        let alert = NSAlert()
+        alert.messageText = "Allow BigEdit in the Background"
+        alert.informativeText = "To add the bigedit command to "
+            + "\(CommandLineToolInstaller.destinationDirectory), BigEdit uses a helper "
+            + "that you need to allow once. In Login Items settings, turn on BigEdit "
+            + "under “Allow in the Background”, then choose Install Command Line Tool again."
+        alert.addButton(withTitle: "Open System Settings")
+        alert.addButton(withTitle: "Cancel")
+        if alert.runModal() == .alertFirstButtonReturn {
+            PrivilegedHelperInstaller.openLoginItemsSettings()
         }
     }
 

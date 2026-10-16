@@ -38,7 +38,7 @@ enum CommandLineToolInstaller {
         return result
     }
 
-    /// Creates the symlink, asking for an administrator password only if the
+    /// Creates the symlink, going through the privileged helper only if the
     /// destination cannot be written directly.
     static func install() throws {
         guard let bundledToolURL,
@@ -46,14 +46,14 @@ enum CommandLineToolInstaller {
             throw InstallationFailure.toolMissingFromBundle
         }
         if !linkDirectly(from: bundledToolURL) {
-            // Root-owned destination: hand it to the privileged helper, whose
-            // one-time authorisation dialog supports Touch ID.
+            // Root-owned destination: hand it to the privileged helper, which
+            // the user allows once in System Settings.
             try PrivilegedHelperInstaller.installCommandLineTool(
                 toolURL: bundledToolURL, destination: destinationURL)
         }
     }
 
-    /// Replaces the link without a password, when the directory allows it.
+    /// Replaces the link directly, when the directory allows it.
     /// Returns false if anything at all is in the way, so the privileged path
     /// gets its turn.
     private static func linkDirectly(from toolURL: URL) -> Bool {

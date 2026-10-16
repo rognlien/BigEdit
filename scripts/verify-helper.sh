@@ -1,20 +1,18 @@
 #!/bin/sh
-# Checks the SMJobBless preconditions in a built BigEdit.app.
+# Checks the SMAppService daemon layout in a built BigEdit.app.
 #
-# SMJobBless fails with a single unhelpful boolean, and almost always because
-# two strings that must agree do not: the helper's bundle identifier, its
-# launchd label, its Mach service name, its filename, and the requirement
-# strings in the app's SMPrivilegedExecutables and the helper's
-# SMAuthorizedClients. This checks all of them before a release does.
+# SMAppService.daemon(plistName:) reports little more than .notFound when the
+# layout is wrong, and almost always because strings that must agree do not:
+# the plist's file name, its launchd Label, its Mach service name, the path in
+# BundleProgram, and the app's bundle identifier in AssociatedBundleIdentifiers.
+# This checks all of them before a release does.
 #
 # Usage: scripts/verify-helper.sh [path/to/BigEdit.app]
 set -e
 
 APP="${1:-$(cd "$(dirname "$0")/.." && pwd)/BigEdit.app}"
-HELPER_ID="io.maendeleo.BigEdit.helper"
-HELPER="$APP/Contents/Library/LaunchServices/$HELPER_ID"
-WORK="$(mktemp -d)"
-trap 'rm -rf "$WORK"' EXIT
+HELPER_ID="io.maendeleo.BigEdit.daemon"
+PLIST="$APP/Contents/Library/LaunchDaemons/$HELPER_ID.plist"
 FAILURES=0
 
 fail() { echo "  FAIL: $1" >&2; FAILURES=$((FAILURES + 1)); }
@@ -22,95 +20,77 @@ pass() { echo "  ok:   $1"; }
 
 echo "Checking $APP"
 
-[ -f "$HELPER" ] || { echo "  FAIL: no helper at $HELPER" >&2; exit 1; }
-pass "helper present at Contents/Library/LaunchServices/$HELPER_ID"
+[ -f "$PLIST" ] || { echo "  FAIL: no launchd plist at $PLIST" >&2; exit 1; }
+pass "launchd plist present at Contents/Library/LaunchDaemons/$HELPER_ID.plist"
 
-# Pull the two embedded plists back out of the binary. otool prints the section
-# as little-endian 4-byte words, so each group of eight hex digits has to be
-# byte-reversed before it reads as text.
-extract_section() {
-    otool -X -s __TEXT "$1" "$HELPER" 2>/dev/null | python3 -c '
-import sys
-data = bytearray()
-for line in sys.stdin:
-    for word in line.split()[1:]:
-        # Words are little-endian; the last one may be short.
-        if len(word) % 2 == 0 and all(c in "0123456789abcdefABCDEF" for c in word):
-            data.extend(bytes.fromhex(word)[::-1])
-text = data.decode("utf-8", "ignore")
-end = text.find("</plist>")
-sys.stdout.write(text[:end + len("</plist>")] if end != -1 else "")
-'
-}
-
-for section in info_plist launchd_plist; do
-    extract_section "__$section" > "$WORK/$section.plist" 2>/dev/null || true
-    if [ -s "$WORK/$section.plist" ]; then
-        pass "__TEXT,__$section is embedded"
-    else
-        fail "__TEXT,__$section is missing — SMJobBless will refuse the helper"
-    fi
-done
+plutil -lint -s "$PLIST" \
+    && pass "launchd plist is well formed" \
+    || fail "launchd plist does not parse"
 
 read_plist() { /usr/libexec/PlistBuddy -c "Print $2" "$1" 2>/dev/null || echo ""; }
 
-HELPER_BUNDLE_ID=$(read_plist "$WORK/info_plist.plist" ":CFBundleIdentifier")
-LABEL=$(read_plist "$WORK/launchd_plist.plist" ":Label")
-MACH=$(/usr/libexec/PlistBuddy -c "Print :MachServices" "$WORK/launchd_plist.plist" 2>/dev/null \
-    | sed -n '2p' | sed 's/ *=.*//' | tr -d ' ')
-AUTHORIZED=$(read_plist "$WORK/info_plist.plist" ":SMAuthorizedClients:0")
-PRIVILEGED=$(read_plist "$APP/Contents/Info.plist" ":SMPrivilegedExecutables:$HELPER_ID")
+LABEL=$(read_plist "$PLIST" ":Label")
+MACH=$(read_plist "$PLIST" ":MachServices:$HELPER_ID")
+PROGRAM=$(read_plist "$PLIST" ":BundleProgram")
+ABSOLUTE_PROGRAM=$(read_plist "$PLIST" ":Program")
+ASSOCIATED=$(read_plist "$PLIST" ":AssociatedBundleIdentifiers:0")
 APP_ID=$(read_plist "$APP/Contents/Info.plist" ":CFBundleIdentifier")
-
-[ "$HELPER_BUNDLE_ID" = "$HELPER_ID" ] \
-    && pass "helper CFBundleIdentifier matches its filename" \
-    || fail "helper CFBundleIdentifier '$HELPER_BUNDLE_ID' != filename '$HELPER_ID'"
+HELPER="$APP/$PROGRAM"
 
 [ "$LABEL" = "$HELPER_ID" ] \
-    && pass "launchd Label matches" \
+    && pass "launchd Label matches the plist's file name" \
     || fail "launchd Label '$LABEL' != '$HELPER_ID'"
 
-[ "$MACH" = "$HELPER_ID" ] \
-    && pass "MachServices name matches" \
-    || fail "MachServices name '$MACH' != '$HELPER_ID'"
+[ "$MACH" = "true" ] \
+    && pass "MachServices advertises $HELPER_ID" \
+    || fail "MachServices has no '$HELPER_ID' entry set to true"
 
-[ -n "$PRIVILEGED" ] \
-    && pass "app declares SMPrivilegedExecutables[$HELPER_ID]" \
-    || fail "app has no SMPrivilegedExecutables entry for $HELPER_ID"
+[ -z "$ABSOLUTE_PROGRAM" ] \
+    && pass "no absolute Program key" \
+    || fail "Program '$ABSOLUTE_PROGRAM' is set; SMAppService needs BundleProgram only"
 
-[ -n "$AUTHORIZED" ] \
-    && pass "helper declares SMAuthorizedClients" \
-    || fail "helper has no SMAuthorizedClients"
+case "$PROGRAM" in
+    Contents/*) pass "BundleProgram is relative to the bundle: $PROGRAM" ;;
+    *) fail "BundleProgram '$PROGRAM' is not a path inside the bundle" ;;
+esac
 
-# The requirements must name each other's identifier, and the same team.
-echo "$PRIVILEGED" | grep -q "identifier \"$HELPER_ID\"" \
-    && pass "app's requirement names the helper" \
-    || fail "app's requirement does not name $HELPER_ID: $PRIVILEGED"
+[ -n "$PROGRAM" ] && [ -f "$HELPER" ] && [ -x "$HELPER" ] \
+    && pass "helper executable present at $PROGRAM" \
+    || fail "no executable helper at '$PROGRAM'"
 
-echo "$AUTHORIZED" | grep -q "identifier \"$APP_ID\"" \
-    && pass "helper's requirement names the app" \
-    || fail "helper's requirement does not name $APP_ID: $AUTHORIZED"
+[ -n "$APP_ID" ] && [ "$ASSOCIATED" = "$APP_ID" ] \
+    && pass "AssociatedBundleIdentifiers names the app ($APP_ID)" \
+    || fail "AssociatedBundleIdentifiers '$ASSOCIATED' != app '$APP_ID'"
 
-team_of() { echo "$1" | sed -n 's/.*subject.OU\] *= *"\{0,1\}\([A-Z0-9]*\)"\{0,1\}.*/\1/p'; }
-APP_TEAM=$(team_of "$PRIVILEGED")
-HELPER_TEAM=$(team_of "$AUTHORIZED")
-if [ -n "$APP_TEAM" ] && [ "$APP_TEAM" = "$HELPER_TEAM" ]; then
-    pass "both requirements name team $APP_TEAM"
-else
-    fail "team mismatch: app '$APP_TEAM' vs helper '$HELPER_TEAM'"
-fi
+[ -z "$(read_plist "$APP/Contents/Info.plist" ":SMPrivilegedExecutables")" ] \
+    && pass "app no longer declares SMPrivilegedExecutables" \
+    || fail "app still declares SMPrivilegedExecutables, an SMJobBless leftover"
+
+[ ! -e "$APP/Contents/Library/LaunchServices" ] \
+    && pass "no SMJobBless Contents/Library/LaunchServices directory" \
+    || fail "Contents/Library/LaunchServices exists, an SMJobBless leftover"
 
 # Signing: only meaningful once an identity has been used.
-if codesign -dv "$HELPER" 2>&1 | grep -q "TeamIdentifier=$APP_TEAM"; then
-    pass "helper is signed by team $APP_TEAM"
+APP_TEAM=$(codesign -dv "$APP" 2>&1 | sed -n 's/^TeamIdentifier=//p')
+HELPER_SIGNATURE=$(codesign -dv "$HELPER" 2>&1 || true)
+if [ -n "$APP_TEAM" ] && [ "$APP_TEAM" != "not set" ]; then
+    echo "$HELPER_SIGNATURE" | grep -q "TeamIdentifier=$APP_TEAM" \
+        && pass "helper is signed by the app's team $APP_TEAM" \
+        || fail "helper is not signed by the app's team $APP_TEAM"
+    echo "$HELPER_SIGNATURE" | grep -q "^Identifier=$HELPER_ID$" \
+        && pass "helper's signing identifier is $HELPER_ID" \
+        || fail "helper's signing identifier is not $HELPER_ID"
+    echo "$HELPER_SIGNATURE" | grep -q "flags=.*runtime" \
+        && pass "helper uses the hardened runtime" \
+        || fail "helper is not signed with the hardened runtime"
 else
-    echo "  note: helper is not signed by $APP_TEAM (expected for a local build;"
-    echo "        SMJobBless only works from a signed, notarized build)"
+    echo "  note: the app is not signed by a team (expected for a local build;"
+    echo "        SMAppService only registers the daemon from a signed build)"
 fi
 
 if [ "$FAILURES" -eq 0 ]; then
-    echo "All SMJobBless preconditions hold."
+    echo "The SMAppService daemon layout is correct."
 else
-    echo "$FAILURES precondition(s) failed." >&2
+    echo "$FAILURES check(s) failed." >&2
     exit 1
 fi

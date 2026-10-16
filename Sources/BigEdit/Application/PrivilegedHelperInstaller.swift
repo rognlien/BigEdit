@@ -1,42 +1,37 @@
 import BigEditHelperKit
 import Foundation
-import Security
 import ServiceManagement
 
-/// Installs and talks to BigEdit's privileged helper.
+/// Registers and talks to BigEdit's privileged helper.
 ///
 /// Creating a symlink in a root-owned directory needs root, and macOS gives an
 /// app no supported way to run a command as root itself. The supported route is
-/// a launchd daemon blessed once by the user; the system's authorisation dialog
-/// for that supports **Touch ID**, which is why the command install asks for a
-/// fingerprint rather than a typed password.
+/// a launch daemon shipped inside the app bundle and registered with
+/// `SMAppService`. The system then asks the user to allow it once, under Login
+/// Items in System Settings.
 ///
-/// After the one-time blessing, installing or re-pointing the command needs no
+/// After that one approval, installing or re-pointing the command needs no
 /// prompt at all.
 enum PrivilegedHelperInstaller {
 
     enum HelperFailure: Error {
-        case authorisationRefused
-        case blessingFailed(String)
+        case requiresApproval
+        case registrationFailed(String)
+        case daemonMissingFromBundle
         case notReachable
         case refused(String)
     }
 
-    /// Shown in the authorisation dialog above the password / Touch ID prompt.
-    /// The system prefixes it with the app name, so this says what and where.
-    static let authorisationPrompt =
-        "BigEdit needs your permission once to install a small helper, "
-        + "so it can add the “bigedit” command to \(CommandLineToolInstaller.destinationDirectory). "
-        + "You will not be asked again."
+    private static var daemon: SMAppService {
+        SMAppService.daemon(plistName: HelperService.launchdPlistName)
+    }
 
     // MARK: - Installing the command
 
-    /// Points the command at `toolURL`, blessing the helper first if it is
-    /// missing or out of date.
+    /// Points the command at `toolURL`, registering the helper first if it has
+    /// not been registered yet.
     static func installCommandLineTool(toolURL: URL, destination: URL) throws {
-        if try !isHelperCurrent() {
-            try blessHelper()
-        }
+        try ensureDaemonEnabled()
         try withHelper { helper, finish in
             helper.installLink(atDestination: destination.path,
                                pointingTo: toolURL.path) { refusal in
@@ -45,97 +40,51 @@ enum PrivilegedHelperInstaller {
         }
     }
 
-    // MARK: - The blessing
+    /// Opens Login Items in System Settings, where the user allows the helper.
+    static func openLoginItemsSettings() {
+        SMAppService.openSystemSettingsLoginItems()
+    }
 
-    /// Asks the user to authorise installing the helper, then installs it.
-    private static func blessHelper() throws {
-        // Every C string handed to Authorization Services has to outlive the
-        // call that reads it, including the *name* of the environment item —
-        // passing a Swift string there hands over a pointer that is already
-        // dangling by the time it is read.
-        var rightName = kSMRightBlessPrivilegedHelper.utf8CString
-        var promptName = kAuthorizationEnvironmentPrompt.utf8CString
-        var promptText = authorisationPrompt.utf8CString
+    // MARK: - Registration
 
-        let authorization = try rightName.withUnsafeMutableBufferPointer { rightBuffer in
-            try promptName.withUnsafeMutableBufferPointer { nameBuffer in
-                try promptText.withUnsafeMutableBufferPointer { textBuffer in
-                    try createAuthorization(rightName: rightBuffer.baseAddress!,
-                                            promptName: nameBuffer.baseAddress!,
-                                            promptText: textBuffer.baseAddress!)
-                }
-            }
+    /// Registers the daemon when it is not registered yet, then insists that it
+    /// is enabled.
+    private static func ensureDaemonEnabled() throws {
+        let service = daemon
+        if service.status == .notRegistered {
+            try register(service)
         }
-        defer { AuthorizationFree(authorization, []) }
+        try requireEnabled(service.status)
+    }
 
-        var blessError: Unmanaged<CFError>?
-        let blessed = SMJobBless(kSMDomainSystemLaunchd,
-                                 HelperService.machServiceName as CFString,
-                                 authorization,
-                                 &blessError)
-        if !blessed {
-            let message = blessError?.takeRetainedValue().localizedDescription
-                ?? "the helper could not be installed"
-            throw HelperFailure.blessingFailed(message)
+    /// Registering a daemon for the first time fails until the user has
+    /// approved it, so a failure that leaves it awaiting approval is expected.
+    private static func register(_ service: SMAppService) throws {
+        do {
+            try service.register()
+        } catch {
+            if service.status != .requiresApproval {
+                throw HelperFailure.registrationFailed(error.localizedDescription)
+            }
         }
     }
 
-    /// Builds an authorisation for the bless right, with our own prompt text.
-    /// `kAuthorizationFlagInteractionAllowed` is what lets the system show the
-    /// dialog — and therefore what allows Touch ID.
-    private static func createAuthorization(
-        rightName: UnsafeMutablePointer<CChar>,
-        promptName: UnsafeMutablePointer<CChar>,
-        promptText: UnsafeMutablePointer<CChar>
-    ) throws -> AuthorizationRef {
-        var rightItem = AuthorizationItem(name: rightName, valueLength: 0, value: nil, flags: 0)
-        var promptItem = AuthorizationItem(
-            name: promptName,
-            valueLength: strlen(promptText),
-            value: UnsafeMutableRawPointer(promptText),
-            flags: 0
-        )
-
-        var authorization: AuthorizationRef?
-        var status = errAuthorizationInternal
-        // The call has to happen *inside* both closures: a pointer taken with
-        // withUnsafeMutablePointer is only valid for the closure's duration, so
-        // building the structs and using them afterwards reads freed memory.
-        withUnsafeMutablePointer(to: &rightItem) { rightPointer in
-            withUnsafeMutablePointer(to: &promptItem) { promptPointer in
-                var rights = AuthorizationRights(count: 1, items: rightPointer)
-                var environment = AuthorizationEnvironment(count: 1, items: promptPointer)
-                let flags: AuthorizationFlags =
-                    [.interactionAllowed, .preAuthorize, .extendRights]
-                status = AuthorizationCreate(&rights, &environment, flags, &authorization)
-            }
+    private static func requireEnabled(_ status: SMAppService.Status) throws {
+        switch status {
+        case .enabled:
+            break
+        case .requiresApproval:
+            throw HelperFailure.requiresApproval
+        case .notRegistered:
+            throw HelperFailure.registrationFailed("the helper is not registered")
+        case .notFound:
+            throw HelperFailure.daemonMissingFromBundle
+        @unknown default:
+            throw HelperFailure.registrationFailed("unknown helper status (\(status.rawValue))")
         }
-
-        guard status == errAuthorizationSuccess, let authorization else {
-            throw status == errAuthorizationCanceled
-                ? HelperFailure.authorisationRefused
-                : HelperFailure.blessingFailed("authorisation failed (\(status))")
-        }
-        return authorization
     }
 
     // MARK: - Talking to the helper
-
-    /// Whether a helper is installed and matches the version this app expects.
-    private static func isHelperCurrent() throws -> Bool {
-        var current = false
-        do {
-            try withHelper { helper, finish in
-                helper.fetchVersion { version in
-                    current = version == HelperService.version
-                    finish(nil)
-                }
-            }
-        } catch {
-            current = false          // nothing listening: it needs installing
-        }
-        return current
-    }
 
     /// Runs one call against the helper and waits for its reply.
     private static func withHelper(

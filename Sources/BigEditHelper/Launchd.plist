@@ -1,18 +1,27 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
-  Embedded into the helper binary at link time. launchd starts the helper on
-  demand when BigEdit connects to the Mach service, and it exits when idle —
-  there is no reason for a root process to sit running between installs.
+  Copied by make-app.sh to Contents/Library/LaunchDaemons/<Label>.plist, where
+  SMAppService.daemon(plistName:) looks for it. BundleProgram is relative to
+  the app bundle, so the daemon always runs the helper of the installed copy of
+  BigEdit. AssociatedBundleIdentifiers makes Login Items in System Settings
+  show the daemon under BigEdit's name and icon. launchd starts the helper on
+  demand when BigEdit connects to the Mach service.
 -->
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>io.maendeleo.BigEdit.helper</string>
+    <string>io.maendeleo.BigEdit.daemon</string>
+    <key>BundleProgram</key>
+    <string>Contents/MacOS/BigEditHelper</string>
     <key>MachServices</key>
     <dict>
-        <key>io.maendeleo.BigEdit.helper</key>
+        <key>io.maendeleo.BigEdit.daemon</key>
         <true/>
     </dict>
+    <key>AssociatedBundleIdentifiers</key>
+    <array>
+        <string>io.maendeleo.BigEdit</string>
+    </array>
 </dict>
 </plist>

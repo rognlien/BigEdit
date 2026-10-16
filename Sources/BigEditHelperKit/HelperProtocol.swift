@@ -7,18 +7,27 @@ import Foundation
 /// no supported way to run a command as root from an app process — so the work
 /// is handed to a launchd daemon that already runs as root.
 ///
-/// Installing that daemon is what the user authorises, and the system's
-/// authorisation dialog supports Touch ID. Once installed, later installs and
-/// updates of the command need no prompt at all.
+/// The daemon ships inside the app bundle and is registered with
+/// `SMAppService`; the user allows it once under Login Items in System
+/// Settings. After that, later installs and updates of the command need no
+/// prompt at all.
 public enum HelperService {
 
     /// The launchd label and Mach service name. Must match the helper's
-    /// embedded launchd plist and the app's `SMPrivilegedExecutables` key.
-    public static let machServiceName = "io.maendeleo.BigEdit.helper"
+    /// launchd plist, which the bundle carries in `Contents/Library/LaunchDaemons`.
+    ///
+    /// Deliberately not the label of the helper that earlier versions blessed
+    /// with `SMJobBless` (`io.maendeleo.BigEdit.helper`): launchd allows one job
+    /// per label in the system domain, so reusing it would collide with that
+    /// helper wherever it is still installed.
+    public static let machServiceName = "io.maendeleo.BigEdit.daemon"
 
-    /// Bumped whenever the helper's behaviour changes, so the app can notice an
-    /// older helper left behind by a previous version and replace it.
-    public static let version = "1.0"
+    /// The launchd plist's file name inside `Contents/Library/LaunchDaemons`.
+    public static let launchdPlistName = "\(machServiceName).plist"
+
+    /// Bumped whenever the helper's behaviour changes, so a running helper can
+    /// be told apart from the one this app ships.
+    public static let version = "2.0"
 
     /// Where the helper is willing to create links. Anything outside these is
     /// refused, so a compromised client cannot ask root to write anywhere it
