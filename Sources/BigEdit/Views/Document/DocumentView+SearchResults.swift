@@ -25,6 +25,8 @@ extension DocumentView {
 
     func refreshResultsPanel() {
         if resultsVisible {
+            let isSmall = SmallDocument.includes(length: viewport.document?.length ?? 0)
+            resultsPanel.rowLimit = isSmall ? Int.max : SearchResultsPanel.largeDocumentRowLimit
             resultsPanel.update(matchCount: searchScan?.matchCount ?? 0,
                                 isComplete: searchScan?.isComplete ?? true,
                                 isTruncated: searchScan?.isTruncated ?? false)

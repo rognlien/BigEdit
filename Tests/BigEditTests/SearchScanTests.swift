@@ -116,6 +116,28 @@ final class EditedSearchScanTests: XCTestCase {
             }
         }
     }
+
+    // MARK: - The match cap
+
+    func testASmallDocumentCollectsEveryMatch() {
+        let document = makeDocument(String(repeating: "a\n", count: 1_500_000))
+        let scan = SearchScan(query: "a")!
+
+        scan.runSynchronously(in: document)
+
+        XCTAssertEqual(scan.matchCount, 1_500_000)
+        XCTAssertFalse(scan.isTruncated)
+    }
+
+    func testALargeDocumentStopsAtTheCap() {
+        let document = makeDocument(String(repeating: "a", count: SmallDocument.byteLimit + 1))
+        let scan = SearchScan(query: "a")!
+
+        scan.runSynchronously(in: document)
+
+        XCTAssertEqual(scan.matchCount, SearchScan.largeDocumentMatchLimit)
+        XCTAssertTrue(scan.isTruncated)
+    }
 }
 
 final class SearchScanTests: XCTestCase {

@@ -110,8 +110,18 @@ final class SearchResultsPanelTests: XCTestCase {
         }
         panel.update(matchCount: 3, isComplete: true, isTruncated: false)
         XCTAssertEqual(panel.listedRowCount, 3)
-        panel.update(matchCount: SearchResultsPanel.rowLimit + 50, isComplete: true, isTruncated: false)
-        XCTAssertEqual(panel.listedRowCount, SearchResultsPanel.rowLimit)
+        panel.update(matchCount: SearchResultsPanel.largeDocumentRowLimit + 50, isComplete: true, isTruncated: false)
+        XCTAssertEqual(panel.listedRowCount, SearchResultsPanel.largeDocumentRowLimit)
+    }
+
+    func testPanelListsEveryMatchWhenTheLimitIsLifted() {
+        let panel = SearchResultsPanel(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
+        panel.rowLimit = .max
+        let matchCount = SearchResultsPanel.largeDocumentRowLimit + 50
+
+        panel.update(matchCount: matchCount, isComplete: true, isTruncated: false)
+
+        XCTAssertEqual(panel.listedRowCount, matchCount)
     }
 
     func testProgrammaticSelectionDoesNotReportAChoice() {

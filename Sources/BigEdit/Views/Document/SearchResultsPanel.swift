@@ -90,9 +90,12 @@ final class SearchResultsPanel: NSView, NSTableViewDataSource, NSTableViewDelega
 
     static let preferredHeight: CGFloat = 200
 
-    /// The most rows listed. A million-row table is possible but pointless to
-    /// scroll; the title says when the list is cut.
-    static let rowLimit = 100_000
+    /// The most rows listed for a large document. A million-row table is
+    /// possible but pointless to scroll; the title says when the list is cut.
+    static let largeDocumentRowLimit = 100_000
+
+    /// The most rows listed; every match in a small document.
+    var rowLimit = SearchResultsPanel.largeDocumentRowLimit
 
     /// Builds the row at an index, or `nil` if it cannot be shown.
     var rowProvider: ((Int) -> SearchResultRow?)?
@@ -161,7 +164,7 @@ final class SearchResultsPanel: NSView, NSTableViewDataSource, NSTableViewDelega
 
     /// Reflects the search's current state: the rows to list and the title.
     func update(matchCount: Int, isComplete: Bool, isTruncated: Bool) {
-        rowCount = min(matchCount, SearchResultsPanel.rowLimit)
+        rowCount = min(matchCount, rowLimit)
         let formatted = SearchResultsPanel.numberFormatter.string(from: NSNumber(value: matchCount))
             ?? "\(matchCount)"
         var title: String

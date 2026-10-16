@@ -6,7 +6,7 @@ import Foundation
 /// The literal scan uses `memmem`, which is fast enough to sweep many gigabytes
 /// in a few seconds. The regular-expression scan hands `NSRegularExpression`
 /// one window of lines at a time. Either way, match byte offsets are collected
-/// into a sorted array (capped at `matchLimit`), so navigation is array
+/// into a sorted array (capped in a large document), so navigation is array
 /// indexing and highlighting is a binary search — both independent of file
 /// size.
 ///
@@ -14,8 +14,11 @@ import Foundation
 /// scan's progress callbacks by identity.
 final class SearchScan {
 
-    /// Upper bound on collected matches, to keep memory and time bounded.
-    static let matchLimit = 1_000_000
+    /// Upper bound on collected matches in a large document, to keep memory
+    /// and time bounded. A small document collects every match.
+    static let largeDocumentMatchLimit = 1_000_000
+
+    private var matchLimit = SearchScan.largeDocumentMatchLimit
 
     /// How the query is interpreted.
     enum Mode {
@@ -191,7 +194,7 @@ final class SearchScan {
     var isTruncated: Bool {
         lock.lock()
         defer { lock.unlock() }
-        return offsets.count >= SearchScan.matchLimit
+        return offsets.count >= matchLimit
     }
 
     /// Fraction of the file scanned so far. Useful for showing a `"Searching… N%"`
@@ -255,6 +258,7 @@ final class SearchScan {
     /// Scans `file` on a background queue, invoking `onProgress` on the main
     /// queue as matches accumulate.
     func start(in file: MappedFile, onProgress: @escaping () -> Void) {
+        limitMatches(forLength: file.size)
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             self?.scan(file: file) {
                 DispatchQueue.main.async(execute: onProgress)
@@ -268,6 +272,7 @@ final class SearchScan {
     /// stable even while further edits arrive (the owner cancels and re-runs
     /// on every edit). Match offsets are logical.
     func start(in document: EditedDocument, onProgress: @escaping () -> Void) {
+        limitMatches(forLength: document.length)
         if document.hasEdits {
             let pieces = document.pieceTable.pieces(in: 0..<document.length)
             let length = document.length
@@ -287,6 +292,7 @@ final class SearchScan {
 
     /// Logical scan on the current thread — used by tests.
     func runSynchronously(in document: EditedDocument) {
+        limitMatches(forLength: document.length)
         if document.hasEdits {
             let pieces = document.pieceTable.pieces(in: 0..<document.length)
             scanLogical(pieces: pieces, length: document.length,
@@ -300,7 +306,14 @@ final class SearchScan {
     /// Scans `file` on the current thread and returns once the scan is done.
     /// Used by the headless `--search` mode.
     func runSynchronously(in file: MappedFile) {
+        limitMatches(forLength: file.size)
         scan(file: file, onProgress: {})
+    }
+
+    /// Lifts the cap on collected matches for a small document. Set before a
+    /// scan starts, so the scanning threads only ever read it.
+    private func limitMatches(forLength length: Int) {
+        matchLimit = SmallDocument.includes(length: length) ? Int.max : SearchScan.largeDocumentMatchLimit
     }
 
     private func scan(file: MappedFile, onProgress: () -> Void) {
@@ -355,7 +368,7 @@ final class SearchScan {
                         pending.append(matchOffset)
                         totalFound += 1
                         searchOffset = matchOffset + needleLength  // Non-overlapping matches.
-                        if totalFound >= SearchScan.matchLimit {
+                        if totalFound >= matchLimit {
                             break
                         }
                     } else {
@@ -396,7 +409,7 @@ final class SearchScan {
                     pending.append(searchOffset)
                     totalFound += 1
                     searchOffset += needleLength
-                    if totalFound >= SearchScan.matchLimit {
+                    if totalFound >= matchLimit {
                         break
                     }
                 } else {
@@ -477,13 +490,13 @@ final class SearchScan {
         var searchOffset = 0
 
         while searchOffset + needleLength <= length && !isStopped()
-            && totalFound < SearchScan.matchLimit {
+            && totalFound < matchLimit {
             let windowEnd = min(length, searchOffset + logicalScanWindow)
             assembleWindow(searchOffset..<windowEnd, pieces: pieces, starts: pieceStarts,
                            file: file, added: added, retired: retired, into: &window)
 
             var cursor = 0
-            while cursor + needleLength <= window.count && totalFound < SearchScan.matchLimit {
+            while cursor + needleLength <= window.count && totalFound < matchLimit {
                 if let hit = matchIndex(in: window, from: cursor) {
                     pending.append(searchOffset + hit)
                     totalFound += 1
@@ -620,7 +633,7 @@ final class SearchScan {
         var totalFound = 0
         var cursor = 0
 
-        while cursor < length && !isStopped() && totalFound < SearchScan.matchLimit {
+        while cursor < length && !isStopped() && totalFound < matchLimit {
             // Carve one window per worker, each ending on a line boundary.
             var windows: [(start: Int, bytes: [UInt8])] = []
             while windows.count < workers && cursor < length {
@@ -646,7 +659,7 @@ final class SearchScan {
 
             for result in results {
                 for (offset, matchLength) in zip(result.offsets, result.lengths)
-                where totalFound < SearchScan.matchLimit {
+                where totalFound < matchLimit {
                     pending.append(offset)
                     pendingLengths.append(matchLength)
                     totalFound += 1
@@ -729,7 +742,7 @@ final class SearchScan {
             pending.append(baseOffset + start)
             pendingLengths.append(byteCursor - start)
             totalFound += 1
-            if totalFound >= SearchScan.matchLimit {
+            if totalFound >= matchLimit {
                 stop.pointee = true
             }
         }
