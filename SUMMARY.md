@@ -75,10 +75,13 @@ overlap (a heading's `#` markers are punctuation-coloured but stay bold).
 
 Multi-row constructs (XML/JSONC block comments, Markdown fenced code, YAML
 block scalars) are coloured across rows by threading a small carry-state between
-rows; the visible region's start state is seeded by replaying a bounded window
-(~400 rows) above the viewport, so a construct opening far above the top is only
-picked up once scrolled nearer — a deliberate bound that keeps cost tied to the
-viewport, not the file.
+rows. `HighlightCheckpoints` remembers the exact start state every 256 rows,
+as an unbroken chain from the top; the visible region's start state is replayed
+from the nearest one when it is within ~400 rows, extending the chain as the
+document is scrolled. An edit or a re-wrap drops the checkpoints from the first
+row it changed. Jumping further than the window past the chain falls back to
+replaying the window alone, so a construct opened far above is only a guess
+there — a deliberate bound that keeps cost tied to the viewport, not the file.
 
 ## What the user gets
 

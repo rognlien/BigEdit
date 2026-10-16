@@ -239,18 +239,41 @@ extension ViewportView {
         }
     }
 
-    /// The starting highlight state for the first visible row, found by replaying
-    /// a bounded window of preceding rows. Constructs that open further above
-    /// than the window won't be detected until scrolled nearer — a deliberate
-    /// bound so cost stays tied to the viewport, not the file.
-    private func seedState(forFirstRow firstRow: Int, layout: EditedLayout) -> HighlightState {
-        guard !language.isPlain, firstRow > 0 else { return .normal }
-        let lookback = 400
-        let start = max(0, firstRow - lookback)
-        let rows = layout.visualLines(forRows: start..<firstRow)
+    /// The starting highlight state for the first visible row. Replayed from
+    /// the nearest exact checkpoint when one is within the replay window, which
+    /// extends the checkpoints as it goes; otherwise guessed by replaying the
+    /// window alone, so a construct opened further above is not seen. Either
+    /// way the cost stays tied to the viewport, not the file.
+    func seedState(forFirstRow firstRow: Int, layout: EditedLayout) -> HighlightState {
         var state = HighlightState.normal
-        for visualLine in rows {
+        if !language.isPlain, firstRow > 0 {
+            let checkpoint = highlightCheckpoints.nearest(atOrAbove: firstRow)
+            if document?.hasDisplayTransform == false, firstRow - checkpoint.row <= highlightReplayRows {
+                state = replayRows(checkpoint.row..<firstRow, from: checkpoint.state, layout: layout,
+                                   recordsCheckpoints: true)
+            } else {
+                let start = max(0, firstRow - highlightReplayRows)
+                state = replayRows(start..<firstRow, from: .normal, layout: layout, recordsCheckpoints: false)
+            }
+        }
+        return state
+    }
+
+    /// How many rows above the viewport may be replayed to find its start state.
+    private var highlightReplayRows: Int { 400 }
+
+    /// The state at the end of `rows`, replayed from `start`.
+    private func replayRows(_ rows: Range<Int>, from start: HighlightState, layout: EditedLayout,
+                            recordsCheckpoints: Bool) -> HighlightState {
+        var state = start
+        for (offset, visualLine) in layout.visualLines(forRows: rows).enumerated() {
+            if recordsCheckpoints {
+                highlightCheckpoints.record(state, atRow: rows.lowerBound + offset)
+            }
             state = language.endState(decodeChunk(visualLine), start: state)
+        }
+        if recordsCheckpoints {
+            highlightCheckpoints.record(state, atRow: rows.upperBound)
         }
         return state
     }

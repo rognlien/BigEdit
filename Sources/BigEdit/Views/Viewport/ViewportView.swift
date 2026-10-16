@@ -11,7 +11,11 @@ import CoreText
 /// `LineIndex.bytesPerChunk`.
 final class ViewportView: NSView {
 
-    private(set) var document: EditedDocument?
+    private(set) var document: EditedDocument? {
+        didSet {
+            startHighlightCheckpoints()
+        }
+    }
 
     /// The mapped file behind the document — for components that speak
     /// original byte offsets (search, statistics, format detection).
@@ -50,6 +54,9 @@ final class ViewportView: NSView {
 
     /// The language whose highlighter colours each row.
     var language = Language.plain
+
+    /// Exact start states for rows above the viewport, replayed so far.
+    var highlightCheckpoints = HighlightCheckpoints()
 
     /// Maps the highlighters' tokens to colours and fonts.
     let theme = HighlightTheme.standard
@@ -101,6 +108,15 @@ final class ViewportView: NSView {
     }
 
     /// Forgets anything derived from the document's bytes.
+    /// Forgets the checkpoints of the previous document and keeps the new
+    /// one's in step with its edits.
+    private func startHighlightCheckpoints() {
+        highlightCheckpoints.reset()
+        document?.layout.rowsDidChange = { [weak self] row in
+            self?.highlightCheckpoints.invalidate(fromRow: row)
+        }
+    }
+
     func documentContentChanged() {
         csvRowMapCache = nil
     }
@@ -639,6 +655,7 @@ final class ViewportView: NSView {
     /// Sets the language the current document is coloured as.
     func setLanguage(_ language: Language) {
         self.language = language
+        highlightCheckpoints.reset()
         needsDisplay = true
     }
 

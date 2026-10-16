@@ -47,6 +47,10 @@ final class EditedLayout {
     private var totalRows = 0
     private var tableValid = false
 
+    /// Told the first visual row an edit or a re-wrap may have changed; every
+    /// row above it is as it was.
+    var rowsDidChange: ((Int) -> Void)?
+
     init(file: MappedFile, index: LineIndex) {
         self.file = file
         self.index = index
@@ -183,6 +187,7 @@ final class EditedLayout {
                 gaps[gapIndex].cacheValid = false
             }
             tableValid = false
+            rowsDidChange?(0)
         }
     }
 
@@ -407,6 +412,8 @@ final class EditedLayout {
         insertedLength: Int,
         contentReader: (Range<Int>) -> [UInt8]
     ) {
+        let firstChangedRow = rowsDidChange.map { _ in visualRow(forLogicalByteOffset: replacedRange.lowerBound) }
+        defer { firstChangedRow.map { rowsDidChange?($0) } }
         ensureSegmentTable()
 
         let delta = insertedLength - replacedRange.count
