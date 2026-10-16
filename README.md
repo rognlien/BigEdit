@@ -1,238 +1,228 @@
 # BigEdit
 
-A native macOS editor for very large text / JSON / XML files (many GB).
-Built with Swift and AppKit.
+A native macOS editor for very large text files — logs, JSON, XML, YAML,
+CSV, SQL dumps and Markdown, many gigabytes each. Built with Swift and
+AppKit.
 
-The guiding principle: **memory and CPU scale with the viewport and the
-edits, never with the file.** A 50 GB file and a 50 KB file cost the same to
-display, and editing either costs only what the edits themselves weigh: the
-file stays memory-mapped read-only while edits live in a piece table, and the
-full file is only written out — streaming, atomically — when you save.
+BigEdit is for the files other editors refuse or choke on: a 20 GB log to
+search, a one-line minified JSON export to read, a database dump to fix one
+row of, a CSV too large for a spreadsheet. A 50 GB file opens as fast as a
+50 KB one, because **memory and CPU scale with what is on screen and with
+your edits, never with the file.** The file stays memory-mapped read-only,
+edits live beside it, and the whole file is only written out — streaming and
+atomically — when you save.
 
-## Build & run
+> **BigEdit is in beta.** It is used daily on real files, but keep a copy of
+> anything you cannot afford to lose.
 
-```sh
-./make-app.sh && open BigEdit.app  # build a standalone app and launch it
-```
+## Getting BigEdit
 
-Use the app bundle for normal use: it runs independently of any terminal.
-`swift run BigEdit` also works, but that process is a child of its shell and
-dies when the shell or `swift run` is interrupted — handy for quick tests only.
+Download the signed and notarized DMG from
+[maendeleo.io/bigedit](https://maendeleo.io/bigedit), or from the
+repository's Releases page. BigEdit updates itself (Sparkle); updates can be
+turned off in Settings.
 
-```sh
-# Headless modes, for testing without the GUI:
-swift run -c release BigEdit --index /path/to/file
-swift run -c release BigEdit --search <pattern> /path/to/file
-swift run -c release BigEdit --search-regex <pattern> /path/to/file
-swift run -c release BigEdit --dump /path/to/file [rows]   # rows decoded as shown
-swift run -c release BigEdit --csv /path/to/file [rows]
-```
+**Requirements:** macOS 13 Ventura or later, on Apple silicon. The Apple
+Intelligence items need macOS 26 with Apple Intelligence turned on; without
+them everything else works the same.
 
-The package opens directly in Xcode (`File ▸ Open…` the `BigEdit` folder).
+## What it does
 
-## Usage
+### Opening and reading
 
-- **⌘N** — create a new file and open it.
-- **⇧⌘T** — View ▸ Follow File: like `tail -f`. Bytes appended on disk are
-  indexed incrementally and shown as they arrive, and the view stays pinned
-  to the end if it was there. A file that shrinks or is replaced reloads in
-  full instead; a document with unsaved edits does not follow.
-- **⌘O** — open a file.
-- **Click and type** — edit in place (UTF-8 files). **⌘Z** / **⇧⌘Z** undo and
-  redo, including back across a save; **⌘X/⌘C/⌘V** cut, copy, paste. **⌘S**
-  saves atomically via a streaming temp-file write. Unsaved edits are
-  journaled to disk as you make them, so if BigEdit crashes or is
-  force-quit, opening the file again offers to recover them.
-- **⌘F** — find. Type a query and press Enter to search. The magnifier menu
-  in the search field holds **Match Case** and **Regular Expression** (`^`
-  and `$` match at line boundaries, as in `grep`).
-- **⌘G** / **⇧⌘G** — next / previous match. **Esc** or **Done** closes the
-  find bar.
-- **⌥⌘L**, or **Show All Matches** in the magnifier menu — every match as a
-  list below the viewport, with its line number and a snippet; click one to
+- **Opens instantly.** The window appears at once while lines are indexed in
+  the background; scrolling, Go to Line (**⌘L**) and the line count work as
+  soon as they reach the part you are looking at.
+- **Long lines wrap to the window**, so a one-line minified JSON file becomes
+  rows you can scroll, select and search.
+- **Syntax colouring** for JSON, XML, Markdown, YAML, SQL and shell scripts,
+  chosen from the file's name or its first bytes. **View ▸ Syntax Coloring**,
+  or the language name at the right of the status bar, picks another.
+- **Many documents in one window**, listed in a sidebar. The open documents,
+  their scroll positions and the window are restored at the next launch, and
+  each file remembers how it was shown — Text, CSV or Markdown, its CSV
+  options and column widths, and a chosen language.
+- **Follow File (⇧⌘T)** — like `tail -f`: bytes appended on disk appear as
+  they arrive, and the view stays at the end if it was there.
+- **Encodings:** UTF-8, and Windows-1252 / Latin-1 for files that are not
+  valid UTF-8. Both can be edited and are saved in their own encoding; File ▸
+  Convert to UTF-8… converts one. CRLF line endings are kept.
+- Files in iCloud Drive that are not downloaded yet are fetched before they
+  open.
+
+### Editing
+
+- **Click and type.** Undo and redo (**⌘Z** / **⇧⌘Z**) reach back across a
+  save. **⌘S** saves atomically through a temporary file, with a progress
+  sheet for large files.
+- **Crash recovery.** Unsaved edits are written to a journal as you make
+  them. If BigEdit crashes or is force-quit, opening the file again offers to
+  recover them — and if the file changed on disk in the meantime, BigEdit
+  says so rather than applying the edits in the wrong places.
+- **Column selection** with Option-drag: copy, cut, delete or type into a
+  rectangular block.
+- **Edit ▸ Process Lines (⇧⌘L):** remove duplicates, keep or remove lines
+  containing text, sort (plain, natural, or by a regular-expression key),
+  replace within each line, and set operations against another document or
+  file — remove the lines in another list, keep only those in it, add what
+  it has, or keep what is in only one. Lines can be matched trimmed, ignoring
+  case, or by a regular expression, so two CSV exports can be intersected on
+  one column.
+- **Edit ▸ Compare Documents (⇧⌘D):** two documents as sets of lines (only
+  in the first, only in the second, in both) and as a unified diff that
+  `patch` reads.
+
+### Finding and replacing
+
+- **⌘F** finds, **⌥⌘F** finds and replaces, **⌘G** / **⇧⌘G** move between
+  matches. The magnifier menu in the search field holds Match Case, Regular
+  Expression, Dot Matches Newline and a regular-expression reference card.
+- **Search runs in the background** with live progress, so a search through
+  many gigabytes never freezes the window.
+- **⌥⌘L** lists every match with its line number and a snippet; click one to
   jump to it.
-  The list is built row by row as you scroll it, so a million matches cost
-  nothing until they are looked at; the first 100,000 are listed.
-- **Text / CSV / Markdown** — the selector at the top right of the editor. The CSV side
-  works on any file — when the file is not detected as delimited data, it
-  first asks for the delimiter, quote and header row — and turns it
-  into aligned columns on a faint grid, with options for the delimiter,
-  quote character, header row, pinning the header while scrolling, and
-  trimming field spaces. Clicks, selection, search highlights and typing
-  land on the cell text they show, padding and quotes included.
-- **Click a column header** to sort the table by that column — naturally, so
-  `9` comes before `10`; click again for descending. Right-click any cell
-  for Sort Ascending / Descending by that column. The sort is one undoable
-  edit (⌘Z puts the rows back) and, like Process Lines, holds every line in
-  memory, so it is limited to files of 32 MB.
-- **Drag a column edge** — the ticks along the top row mark each column's
-  trailing edge; the pointer becomes a resize cursor within a few pixels of
-  one. **Double-click an edge** to put that column back to the width its own
-  content asks for. Widths reset when a CSV option changes, since that
-  re-measures the columns.
-- **Markdown** — the third side of the selector, available for `.md` files
-  up to 16 MB. It shows the document rendered, unsaved edits included, as
-  GitHub does: tables, task lists, strikethrough, autolinks and footnotes.
-  Editing stays in Text; switching either way keeps your place, and Find,
-  Go to Line and Process Lines switch back to Text on their own. Raw HTML
-  in the source is left out and the page runs no scripts; links open in
-  your browser.
-- **⌘,** — Settings: appearance (System, Light or Dark), the editor's font
-  family and size (fixed-width fonts only; ⌘+ / ⌘− / ⌘0 change the same
-  size), whether rendered Markdown loads pictures from the web, and
-  automatic update checks. Changes apply at once to every open document.
+- **Regular expressions, as you type:** a pattern that does not compile is
+  explained before you press Enter, and in replace mode the second row shows
+  what `$1` expands to for the current match.
+- **Replace All** has no match limit: when there are too many matches to
+  apply as one undoable edit, BigEdit offers to stream the result to the file
+  or to a new one.
+- **Saved Patterns:** save a pattern, its replacement and options under a
+  name, and pick it again from the find bar, the Find menu or Process Lines.
+  They can be kept in iCloud Drive.
+- **Apple Intelligence:** Describe a Pattern… turns a sentence and a few
+  sample lines into a regular expression you can check before it runs, and
+  Explain This Pattern does the reverse. The on-device model sees the pattern
+  and at most a dozen lines, never the document, and nothing leaves the Mac.
 
-- **⇧⌘L** — Edit ▸ Process Lines: remove duplicates, keep or remove lines
-  containing text, sort (plain, natural, or by a regex key), replace within
-  each line, and the **set operations**: remove the lines that are in another
-  list, keep only those that are, add what another list has that this one
-  lacks, or keep what is in only one of the two. The other list is any other
-  open document or a file on disk; lines can be matched trimmed, ignoring
-  case, or by a regular expression's first match (its first group, if any),
-  so two CSV exports can be intersected on one column. Removing and keeping
-  stream — they hold only the other list — so a document above the
-  Process Lines ceiling is offered a new file to write the result to.
-- **⇧⌘D** — Edit ▸ Compare Documents: two open documents as sets of lines
-  (only in the first, only in the second, in both — `comm` with the order
-  kept) and as a sequence diff, the way `diff -u` writes it. Each section
-  can be copied, saved to a file, or opened as a document; the Changes
-  section saves as a `.diff` that `patch` reads.
-- **Saved Patterns** — a find pattern, its replacement and its options can be
-  saved under a name from the magnifier menu, the Find menu, or the Process
-  Lines sheet, and chosen again from any of them. They live in one JSON file
-  in Application Support; **Keep in iCloud Drive** moves it into a BigEdit
-  folder in your iCloud Drive, where every Mac signed in to the account sees
-  it.
-- **Regular expressions, as you type** — a pattern that does not compile is
-  explained in red (an unclosed group, a quantifier with nothing before it, a
-  trailing backslash…) before Enter; on documents up to 64 MB the query runs
-  after a short pause without moving the view; in replace mode the second row
-  shows what `$1` expands to for the current match. The magnifier menu also
-  has **Dot Matches Newline** and a **Regular Expression Reference** card.
-- **Replace All with a pattern** has no match cap: above the 2,000-match
-  materialisation limit BigEdit offers to stream the result, reading the
-  document once in windows cut at line boundaries and writing it back to the
-  file (which then reloads) or to a new file.
-- **iCloud Drive** — a file iCloud has not downloaded is fetched, with a
-  progress sheet, before it opens, instead of showing an empty placeholder.
-- **Apple Intelligence** — on macOS 26 with Apple Intelligence turned on,
-  the magnifier menu offers **Describe a Pattern…**, which turns a sentence
-  and a few sample lines into a regular expression you can edit before it
-  runs, and **Explain This Pattern**; the Process Lines sheet has
-  **Describe…**. The on-device model sees a pattern and at most a dozen
-  lines, never the document, and nothing leaves the Mac. On older systems
-  the items do not appear.
+### CSV and other delimited data
 
-## Command line
+Choose **CSV** in the selector at the top right to see a file as aligned
+columns on a grid. Comma, semicolon, tab and pipe are detected; any other
+delimiter can be chosen, along with the quote character, the header row,
+pinning the header while scrolling, and trimming spaces.
 
-BigEdit ships a `bigedit` command inside the app bundle. Install it from
-**BigEdit ▸ Install Command Line Tool…**, which symlinks it into
-`/usr/local/bin` (asking for an administrator password only if that directory
-is not writable).
+- Typing goes into the cell under the caret. **Tab** / **Shift-Tab** move
+  between cells, Tab past the last column adds one, and **Return** moves down
+  a row like Numbers. **Option-Tab** types a tab.
+- Edits respect cells: typing a delimiter or a quote quotes the cell, and
+  Delete stops at a cell's edge instead of merging it with the next. Deleting
+  a selection across cells clears them and keeps the table's shape.
+- **Click a header** to sort by that column (naturally, so `9` comes before
+  `10`), again for descending; right-click a cell for the same. A sort is one
+  undoable edit.
+- **Drag a column's edge** to resize it; double-click the edge to fit it to
+  its content.
+
+### Markdown
+
+The **Markdown** side of the selector shows a `.md` file of up to 16 MB
+rendered the way GitHub does — tables, task lists, strikethrough, autolinks
+and footnotes — unsaved edits included. Raw HTML is left out and the page
+runs no scripts; links open in your browser.
+
+### Settings (⌘,)
+
+Appearance (System, Light or Dark), the editor font and size (**⌘+** /
+**⌘−** / **⌘0**), whether rendered Markdown loads pictures from the web, and
+automatic update checks.
+
+## The `bigedit` command
+
+BigEdit ships a `bigedit` command inside the app. Install it from
+**BigEdit ▸ Install Command Line Tool…**, which links it into
+`/usr/local/bin`.
 
 ```sh
 bigedit notes.txt          # open it, creating the file if it does not exist
 bigedit a.csv b.json       # open several at once
-bigedit                    # just bring BigEdit to the front
+bigedit                    # bring BigEdit to the front
 bigedit --help
 ```
 
-It is a symlink rather than a copy, so updating BigEdit updates the command
-with it. Files go to the BigEdit that is already running, even a copy
-installed somewhere else; only when none is running does the command launch
-the one it belongs to.
+It is a link rather than a copy, so updating BigEdit updates the command.
+Files go to the BigEdit that is already running.
 
-`/usr/local/bin` is owned by root, so the first install asks for authorisation.
-BigEdit does that through a small privileged helper — the supported way for an
-app to do privileged work — and the system's dialog for it accepts **Touch ID**
-as well as a password. You are asked once; later installs and updates need no
-prompt. The helper takes one instruction (link this tool into one of a fixed
-list of directories), runs no shell, and only accepts connections from BigEdit
-itself.
+`/usr/local/bin` belongs to root, so the first install asks for permission
+through a small privileged helper — the supported way for an app to do
+privileged work — and the system's dialog accepts **Touch ID** as well as a
+password. You are asked once. The helper does one thing (link this tool into
+one of a fixed list of directories), runs no shell, and only accepts
+connections from BigEdit itself.
 
-## Status — steps 1–5 of the plan
+## Limitations
 
-| Step | Component | File |
-|------|-----------|------|
-| 1 | `mmap` file access | `MappedFile.swift` |
-| 1 | Sparse line index, built on a background queue | `LineIndex.swift` |
-| 2 | Viewport view — draws only visible rows | `ViewportView.swift` |
-| 3 | Custom `NSScroller`-driven scrolling | `DocumentView.swift` |
-| 4 | Long-line / minified-JSON chunking | `LineIndex.swift` |
-| 5 | Literal search + find bar | `SearchScan.swift`, `FindBar.swift` |
+BigEdit keeps its costs tied to the screen, and a few things follow from
+that. Below 4 MB a document is handled whole and most of these bounds do not
+apply.
 
-App shell (window, menu, open panel) is in `AppDelegate.swift` / `main.swift`.
+- **VoiceOver** cannot read the document yet: the text view is drawn by
+  BigEdit itself and does not expose its text to assistive technologies.
+- **Syntax colouring** of a large document is exact as you scroll down from
+  the top. After a jump far down, a comment or string opened more than about
+  400 rows above the view is not seen until you scroll nearer.
+- **Search** in a document over 4 MB collects the first 1,000,000 matches
+  (shown as `1,000,000+`) and lists the first 100,000. A single
+  regular-expression match cannot span more than about 4 MB of lines.
+- **CSV:** rows are lines, so a quoted field that contains a line break is
+  shown across two rows. Column widths of a file over 4 MB are measured from
+  its first megabyte, so a much wider field further down is cut short until
+  that row is edited. Sorting, like Process Lines, holds every line in memory
+  and is limited to 32 MB.
+- **Windows-1252 and Latin-1:** a character those encodings cannot hold is
+  refused rather than typed (BigEdit offers to convert the file to UTF-8).
+  Process Lines and CSV sorting need UTF-8. The encoding is detected from the
+  first 64 KB, so a file whose first 64 KB are plain ASCII opens as UTF-8.
+  UTF-16 and binary files are labelled but not decoded.
+- **Compare Documents** holds both lists in memory, up to 256 MB each.
+- **Follow File** follows only a document without unsaved edits.
+- **Crash recovery** cannot apply the edits once the file has changed on
+  disk; restoring the earlier version makes them recoverable again.
 
-### How it works
+## Reporting a bug
 
-- **`MappedFile`** maps the file with `mmap`; the OS pages in only the bytes
-  actually touched.
-- **`LineIndex`** scans for newlines and stores one *checkpoint* every 4096
-  lines. To reach line *N* it jumps to the nearest checkpoint and scans forward.
-  The index stays small for any file size. Scanning runs in the background and
-  publishes progress incrementally, so the window opens instantly.
-- **Long-line chunking** — a line longer than `bytesPerChunk` (1024) is shown
-  as a stack of *visual rows*, each one a 1024-byte chunk. A minified JSON file
-  that is one 5 GB line becomes ~5M navigable rows instead of one unreadable
-  row. Each checkpoint also stores a cumulative visual-row count, so a scroll
-  position maps to a `(line, chunk)` in `O(log n)`. The chunk size is fixed, so
-  nothing is recomputed when the window is resized.
-- **`ViewportView`** holds the scroll position as a *fractional visual-row
-  number* and draws only the ~60 visible rows. It never builds a view as tall
-  as the whole document.
-- **`DocumentView`** drives an `NSScroller` directly over `0...visualRowCount`
-  instead of using `NSScrollView`, avoiding the coordinate-precision breakdown
-  that a billion-point-tall document view would cause.
-- **`SearchScan`** searches the mmap'd bytes with `memmem` on a background
-  queue, collecting match offsets into a sorted array (capped at 1,000,000).
-  Navigation is array indexing; highlighting visible matches is a binary search
-  into that array. `LineIndex.visualRow(forByteOffset:)` maps a match back to a
-  row so it can be scrolled into view.
+Open an issue on the repository's GitHub Issues page, with:
 
-### Measured
+- the BigEdit version (BigEdit ▸ About BigEdit) and the macOS version,
+- the size and kind of file, and its encoding and line endings from the
+  status bar,
+- what you did, what you expected, and what happened instead,
+- for a crash, the report from `~/Library/Logs/DiagnosticReports` whose name
+  starts with `BigEdit`.
 
-- Indexing runs one chunk per core for files of 64 MB and up. A 471 MB /
-  12M-line file (page-cached) indexes in ~0.02 s on an 18-core machine, against
-  ~0.13 s single-threaded; a cold file is bound by the disk either way. The
-  parallel scan is tested to be indistinguishable from the serial one.
-- 562 MB / 50M lines indexed in ~1.4 s single-threaded (~390 MB/s) before that.
-- A 100 MB single-line file indexes in ~0.17 s — and is now 102,400 navigable
-  visual rows.
-- Searching the 562 MB file took ~1.3 s; the match count matched `grep -o`
-  exactly (139,731 hits for `999`).
+Please do not attach files containing anything private; a few lines that show
+the problem are usually enough.
 
-## Known limitations (later plan steps)
+## Building from source
 
-- Long lines wrap at a **fixed 1024-byte column**, not the window width, so a
-  chunk wider than the window needs horizontal scrolling. Window-width soft
-  wrap could be a later view option.
-- A chunk seam falling inside a multi-byte UTF-8 character renders one
-  replacement glyph at the seam (rare in ASCII-dominant JSON/XML).
-- Regular-expression search runs one window of lines at a time, so a single
-  match cannot span more than ~8 MB of lines. Matches beyond the 1,000,000th
-  are not collected (shown as `N+`), and Replace All with a pattern only
-  works under the materialisation cap — there is no streaming form of it.
-- Syntax highlighting covers XML, JSON, Markdown, YAML, SQL, and shell
-  scripts (sh, bash, zsh and ksh, recognised by extension, dotfile name or
-  `#!` line); other files draw as plain text.
-- Files are read as UTF-8, or as Windows-1252 when they are not valid UTF-8
-  (the status bar says which). A Windows-1252 file reads, copies, searches
-  and counts correctly but stays read-only, since edits are made in UTF-8.
-  UTF-16 and binary files are labelled but not decoded. CRLF line endings
-  are handled.
-- **CSV mode edits the text, not a table.** Typing goes into the cell under
-  the caret, **Tab** / **Shift-Tab** select the next / previous cell (and a
-  cell the row does not have yet is created by the first character typed
-  into it), **Tab** past the last column adds a new one to the row, **Option-Tab**
-  types a tab, and a
-  column widens to fit what you type; but a delimiter typed
-  into a cell splits it, and deleting across a divider removes the delimiter
-  and merges the cells — rows are lines and cells are the text between
-  delimiters. Column widths are measured from a bounded head sample, so a
-  much wider field far down the file is truncated rather than widening its
-  column until you edit that row. A quoted field containing a newline is not
-  joined across rows, since rows are physical lines.
+```sh
+./make-app.sh && open BigEdit.app   # build a standalone app and launch it
+swift test                          # the unit tests
+```
+
+The package opens directly in Xcode (File ▸ Open… the `BigEdit` folder).
+`swift run BigEdit` works too, but that process dies with its shell — use the
+app bundle for anything longer than a quick check.
+
+Headless modes check the engine without the window, against standard tools:
+
+```sh
+swift run -c release BigEdit --index <path>              # vs wc -l
+swift run -c release BigEdit --search <pattern> <path>   # vs grep -o
+swift run -c release BigEdit --search-regex <pattern> <path>
+swift run -c release BigEdit --stats <path>              # vs wc -lwm
+swift run -c release BigEdit --dump <path> [rows]        # rows as shown
+swift run -c release BigEdit --csv <path> [rows]
+```
+
+The `scripts/verify-*.sh` scripts cross-check editing, CSV, encodings,
+Process Lines and regular expressions against Python, `iconv`, `awk`, `grep`,
+`sort`, `sed` and `perl`. [SUMMARY.md](SUMMARY.md) describes the
+architecture, and [docs/RELEASING.md](docs/RELEASING.md) the release process.
 
 ## License
 
-MIT — see [LICENSE](LICENSE). BigEdit ships [Sparkle](https://github.com/sparkle-project/Sparkle) for updates, which is MIT-licensed as well, and renders Markdown with [cmark-gfm](https://github.com/swiftlang/swift-cmark), which is BSD-licensed.
+MIT — see [LICENSE](LICENSE). BigEdit ships
+[Sparkle](https://github.com/sparkle-project/Sparkle) for updates, which is
+MIT-licensed as well, and renders Markdown with
+[cmark-gfm](https://github.com/swiftlang/swift-cmark), which is BSD-licensed.
