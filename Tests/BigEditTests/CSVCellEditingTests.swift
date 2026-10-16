@@ -92,4 +92,27 @@ final class CSVCellEditingTests: XCTestCase {
         XCTAssertNil(delete(backward: true, at: 0, in: ""))
         XCTAssertNil(delete(backward: false, at: 0, in: ""))
     }
+
+    private func clear(_ range: Range<Int>, in text: String) -> CSVCellEdit? {
+        CSVCellEditing.clearing(range, in: Array(text.utf8), dialect: CSVDialect(), encoding: .utf8)
+    }
+
+    func testClearingInsideOneValueIsAPlainDelete() {
+        XCTAssertEqual(clear(1..<3, in: "abcd,e"), CSVCellEdit(range: 1..<3, bytes: [], bytesAfterCaret: 0))
+    }
+
+    func testClearingSeveralCellsKeepsTheDelimiters() {
+        XCTAssertEqual(clear(1..<8, in: "ab,cd,ef"),
+                       CSVCellEdit(range: 1..<8, bytes: Array(",,".utf8), bytesAfterCaret: 2))
+    }
+
+    func testClearingKeepsQuotesAndLineEndings() {
+        XCTAssertEqual(clear(0..<12, in: "\"a,b\",c\r\nd,e"),
+                       CSVCellEdit(range: 1..<12, bytes: Array("\",\r\n,".utf8), bytesAfterCaret: 5),
+                       "from inside the opening quote to the end")
+    }
+
+    func testClearingOnlyDelimitersHasNothingToDo() {
+        XCTAssertNil(clear(2..<4, in: "ab,,cd"))
+    }
 }

@@ -404,4 +404,78 @@ final class CSVEditingTests: XCTestCase {
 
         XCTAssertEqual(text(of: document), "name,age\nbob42\n")
     }
+
+    private func select(_ viewport: ViewportView, _ range: Range<Int>) {
+        viewport.selection = TextSelection(anchorOffset: range.lowerBound, activeOffset: range.upperBound)
+    }
+
+    func testDeletingSeveralCellsClearsThemAndKeepsTheDelimiters() {
+        let original = "name,age,city\nbob,42,Oslo\n"
+        let (viewport, document) = makeViewport(original)
+        let start = "name,age,city\n".utf8.count
+        select(viewport, start..<(start + "bob,42".utf8.count))
+
+        viewport.deleteBackward(nil)
+
+        XCTAssertEqual(text(of: document), "name,age,city\n,,Oslo\n")
+        XCTAssertEqual(viewport.selection?.range, start..<start)
+        viewport.undo(nil)
+        XCTAssertEqual(text(of: document), original, "one undo step")
+    }
+
+    func testDeletingAcrossRowsKeepsTheRows() {
+        let (viewport, document) = makeViewport("name,age\nbob,42\nann,7\n")
+        let from = "name,age\nb".utf8.count
+        let to = "name,age\nbob,42\nan".utf8.count
+        select(viewport, from..<to)
+
+        viewport.deleteForward(nil)
+
+        XCTAssertEqual(text(of: document), "name,age\nb,\nn,7\n")
+    }
+
+    func testDeletingAQuotedCellKeepsItsQuotes() {
+        let (viewport, document) = makeViewport("name,age\n\"a,b\",2\n")
+        let start = "name,age\n".utf8.count
+        select(viewport, start..<(start + "\"a,b\",2".utf8.count))
+
+        viewport.deleteBackward(nil)
+
+        XCTAssertEqual(text(of: document), "name,age\n\"\",\n")
+    }
+
+    func testCuttingSeveralCellsClearsThem() {
+        let (viewport, document) = makeViewport("name,age\nbob,42\n")
+        let start = "name,age\n".utf8.count
+        select(viewport, start..<(start + "bob,42".utf8.count))
+
+        viewport.cut(nil)
+
+        XCTAssertEqual(text(of: document), "name,age\n,\n")
+        XCTAssertEqual(NSPasteboard.general.string(forType: .string), "bob,42")
+    }
+
+    func testTypingOverSeveralCellsFillsTheFirstAndClearsTheRest() {
+        let original = "name,age\nbob,42\n"
+        let (viewport, document) = makeViewport(original)
+        let start = "name,age\n".utf8.count
+        select(viewport, start..<(start + "bob,42".utf8.count))
+
+        type("x,y", into: viewport)
+
+        XCTAssertEqual(text(of: document), "name,age\n\"x,y\",\n")
+        viewport.undo(nil)
+        XCTAssertEqual(text(of: document), original, "one undo step")
+    }
+
+    func testTextModeDeletesTheSelectionWithItsDelimiters() {
+        let (viewport, document) = makeViewport("name,age\nbob,42\n")
+        viewport.setCSVRendering(dialect: nil, columnLayout: nil)
+        let start = "name,age\n".utf8.count
+        select(viewport, start..<(start + "bob,42".utf8.count))
+
+        viewport.deleteBackward(nil)
+
+        XCTAssertEqual(text(of: document), "name,age\n\n")
+    }
 }

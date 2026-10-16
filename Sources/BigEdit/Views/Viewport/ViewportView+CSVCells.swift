@@ -27,12 +27,64 @@ extension ViewportView {
     /// Puts typed or pasted `bytes` in place of `range`. Under CSV columns
     /// they stay inside their cell, which is quoted when they would split
     /// it; when the dialect has no quote to do that with, it beeps.
+    /// Typed over a selection of several cells, the text replaces it in the
+    /// first of them and clears the rest.
     func insertKeepingCells(_ bytes: [UInt8], replacing range: Range<Int>) {
+        if isCSVRenderingActive && !range.isEmpty && !liesInOneCSVField(range) {
+            replaceCells(in: range, with: bytes)
+        } else {
+            insertIntoCell(bytes, replacing: range)
+        }
+    }
+
+    private func insertIntoCell(_ bytes: [UInt8], replacing range: Range<Int>) {
         if let edit = cellInsertion(of: bytes, replacing: range) {
             performEdit(replacing: edit.range, with: edit.bytes, bytesAfterCaret: edit.bytesAfterCaret)
         } else {
             NSSound.beep()
         }
+    }
+
+    /// Clears the cells `range` covers and types `bytes` into the first, as
+    /// one undoable step.
+    private func replaceCells(in range: Range<Int>, with bytes: [UInt8]) {
+        document?.undoStack.beginGrouping()
+        if deleteKeepingCells(range) {
+            let caret = selection?.activeOffset ?? range.lowerBound
+            insertIntoCell(bytes, replacing: caret..<caret)
+        }
+        document?.undoStack.endGrouping()
+    }
+
+    /// Deletes `range`. Under CSV columns that clears the cells it covers,
+    /// as a spreadsheet does, keeping their delimiters, quotes and line
+    /// endings so no cell or row is merged into another. Returns false
+    /// when the range is too large to clear.
+    @discardableResult
+    func deleteKeepingCells(_ range: Range<Int>) -> Bool {
+        var deleted = true
+        if let csvDialect, let document, isCSVRenderingActive {
+            let lines = lineContentRange(containing: range.lowerBound).lowerBound
+                ..< lineContentRange(containing: range.upperBound).upperBound
+            if lines.count > 64 * 1024 * 1024 {
+                presentSelectionTooLarge()
+                deleted = false
+            } else if let edit = CSVCellEditing.clearing(
+                (range.lowerBound - lines.lowerBound)..<(range.upperBound - lines.lowerBound),
+                in: document.bytes(in: lines), dialect: csvDialect, encoding: textEncoding) {
+                let shifted = edit.shifted(by: lines.lowerBound)
+                performEdit(replacing: shifted.range, with: shifted.bytes, bytesAfterCaret: shifted.bytesAfterCaret)
+            } else {
+                selection = TextSelection(anchorOffset: range.lowerBound, activeOffset: range.lowerBound)
+            }
+        } else {
+            performEdit(replacing: range, with: [])
+        }
+        return deleted
+    }
+
+    private func liesInOneCSVField(_ range: Range<Int>) -> Bool {
+        csvRow(containing: range.lowerBound).flatMap { editedField(for: range, in: $0) } != nil
     }
 
     private func cellInsertion(of bytes: [UInt8], replacing range: Range<Int>) -> CSVCellEdit? {

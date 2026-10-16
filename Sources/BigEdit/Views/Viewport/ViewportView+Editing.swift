@@ -125,7 +125,7 @@ extension ViewportView {
             return
         }
         if !selection.isEmpty {
-            performEdit(replacing: selection.range, with: [])
+            deleteKeepingCells(selection.range)
         } else if let row = csvRow(containing: selection.activeOffset) {
             deleteCharacterInCell(backward: true, at: selection.activeOffset, in: row)
         } else if selection.activeOffset > 0 {
@@ -154,7 +154,7 @@ extension ViewportView {
             return
         }
         if !selection.isEmpty {
-            performEdit(replacing: selection.range, with: [])
+            deleteKeepingCells(selection.range)
         } else if let row = csvRow(containing: selection.activeOffset) {
             deleteCharacterInCell(backward: false, at: selection.activeOffset, in: row)
         } else if selection.activeOffset < document.length {
@@ -210,7 +210,7 @@ extension ViewportView {
                 presentSelectionTooLarge()
             } else {
                 copy(sender)
-                performEdit(replacing: selection.range, with: [])
+                deleteKeepingCells(selection.range)
             }
         } else {
             NSSound.beep()

@@ -47,6 +47,43 @@ enum CSVCellEditing {
                            bytesAfterCaret: after.count)
     }
 
+    /// The edit that clears the cells `range` covers in `text` — whole
+    /// lines, from a line's start — as a spreadsheet clears selected cells:
+    /// their content goes, every delimiter, quote and line ending stays, so
+    /// each row keeps its cells. The caret lands where the cleared text
+    /// began. Nil when the range covers no cell content.
+    static func clearing(_ range: Range<Int>, in text: [UInt8], dialect: CSVDialect,
+                         encoding: TextEncoding) -> CSVCellEdit? {
+        let removals = valueRanges(in: text, dialect: dialect, encoding: encoding)
+            .map { $0.clamped(to: range) }
+            .filter { !$0.isEmpty }
+        var result: CSVCellEdit?
+        if let first = removals.first, let last = removals.last {
+            let kept = zip(removals, removals.dropFirst()).flatMap { text[$0.upperBound..<$1.lowerBound] }
+            result = CSVCellEdit(range: first.lowerBound..<last.upperBound, bytes: kept, bytesAfterCaret: kept.count)
+        }
+        return result
+    }
+
+    /// The value of every field on every line of `text`.
+    private static func valueRanges(in text: [UInt8], dialect: CSVDialect, encoding: TextEncoding) -> [Range<Int>] {
+        let quote = quoteBytes(of: dialect, encoding: encoding)
+        var ranges: [Range<Int>] = []
+        var lineStart = 0
+        while lineStart <= text.count {
+            let newline = text[lineStart...].firstIndex(of: 0x0A) ?? text.count
+            let lineEnd = newline > lineStart && text[newline - 1] == 0x0D ? newline - 1 : newline
+            let line = Array(text[lineStart..<lineEnd])
+            for field in CSVParser.fieldByteRanges(in: line, dialect: dialect, encoding: encoding) {
+                let value = fieldValueRange(of: Array(line[field]), quote: quote)
+                let start = lineStart + field.lowerBound
+                ranges.append((start + value.lowerBound)..<(start + value.upperBound))
+            }
+            lineStart = newline + 1
+        }
+        return ranges
+    }
+
     /// What Backspace (`backward`) or Forward Delete removes at `caret` in
     /// the raw `field`: a character of its value, or a doubled quote as one.
     /// Nil at the value's edge, which a delete stops at rather than remove a
@@ -88,6 +125,13 @@ enum CSVCellEditing {
         return text.contains(0x0A) || text.contains(0x0D)
             || (!delimiter.isEmpty && text.contains(delimiter))
             || (!quote.isEmpty && text.contains(quote))
+    }
+
+    /// The bytes of a raw `field` that hold its value: all of an unquoted
+    /// one, the inside of a quoted one.
+    private static func fieldValueRange(of field: [UInt8], quote: [UInt8]) -> Range<Int> {
+        let isQuoted = !quote.isEmpty && field.starts(with: quote)
+        return isQuoted ? valueRange(of: field, quote: quote) : 0..<field.count
     }
 
     /// The bytes of a quoted `field` between its quotes.
