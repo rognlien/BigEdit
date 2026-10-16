@@ -10,7 +10,21 @@ extension AppDelegate {
             populateOpenRecentMenu()
         } else if menu === savedPatternsMenu {
             populateSavedPatternsMenu()
+        } else if menu === syntaxColoringMenu {
+            populateSyntaxColoringMenu()
         }
+    }
+
+    /// The active document's language choices, or one disabled item.
+    private func populateSyntaxColoringMenu() {
+        syntaxColoringMenu.removeAllItems()
+        let items = activeView?.languageMenuItems() ?? []
+        if items.isEmpty {
+            let empty = NSMenuItem(title: "No Document", action: nil, keyEquivalent: "")
+            empty.isEnabled = false
+            syntaxColoringMenu.addItem(empty)
+        }
+        items.forEach(syntaxColoringMenu.addItem)
     }
 
     // MARK: - Saved patterns
@@ -319,6 +333,12 @@ extension AppDelegate {
         let actualSizeItem = NSMenuItem(title: "Actual Size", action: #selector(actualSize), keyEquivalent: "0")
         actualSizeItem.target = self
         viewMenu.addItem(actualSizeItem)
+
+        viewMenu.addItem(NSMenuItem.separator())
+        let syntaxColoringItem = NSMenuItem(title: "Syntax Coloring", action: nil, keyEquivalent: "")
+        syntaxColoringMenu.delegate = self
+        syntaxColoringItem.submenu = syntaxColoringMenu
+        viewMenu.addItem(syntaxColoringItem)
 
         viewMenu.addItem(NSMenuItem.separator())
         let followItem = NSMenuItem(

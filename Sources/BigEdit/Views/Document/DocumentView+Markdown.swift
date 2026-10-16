@@ -12,10 +12,11 @@ extension DocumentView {
         markdownPreview?.isHidden == false
     }
 
-    /// Why `file` cannot be rendered as Markdown, or nil when it can.
-    static func markdownUnavailableReason(for file: MappedFile) -> String? {
+    /// Why `file`, coloured as `language`, cannot be rendered as Markdown, or
+    /// nil when it can.
+    static func markdownUnavailableReason(for file: MappedFile, language: Language? = nil) -> String? {
         var reason: String?
-        if LanguageRegistry.language(for: file) != LanguageRegistry.markdown {
+        if (language ?? LanguageRegistry.language(for: file)) != LanguageRegistry.markdown {
             reason = "This file is not Markdown"
         } else if file.size > markdownRenderingLimit {
             let limit = ByteCountFormatter.string(fromByteCount: Int64(markdownRenderingLimit),

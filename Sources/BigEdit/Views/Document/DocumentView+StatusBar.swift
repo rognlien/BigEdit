@@ -48,6 +48,7 @@ extension DocumentView {
             right = right.isEmpty ? "Following" : "Following  ·  \(right)"
         }
         statusBar.setRight(right)
+        statusBar.setLanguage(language.displayName)
     }
 
     /// The number of document lines the selection touches — derived from the

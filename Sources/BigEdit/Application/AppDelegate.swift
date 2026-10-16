@@ -38,6 +38,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
 
     /// The Saved Patterns submenu of the Find menu, filled when opened.
     let savedPatternsMenu = NSMenu(title: "Saved Patterns")
+    let syntaxColoringMenu = NSMenu(title: "Syntax Coloring")
 
     let openRecentMenu = NSMenu(title: "Open Recent")
     var didOpenFromURL = false

@@ -47,6 +47,12 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
     /// widths can be re-measured when an option changes.
     var mappedFile: MappedFile?
 
+    /// The language detected for the current file.
+    var detectedLanguage = Language.plain
+
+    /// The language the user chose in place of the detected one, if any.
+    var chosenLanguage: Language?
+
     /// A journal from an earlier run the user chose to keep rather than
     /// recover or discard. Held so it is not cleaned up while this document
     /// is open; while it is, this document is not journaled.
@@ -128,6 +134,9 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
         viewport.onCSVSortRequest = { [weak self] column, descending in
             self?.sortCSV(byColumn: column, descending: descending)
         }
+        statusBar.languageMenuItems = { [weak self] in
+            self?.languageMenuItems() ?? []
+        }
 
         layoutComponents()
     }
@@ -146,6 +155,7 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
         let previous = inheritingHistory ? viewport.document : nil
         let previousMode = formatBar.mode
         let previousDialect = formatBar.dialect
+        let previousLanguage = keepingViewMode ? chosenLanguage : nil
         resetSearch()
         editModel.clear()
         replaceAllScan?.cancel()
@@ -163,14 +173,16 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
         }
         document.journal = openJournal(for: file)
         viewport.load(document: document)
-        viewport.setLanguage(LanguageRegistry.language(for: file))
         mappedFile = file
+        detectedLanguage = LanguageRegistry.language(for: file)
+        chosenLanguage = previousLanguage
+        viewport.setLanguage(language)
         viewport.setCSVRendering(dialect: nil, columnLayout: nil)
         let encoding = FileFormat(scanning: file).textEncoding ?? .utf8
         let keepsColumns = keepingViewMode && previousMode == .csv
         formatBar.setDetectedDialect(keepsColumns ? previousDialect : CSVDialect.detect(in: file, encoding: encoding))
         formatBar.setMarkdownAvailability(
-            unavailableReason: DocumentView.markdownUnavailableReason(for: file))
+            unavailableReason: DocumentView.markdownUnavailableReason(for: file, language: language))
         formatBar.setMode(keepingViewMode ? previousMode : .text)
         hideRenderedMarkdown(keepingPlace: false)
         if keepingViewMode {

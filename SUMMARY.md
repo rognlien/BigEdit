@@ -90,6 +90,7 @@ there — a deliberate bound that keeps cost tied to the viewport, not the file.
 - `⌘S` save (atomic) · `⇧⌘S` save as. Progress sheet during save.
 - `⌘C` copy · `⌘A` select all. Right-click → Copy. Select All is deliberately absent from the right-click menu (selecting many GB onto the pasteboard would try to materialise it).
 - `⌘I` toggle Info Inspector.
+- **View ▸ Syntax Coloring**, or the language name at the right of the status bar, colours a document as another language than the one detected; Automatic goes back. A reload keeps the choice.
 - **Follow File (⇧⌘T)** — `tail -f` for a log: appends arrive live, pinned to the end.
 - **`bigedit` on the command line** — installed from the app menu; `bigedit file.txt` opens the file, creating it if it does not exist.
 - **Text / CSV** selector, top right. In CSV mode rows are drawn as aligned columns, the header is set in bold and can stay pinned to the top while you scroll, and the status bar reads `CSV — read-only`. Columns resize by dragging their trailing edge in the band along the top row, and double-clicking an edge returns that column to its measured width.
