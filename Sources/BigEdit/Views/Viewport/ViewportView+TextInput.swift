@@ -12,7 +12,7 @@ extension ViewportView: NSTextInputClient {
         let target = editTargetRange(for: replacementRange)
         markedByteRange = nil
         if let target {
-            performEdit(replacing: target, with: Array(text.utf8))
+            insertKeepingCells(Array(text.utf8), replacing: target)
         } else {
             NSSound.beep()
         }

@@ -14,7 +14,7 @@ final class CSVEditingTests: XCTestCase {
         super.tearDown()
     }
 
-    private func makeViewport(_ text: String) -> (ViewportView, EditedDocument) {
+    private func makeViewport(_ text: String, dialect: CSVDialect = CSVDialect()) -> (ViewportView, EditedDocument) {
         let url = TestHelpers.writeTempFile(text)
         temporaryFiles.append(url)
         let file = MappedFile(path: url.path)!
@@ -24,7 +24,6 @@ final class CSVEditingTests: XCTestCase {
         document.isEditable = true
         let viewport = ViewportView(frame: NSRect(x: 0, y: 0, width: 600, height: 200))
         viewport.load(document: document)
-        let dialect = CSVDialect()
         viewport.setCSVRendering(dialect: dialect,
                                  columnLayout: CSVColumnLayout.measure(file: file, dialect: dialect, encoding: .utf8))
         return (viewport, document)
@@ -181,5 +180,109 @@ final class CSVEditingTests: XCTestCase {
         let map = viewport.csvRowMap(for: editedRow)!
         XCTAssertEqual(map.cells[0].byteRange, 0..<5, "bobby")
         XCTAssertEqual(map.cells[1].byteRange, 6..<7)
+    }
+
+    private func type(_ text: String, into viewport: ViewportView) {
+        viewport.insertText(text, replacementRange: NSRange(location: NSNotFound, length: 0))
+    }
+
+    private func placeCaret(_ viewport: ViewportView, at offset: Int) {
+        viewport.selection = TextSelection(anchorOffset: offset, activeOffset: offset)
+    }
+
+    func testATypedDelimiterQuotesItsCell() {
+        let (viewport, document) = makeViewport("name,age\nbob,2\n")
+        placeCaret(viewport, at: "name,age\nbo".utf8.count)
+
+        type(",", into: viewport)
+
+        XCTAssertEqual(text(of: document), "name,age\n\"bo,b\",2\n")
+        XCTAssertEqual(viewport.selection?.range, 13..<13, "the caret follows the comma, inside the quotes")
+        XCTAssertEqual(viewport.csvRowMap(for: viewport.layout!.visualLines(forRows: 1..<2).first!)!.cells.count, 2,
+                       "the row still has two cells")
+    }
+
+    func testTypingAfterTheQuotingStaysInTheCell() {
+        let (viewport, document) = makeViewport("name,age\nbob,2\n")
+        placeCaret(viewport, at: "name,age\nbob".utf8.count)
+
+        type(",", into: viewport)
+        type(" jr", into: viewport)
+
+        XCTAssertEqual(text(of: document), "name,age\n\"bob, jr\",2\n")
+    }
+
+    func testATypedQuoteIsDoubledInsideTheQuotedCell() {
+        let (viewport, document) = makeViewport("name,age\nsay hi,2\n")
+        placeCaret(viewport, at: "name,age\nsay ".utf8.count)
+
+        type("\"", into: viewport)
+
+        XCTAssertEqual(text(of: document), "name,age\n\"say \"\"hi\",2\n")
+    }
+
+    func testTypingIntoAQuotedCellOnlyInserts() {
+        let (viewport, document) = makeViewport("name,age\n\"a,b\",2\n")
+        placeCaret(viewport, at: "name,age\n\"a".utf8.count)
+
+        type(";\",", into: viewport)
+
+        XCTAssertEqual(text(of: document), "name,age\n\"a;\"\",,b\",2\n")
+    }
+
+    func testPastingADelimiterQuotesTheCell() {
+        let (viewport, document) = makeViewport("name,age\nbob,2\n")
+        placeCaret(viewport, at: "name,age\nbob,".utf8.count)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString("1,5", forType: .string)
+
+        viewport.paste(nil)
+
+        XCTAssertEqual(text(of: document), "name,age\nbob,\"1,52\"\n")
+    }
+
+    func testQuotingUndoesAsOneStepWithTheTypedText() {
+        let original = "name,age\nbob,2\n"
+        let (viewport, document) = makeViewport(original)
+        placeCaret(viewport, at: "name,age\nbob".utf8.count)
+
+        type(",", into: viewport)
+        viewport.undo(nil)
+
+        XCTAssertEqual(text(of: document), original)
+        viewport.redo(nil)
+        XCTAssertEqual(text(of: document), "name,age\n\"bob,\",2\n")
+    }
+
+    func testADelimiterTypedIntoAMissingCellIsQuoted() {
+        let (viewport, document) = makeViewport("name,age,city\n\n")
+        let lineEnd = "name,age,city\n".utf8.count
+        placeCaret(viewport, at: lineEnd)
+        viewport.csvCaretColumn = 2
+
+        type("a,b", into: viewport)
+
+        XCTAssertEqual(text(of: document), "name,age,city\n,,\"a,b\"\n")
+        XCTAssertEqual(viewport.selection?.range, (lineEnd + 6)..<(lineEnd + 6))
+    }
+
+    func testADelimiterBeepsWithoutAQuoteCharacter() {
+        let original = "name,age\nbob,2\n"
+        let (viewport, document) = makeViewport(original, dialect: CSVDialect(quote: nil))
+        placeCaret(viewport, at: "name,age\nbob".utf8.count)
+
+        type(",", into: viewport)
+
+        XCTAssertEqual(text(of: document), original)
+    }
+
+    func testTextModeTypesTheDelimiterAsText() {
+        let (viewport, document) = makeViewport("name,age\nbob,2\n")
+        viewport.setCSVRendering(dialect: nil, columnLayout: nil)
+        placeCaret(viewport, at: "name,age\nbob".utf8.count)
+
+        type(",", into: viewport)
+
+        XCTAssertEqual(text(of: document), "name,age\nbob,,2\n")
     }
 }

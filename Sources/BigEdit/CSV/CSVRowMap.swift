@@ -62,6 +62,11 @@ struct CSVRowMap {
         cells.lastIndex { $0.byteRange.lowerBound <= offset }
     }
 
+    /// The raw bytes of the cell at `index`, quotes included.
+    func fieldBytes(ofCell index: Int) -> [UInt8] {
+        Array(bytes[cells[index].byteRange])
+    }
+
     /// The character column at which the byte at `offset` (line-relative)
     /// is drawn. A byte before a cell's value, or a delimiter, maps to the
     /// cell's edge.

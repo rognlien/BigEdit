@@ -33,20 +33,22 @@ extension ViewportView {
     }
 
     /// Replaces `range` with `bytes`, collapses the caret to the end of the
-    /// insertion, and refreshes everything that depends on the content.
-    func performEdit(replacing range: Range<Int>, with bytes: [UInt8]) {
+    /// insertion — or `bytesAfterCaret` before it — and refreshes everything
+    /// that depends on the content.
+    func performEdit(replacing range: Range<Int>, with bytes: [UInt8], bytesAfterCaret: Int = 0) {
         if let document, isEditingAllowed {
-            applyEdit(replacing: range, with: bytes, in: document)
+            applyEdit(replacing: range, with: bytes, bytesAfterCaret: bytesAfterCaret, in: document)
         } else {
             NSSound.beep()
         }
     }
 
-    private func applyEdit(replacing range: Range<Int>, with bytes: [UInt8], in document: EditedDocument) {
+    private func applyEdit(replacing range: Range<Int>, with bytes: [UInt8], bytesAfterCaret: Int = 0,
+                           in document: EditedDocument) {
         let bytes = csvDelimitersCreatingCaretCell(before: bytes, at: range)
         document.replace(range, with: bytes, selectionBefore: selection)
         documentContentChanged()
-        let caret = range.lowerBound + bytes.count
+        let caret = range.lowerBound + bytes.count - bytesAfterCaret
         widenCSVColumnsToFitRow(containing: caret)
         selection = TextSelection(anchorOffset: caret, activeOffset: caret)
         desiredCaretX = nil
@@ -103,7 +105,7 @@ extension ViewportView {
     /// (click to place one first) — arrows keep their browse-first behaviour.
     private func insertBytesAtSelection(_ bytes: [UInt8]) {
         if let selection {
-            performEdit(replacing: selection.range, with: bytes)
+            insertKeepingCells(bytes, replacing: selection.range)
         } else {
             NSSound.beep()
         }
