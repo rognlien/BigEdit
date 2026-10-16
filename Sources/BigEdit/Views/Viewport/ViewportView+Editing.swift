@@ -164,8 +164,15 @@ extension ViewportView {
         }
     }
 
+    /// Under CSV columns Return moves down a row, as in a spreadsheet: a
+    /// line break would end the row, and quoted inside a field it would
+    /// still be drawn as a row of its own. Otherwise it types a line ending.
     override func insertNewline(_ sender: Any?) {
-        insertBytesAtSelection(document?.newlineBytes ?? [0x0A])
+        if isCSVRenderingActive {
+            moveToCSVCellBelow()
+        } else {
+            insertBytesAtSelection(document?.newlineBytes ?? [0x0A])
+        }
     }
 
     /// Under CSV columns Tab moves to the next cell, as in a spreadsheet;

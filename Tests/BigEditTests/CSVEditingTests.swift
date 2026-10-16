@@ -285,4 +285,49 @@ final class CSVEditingTests: XCTestCase {
 
         XCTAssertEqual(text(of: document), "name,age\nbob,,2\n")
     }
+
+    func testReturnSelectsTheSameColumnOnTheNextRow() {
+        let (viewport, document) = makeViewport("name,age\nbob,42\nann,7\n")
+        placeCaret(viewport, at: "name,age\nbob,4".utf8.count)
+
+        viewport.insertNewline(nil)
+
+        let seven = "name,age\nbob,42\nann,".utf8.count
+        XCTAssertEqual(viewport.selection?.range, seven..<(seven + 1), "7 is selected")
+        XCTAssertEqual(text(of: document), "name,age\nbob,42\nann,7\n", "moving edits nothing")
+    }
+
+    func testReturnIntoAShortRowParksTheCaretInTheColumn() {
+        let (viewport, _) = makeViewport("name,age\nbob,42\nann\n")
+        placeCaret(viewport, at: "name,age\nbob,4".utf8.count)
+
+        viewport.insertNewline(nil)
+
+        let annEnd = "name,age\nbob,42\nann".utf8.count
+        XCTAssertEqual(viewport.selection?.range, annEnd..<annEnd)
+        XCTAssertEqual(viewport.csvCaretColumn, 1)
+    }
+
+    func testReturnOnTheLastRowAddsARow() {
+        let (viewport, document) = makeViewport("name,age\nbob,42")
+        placeCaret(viewport, at: "name,age\nbob,4".utf8.count)
+
+        viewport.insertNewline(nil)
+        type("7", into: viewport)
+
+        XCTAssertEqual(text(of: document), "name,age\nbob,42\n,7")
+        viewport.undo(nil)
+        viewport.undo(nil)
+        XCTAssertEqual(text(of: document), "name,age\nbob,42", "the added row undoes on its own")
+    }
+
+    func testReturnInTextModeTypesALineEnding() {
+        let (viewport, document) = makeViewport("name,age\nbob,42\n")
+        viewport.setCSVRendering(dialect: nil, columnLayout: nil)
+        placeCaret(viewport, at: "name,age\nbob".utf8.count)
+
+        viewport.insertNewline(nil)
+
+        XCTAssertEqual(text(of: document), "name,age\nbob\n,42\n")
+    }
 }

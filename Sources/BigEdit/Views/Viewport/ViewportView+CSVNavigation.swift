@@ -27,6 +27,31 @@ extension ViewportView {
         }
     }
 
+    /// Return: selects the cell in the same column of the next row, as in
+    /// Numbers. Past the last row it adds a row and parks the caret in that
+    /// column of it.
+    func moveToCSVCellBelow() {
+        if let layout, let position = csvCaretPosition() {
+            if position.row + 1 < layout.visualRowCount {
+                moveToCell(inRow: position.row + 1, column: .index(position.column))
+            } else {
+                appendCSVRow(after: position.rowStart + position.map.lineLength, column: position.column)
+            }
+        } else {
+            NSSound.beep()
+        }
+    }
+
+    /// Ends the document's last row with a line ending, as one undoable
+    /// edit, and parks the caret in `column` of the new row.
+    private func appendCSVRow(after lineEnd: Int, column: Int) {
+        selection = TextSelection(anchorOffset: lineEnd, activeOffset: lineEnd)
+        document?.undoStack.breakCoalescing()
+        performEdit(replacing: lineEnd..<lineEnd, with: document?.newlineBytes ?? [0x0A])
+        csvCaretColumn = column > 0 ? column : nil
+        needsDisplay = true
+    }
+
     /// The caret's visual row, that row's start and cell map, and the column
     /// the caret is in — a parked column included.
     private func csvCaretPosition() -> (row: Int, rowStart: Int, map: CSVRowMap, column: Int)? {
