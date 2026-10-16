@@ -13,25 +13,33 @@ extension ViewportView {
     /// before the first column moves to the previous row's last; Tab past the
     /// last column adds a new one to the row.
     func moveToAdjacentCSVCell(forward: Bool) {
-        guard let layout, let csvColumnLayout, let caret = selection?.activeOffset else {
+        guard let csvColumnLayout, let position = csvCaretPosition() else {
             NSSound.beep()
             return
         }
-        let row = layout.visualRow(forLogicalByteOffset: caret)
-        guard let line = layout.visualLines(forRows: row..<(row + 1)).first,
-              let map = csvRowMap(for: line) else {
-            NSSound.beep()
-            return
-        }
-        let current = csvCaretColumn ?? map.cellIndex(forByte: caret - line.byteRange.lowerBound) ?? 0
-        let target = forward ? current + 1 : current - 1
+        let target = forward ? position.column + 1 : position.column - 1
         if target < 0 {
-            moveToCell(inRow: row - 1, column: .last)
+            moveToCell(inRow: position.row - 1, column: .last)
         } else if target >= csvColumnLayout.columnWidths.count {
-            appendCSVColumn(target, rowStart: line.byteRange.lowerBound, map: map)
+            appendCSVColumn(target, rowStart: position.rowStart, map: position.map)
         } else {
-            moveToCell(inRow: row, column: .index(target))
+            moveToCell(inRow: position.row, column: .index(target))
         }
+    }
+
+    /// The caret's visual row, that row's start and cell map, and the column
+    /// the caret is in — a parked column included.
+    private func csvCaretPosition() -> (row: Int, rowStart: Int, map: CSVRowMap, column: Int)? {
+        var result: (row: Int, rowStart: Int, map: CSVRowMap, column: Int)?
+        if let layout, let caret = selection?.activeOffset {
+            let row = layout.visualRow(forLogicalByteOffset: caret)
+            if let line = layout.visualLines(forRows: row..<(row + 1)).first, let map = csvRowMap(for: line) {
+                let rowStart = line.byteRange.lowerBound
+                let column = csvCaretColumn ?? map.cellIndex(forByte: caret - rowStart) ?? 0
+                result = (row, rowStart, map, column)
+            }
+        }
+        return result
     }
 
     /// Ends the row with the delimiters that give it an empty cell in
