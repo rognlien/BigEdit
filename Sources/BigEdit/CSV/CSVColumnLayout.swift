@@ -1,13 +1,14 @@
 import Foundation
 
 /// Character widths for a delimited file's columns, measured once from a
-/// bounded sample.
+/// bounded sample — or from every row of a small file.
 ///
 /// Measuring a sample rather than the visible rows is deliberate: widths taken
 /// from whatever happens to be on screen would shift every time you scroll, so
 /// the table would never sit still. The cost stays bounded by the sample, not
-/// by the file — a 50 GB CSV is measured from the same head slice as a 50 KB
-/// one.
+/// by the file — a 50 GB CSV is measured from the same head slice as a 5 MB
+/// one, while a smaller file is measured whole so no wider field further
+/// down is cut.
 struct CSVColumnLayout: Equatable {
 
     /// Width of each column in characters, in column order.
@@ -28,7 +29,7 @@ struct CSVColumnLayout: Equatable {
     /// Column widths for `file` under `dialect`, measured from its head.
     static func measure(file: MappedFile, dialect: CSVDialect,
                         encoding: TextEncoding = .utf8) -> CSVColumnLayout {
-        let count = min(file.buffer.count, sampleByteLimit)
+        let count = sampleByteCount(forLength: file.buffer.count)
         let head = Array(UnsafeRawBufferPointer(rebasing: file.buffer[0..<count]))
         return measure(head: head, isCut: count < file.buffer.count, dialect: dialect, encoding: encoding)
     }
@@ -36,9 +37,14 @@ struct CSVColumnLayout: Equatable {
     /// Column widths for `document` as edited, measured from its head.
     static func measure(document: EditedDocument, dialect: CSVDialect,
                         encoding: TextEncoding = .utf8) -> CSVColumnLayout {
-        let count = min(document.length, sampleByteLimit)
+        let count = sampleByteCount(forLength: document.length)
         let head = document.displayBytes(in: 0..<count)
         return measure(head: head, isCut: count < document.length, dialect: dialect, encoding: encoding)
+    }
+
+    /// The whole of a small document, else its head.
+    private static func sampleByteCount(forLength length: Int) -> Int {
+        return SmallDocument.includes(length: length) ? length : min(length, sampleByteLimit)
     }
 
     private static func measure(head: [UInt8], isCut: Bool, dialect: CSVDialect,
@@ -121,7 +127,8 @@ struct CSVColumnLayout: Equatable {
     }
 
     /// Whole lines from the head of `file`, with any trailing partial line
-    /// dropped so a cut row cannot understate a column's width.
+    /// dropped so a cut row cannot understate a column's width. Every line
+    /// when the head is the whole file.
     private static func sampleLines(of head: [UInt8], isCut: Bool, encoding: TextEncoding) -> [String] {
         var bytes = head
         if isCut, let lastNewline = bytes.lastIndex(of: 0x0A) {
@@ -131,7 +138,7 @@ struct CSVColumnLayout: Equatable {
 
         var lines: [String] = []
         for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
-            if lines.count >= sampleRowLimit {
+            if isCut && lines.count >= sampleRowLimit {
                 break
             }
             let withoutReturn = line.hasSuffix("\r") ? line.dropLast() : line

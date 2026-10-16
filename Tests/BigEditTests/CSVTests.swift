@@ -189,6 +189,18 @@ final class CSVTests: XCTestCase {
         XCTAssertEqual(layout.columnWidths, [1, 1])
     }
 
+    func testASmallFileIsMeasuredWhole() {
+        let rows = String(repeating: "1,a\n", count: 5_000)
+        let layout = columnLayout("id,name\n" + rows + "2,Ada Lovelace\n", dialect: CSVDialect())
+        XCTAssertEqual(layout?.columnWidths, [2, 12])
+    }
+
+    func testALargeFileIsMeasuredFromItsHead() {
+        let rows = String(repeating: "1,a\n", count: SmallDocument.byteLimit / 4 + 1)
+        let layout = columnLayout("id,name\n" + rows + "2,Ada Lovelace\n", dialect: CSVDialect())
+        XCTAssertEqual(layout?.columnWidths, [2, 4])
+    }
+
     func testColumnWidthIsCapped() {
         let wide = String(repeating: "x", count: 200)
         let layout = columnLayout("a\n\(wide)\n", dialect: CSVDialect())
