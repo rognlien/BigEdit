@@ -3,52 +3,22 @@
 What is actually left. Everything above the "Done" section is open work;
 `[x]` items in Done are recorded so this file stops re-proposing them.
 
-Last audited against the code on 2026-10-16, at v0.1.24 plus the CSV and
-tab work that followed it: CSV mode for any file, Tab adding a column,
-Option-Tab, tab stops by character, the view mode kept across a reload, and
-columns measured from the edited text.
-
-## Syntax highlighting — making it extendable
-
-Steps 1–2 of the agreed refactor have landed (`RowScanner`, then
-`Token`/`TokenKind` + `HighlightTheme`). Each remaining step is its own
-pure-refactor PR with no functional change.
-
-- [ ] **Step 3: `Highlighter` protocol + `LanguageRegistry`** (extensions,
-      sniff, display name) replacing the two `switch` statements in
-      `ViewportView` and the extension tables in `DocumentView`; make
-      `HighlightState` opaque per language.
-- [ ] **Step 4: state checkpoints every N rows** to replace the 400-row
-      lookback in `seedState`.
-- [ ] **Step 5: per-row token cache** keyed by row identity, start state and
-      mode.
-- [ ] **Step 6: user-facing language override** (View menu + status bar).
+Last audited against the code on 2026-10-16, at v0.1.24 plus the work that
+followed it: the highlighter refactor finished, safe crash recovery,
+Windows-1252 and Latin-1 editing, CSV cell editing, per-file view state,
+adaptive limits for small documents, and the README rewrite.
 
 ## Beta polish
 
-- [ ] **README polish.** Still dev-facing. For a public beta it wants: what
-      BigEdit is and who it is for; screenshots (open file, search, info pane,
-      coloured JSON/XML/Markdown/YAML, CSV columns); a short GIF of scrolling a
-      huge file and a Find & Replace; system requirements (macOS 13+); the
-      honest limitations already listed in `SUMMARY.md`; and how to file a bug.
+- [ ] **README screenshots.** The text is rewritten for the beta; it still
+      wants screenshots (open file, search, info pane, coloured JSON/XML/
+      Markdown/YAML, CSV columns) and a short GIF of scrolling a huge file and
+      a Find & Replace. The bug-report section points at GitHub Issues, which
+      only works once the repository (or an issue tracker) is public.
 - [ ] **VoiceOver / accessibility.** `ViewportView` is custom-drawn and exposes
       nothing to assistive tech. Real fix: `NSAccessibilityStaticText` (or
       similar) exposing visible row text via `accessibilityValue`. Substantial;
       until then it belongs in the README's limitations.
-
-## Adaptive limits for small documents
-
-Several bounds exist only because a document might be enormous. Below a size
-threshold each could be lifted, with no user-visible "mode" — the same bargain
-Replace All already makes when it materialises under its cap and falls back to
-the streaming rule above it.
-
-- [ ] **Whole-file lexer state** instead of replaying a bounded ~400-row window
-      above the viewport, so a construct opened far above is coloured.
-- [ ] **Exact CSV column widths** measured from the whole file rather than a
-      head sample, so a wider field further down is not truncated.
-- [ ] **No 1,000,000-match display cap** on search, and no 100,000-row cap on
-      the search results list.
 
 ## Follow-ups from shipped work
 
@@ -79,32 +49,30 @@ the streaming rule above it.
       ID build; deferred until the App Store question is decided.
 - [ ] **Follow File.** Only a clean document follows; an append to a file
       with unsaved edits would have to be spliced in behind every edit.
-- [ ] **Windows-1252 / Latin-1 files are read-only**, since edits are made in
-      UTF-8. Writing back in the file's own encoding needs `TextEncoding.encode`
-      on the save path and a decision for characters it cannot represent.
-- [ ] **Edit journal.** Recovery replays into a document opened over the same
-      file; it does not yet offer recovery when the file has changed on disk
-      since the edits were made, and journals of files that were never
-      reopened are not cleaned up.
+- [ ] **Windows-1252 / Latin-1.** Detection reads the first 64 KB, so a file
+      that is ASCII there opens as UTF-8 and typed accents go in as UTF-8.
+      Process Lines and CSV sorting decode as UTF-8 and are refused outside
+      it. A row holding a byte Windows-1252 leaves undefined (0x81, 0x8D…) is
+      decoded as Latin-1 throughout, so a € on that row shows as U+0080.
+- [ ] **Edit journal.** A journal kept with Not Now leaves that session's
+      document unjournaled, so a second crash loses its edits. Tests that load
+      a `DocumentView` write journals into the real Application Support folder.
 - [ ] **CSV.**
-      - **Cell semantics while editing.** Editing is text editing under a
-        table rendering: a delimiter typed into a cell splits it, and
-        deleting across a divider merges two cells. Treating those as cell
-        operations — quoting a typed delimiter, stopping a delete at the
-        cell edge — would make the mode feel like a spreadsheet rather than
-        like padded text.
+      - **Cell editing gaps.** Ctrl-K is not cell-aware; lines of 1024 bytes
+        or more keep plain-text typing and deleting; clearing a selection
+        reads the lines it touches, so above 64 MB it is refused; a
+        selection edge inside a doubled quote can leave a stray quote; an
+        uncommitted IME composition is inserted unquoted. With Return taken
+        by cell navigation, a row cannot be inserted mid-table in CSV mode.
       - Sorting rewrites the file under the 32 MB Process Lines ceiling. A
         view-only sort (a permutation over the line index) would lift the
         ceiling and leave the file clean, at the cost of a new layer between
         rows and lines.
-      - Column widths come from a bounded head sample, so a wider field further
-        down is truncated. Widening on demand as rows scroll into view needs
-        the same care that kept the layout viewport-bound.
+      - Above 4 MB, column widths come from a bounded head sample, so a wider
+        field further down is truncated. Widening on demand as rows scroll
+        into view needs the same care that kept the layout viewport-bound.
       - Join a quoted field that spans a newline across rows, which means a
         CSV-aware line model rather than physical lines.
-      - Remember the chosen mode, dialect and dragged column widths per
-        document; widths currently reset when an option changes and are not
-        restored when reopening a file.
 
 ## Optional
 
@@ -151,7 +119,7 @@ they are not proposed again.
 - [x] **Dock-click reopen** (`applicationShouldHandleReopen`).
 - [x] **Cancel `LineIndex` indexing** when the file changes — `LineIndex` has
       `cancel()` alongside `SearchScan` and `StatisticsScan`.
-- [x] **Unit tests.** 508 XCTests, run by the release workflow and on demand
+- [x] **Unit tests.** 619 XCTests, run by the release workflow and on demand
       from the Actions tab (CI no longer runs per push: macOS minutes are
       billed 10× for a private repository), plus the headless cross-checks
       below.
@@ -205,8 +173,11 @@ they are not proposed again.
       Cross-checked against `iconv` by `scripts/verify-encodings.sh`.
 - [x] **Search results list (⌥⌘L)** — every match with line number and
       snippet, built row by row on demand; click to jump.
-- [x] **Highlighter refactor, steps 1–2** — `RowScanner`, then tokens and a
-      theme; both proved byte-identical by a parity harness.
+- [x] **Highlighter refactor** — `RowScanner`, tokens and a theme, a
+      `Highlighter` protocol with per-language state and a `LanguageRegistry`
+      (proved byte-identical by a parity harness), exact state checkpoints
+      every 256 rows, a per-row token cache, and View ▸ Syntax Coloring with
+      the language in the status bar.
 - [x] **Sources grouped by layer** and the three largest files split into
       one file per concern (`ViewportView`, `AppDelegate`, `DocumentView`);
       `HeadlessCommands` owns the command table.
@@ -257,6 +228,19 @@ they are not proposed again.
 - [x] **CSV keyboard and reload** — Tab past the last column adds one, the
       grid is visible in dark mode, a reload keeps the view mode and CSV
       options, and columns are measured from the edited text.
+- [x] **Safe crash recovery** — the journal fingerprints its baseline (size,
+      inode, date and a digest of the first and last 64 KB); a changed file is
+      never replayed onto, and abandoned journals are removed at launch.
+- [x] **Windows-1252 / Latin-1 editing** in the file's own encoding, with
+      unrepresentable characters refused and File ▸ Convert to UTF-8….
+- [x] **CSV cell editing** — typed delimiters and quotes quote the cell,
+      Return moves down a row, Delete stops at cell edges, and deleting across
+      cells clears them.
+- [x] **Per-file view state** — mode, CSV options, resized columns and the
+      chosen language are remembered; resized columns survive option changes.
+- [x] **Adaptive limits below 4 MB** — exact colouring from the first row,
+      CSV widths from every row, and every search match collected and listed.
+- [x] **README** rewritten for the public beta.
 
 ## Verification scripts to keep around
 
