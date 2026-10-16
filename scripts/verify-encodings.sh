@@ -1,7 +1,7 @@
 #!/bin/sh
 # Cross-checks BigEdit's handling of a Windows-1252 file against iconv: the
 # decoded rows, a literal search for a non-ASCII word, a regular expression
-# over non-ASCII letters, and the character count.
+# over non-ASCII letters, the character count, and a replacement written back.
 #
 # Usage: scripts/verify-encodings.sh
 set -e
@@ -45,5 +45,11 @@ mine=$("$BINARY" --stats "$LEGACY" | awk '/^chars:/ {print $2}')
 theirs=$(wc -m < "$UTF8" | tr -d ' ')
 [ "$mine" = "$theirs" ] && ok "character count → $mine (= wc -m of the UTF-8 text)" \
     || fail "characters: BigEdit $mine, wc -m $theirs"
+
+"$BINARY" --replace "café" "naïve €" "$LEGACY" "$WORK/replaced.txt" > /dev/null
+sed 's/café/naïve €/g' "$UTF8" | iconv -f UTF-8 -t WINDOWS-1252 > "$WORK/expected.txt"
+cmp -s "$WORK/replaced.txt" "$WORK/expected.txt" \
+    && ok "replace café → naïve € writes Windows-1252 bytes" \
+    || fail "replace output differs from sed + iconv"
 
 if [ "$FAILURES" -eq 0 ]; then echo "All encoding checks match iconv."; else echo "$FAILURES check(s) failed." >&2; exit 1; fi
