@@ -46,4 +46,27 @@ final class UntitledDocumentsTests: XCTestCase {
         XCTAssertEqual(UntitledDocuments.lowestUnusedNumber(among: [2, 3]), 1)
         XCTAssertEqual(UntitledDocuments.lowestUnusedNumber(among: [3, 1]), 2)
     }
+
+    // MARK: - The first save
+
+    private func suggestedName(for text: String) -> String {
+        let language = UntitledDocuments.language(ofHead: Array(text.utf8))
+        return UntitledDocuments.suggestedFileName("Untitled", language: language)
+    }
+
+    func testPlainTextIsSuggestedAsText() {
+        XCTAssertEqual(suggestedName(for: ""), "Untitled.txt")
+        XCTAssertEqual(suggestedName(for: "hello\n"), "Untitled.txt")
+    }
+
+    func testTextThatLooksLikeALanguageGetsItsExtension() {
+        XCTAssertEqual(suggestedName(for: "  {\"a\": 1}\n"), "Untitled.json")
+        XCTAssertEqual(suggestedName(for: "<root/>\n"), "Untitled.xml")
+        XCTAssertEqual(suggestedName(for: "#!/bin/sh\necho hi\n"), "Untitled.sh")
+    }
+
+    func testTheNumberedNameIsKept() {
+        XCTAssertEqual(UntitledDocuments.suggestedFileName("Untitled 2", language: LanguageRegistry.markdown),
+                       "Untitled 2.md")
+    }
 }

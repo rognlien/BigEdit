@@ -4,7 +4,9 @@ import AppKit
 extension AppDelegate {
 
     @objc func save() {
-        if let document = activeDocument, document.isEdited {
+        if let document = activeDocument, document.isUntitled {
+            saveUntitled(document)
+        } else if let document = activeDocument, document.isEdited {
             if document.hasDiskChanges {
                 presentDiskChangeConflict(for: document)
             } else {
@@ -14,7 +16,9 @@ extension AppDelegate {
     }
 
     @objc func saveAs() {
-        if let document = activeDocument, document.isEdited {
+        if let document = activeDocument, document.isUntitled {
+            saveUntitled(document)
+        } else if let document = activeDocument, document.isEdited {
             let panel = NSSavePanel()
             panel.nameFieldStringValue = document.fileName
             panel.directoryURL = document.url.deletingLastPathComponent()
@@ -24,6 +28,30 @@ extension AppDelegate {
                 }
             }
         }
+    }
+
+    /// The first save of an untitled document: asks where it goes, writes it
+    /// there, and the document becomes that file.
+    func saveUntitled(_ document: Document, completion: ((Bool) -> Void)? = nil) {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = suggestedFileName(for: document)
+        panel.canCreateDirectories = true
+        panel.beginSheetModal(for: window) { [weak self] response in
+            if response == .OK, let url = panel.url, let self {
+                self.performSave(of: document, to: url, completion: completion)
+            } else {
+                completion?(false)
+            }
+        }
+    }
+
+    /// The document's name with the extension of the language it is shown
+    /// in, or that its text looks like.
+    private func suggestedFileName(for document: Document) -> String {
+        let view = document.view
+        let head = view.editedDocument.map { $0.bytes(in: 0..<min($0.length, 256)) } ?? []
+        let language = view.chosenLanguage ?? UntitledDocuments.language(ofHead: head)
+        return UntitledDocuments.suggestedFileName(document.fileName, language: language)
     }
 
     /// The file changed on disk while it has unsaved edits: the mmap gives no
@@ -101,7 +129,11 @@ extension AppDelegate {
     ) {
         switch result {
         case .success:
-            reloadDocument(document, from: destination)
+            if document.isUntitled {
+                moveUntitled(document, to: destination)
+            } else {
+                reloadDocument(document, from: destination)
+            }
             completion?(true)
         case .failure(let error):
             if case .cancelled = error {
@@ -207,6 +239,23 @@ extension AppDelegate {
     private func reloadDocument(_ document: Document, from destination: URL) {
         reload(document, from: destination, preserveScroll: false, inheritingHistory: true)
         addRecentDocument(destination)
+    }
+
+    /// After the first save of an untitled document: it becomes the saved
+    /// file — watcher, journal, view state and Open Recent follow — and its
+    /// placeholder and the placeholder's journal are removed.
+    private func moveUntitled(_ document: Document, to destination: URL) {
+        let placeholder = document.url
+        let placeholderJournal = document.view.editedDocument?.journal
+        let number = document.untitledNumber
+        document.untitledNumber = nil
+        reloadDocument(document, from: destination)
+        if document.url == destination {
+            placeholderJournal?.discard()
+            try? FileManager.default.removeItem(at: placeholder)
+        } else {
+            document.untitledNumber = number
+        }
     }
 
     /// Reloads the active document from its file on disk (the ⌘R command),

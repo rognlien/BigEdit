@@ -49,4 +49,31 @@ final class UntitledDocuments {
         }
         return number
     }
+
+    // MARK: - The first save
+
+    private static let preferredExtensions = [
+        LanguageRegistry.xml.identifier: "xml",
+        LanguageRegistry.json.identifier: "json",
+        LanguageRegistry.markdown.identifier: "md",
+        LanguageRegistry.yaml.identifier: "yaml",
+        LanguageRegistry.shell.identifier: "sh",
+        LanguageRegistry.sql.identifier: "sql"
+    ]
+
+    /// The name the save panel suggests: `name` with the usual extension for
+    /// `language`, or `.txt` for plain text.
+    static func suggestedFileName(_ name: String, language: Language) -> String {
+        "\(name).\(preferredExtensions[language.identifier] ?? "txt")"
+    }
+
+    /// The language text starting with `head` looks like. An untitled
+    /// document's language was detected from its empty placeholder, so the
+    /// text typed since is sniffed again.
+    static func language(ofHead head: [UInt8]) -> Language {
+        let sniffed = head.withUnsafeBytes { buffer in
+            LanguageRegistry.all.first { $0.matches(head: buffer) }
+        }
+        return sniffed ?? .plain
+    }
 }
