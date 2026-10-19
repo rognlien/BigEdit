@@ -34,6 +34,40 @@ final class UntitledDocuments {
         url.deletingLastPathComponent().standardizedFileURL.path == directory.standardizedFileURL.path
     }
 
+    // MARK: - Across launches
+
+    /// Every placeholder in the directory, oldest first. Each is named under
+    /// `directory` as given, as `makePlaceholder` names it, so its path is
+    /// the one its journal is keyed by.
+    func placeholders() -> [URL] {
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+        let files = names.map(directory.appendingPathComponent).filter { url in
+            (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
+        }
+        return files.sorted { UntitledDocuments.creationDate(of: $0) < UntitledDocuments.creationDate(of: $1) }
+    }
+
+    private static func creationDate(of url: URL) -> Date {
+        (try? url.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast
+    }
+
+    /// The placeholders other than `openURLs` that hold text: written to, or
+    /// with unsaved edits in their journal. They belong to untitled documents
+    /// a session left open, which must not be lost.
+    func placeholdersWithText(excluding openURLs: [URL], journalRoot: URL = EditJournal.root) -> [URL] {
+        let openPaths = Set(openURLs.map(\.standardizedFileURL.path))
+        return placeholders().filter { url in
+            !openPaths.contains(url.standardizedFileURL.path)
+                && UntitledDocuments.holdsText(url, journalRoot: journalRoot)
+        }
+    }
+
+    private static func holdsText(_ url: URL, journalRoot: URL) -> Bool {
+        let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
+        let size = (attributes?[.size] as? NSNumber)?.intValue ?? 0
+        return size > 0 || EditJournal.hasPendingOperations(forPath: url.path, in: journalRoot)
+    }
+
     // MARK: - Naming
 
     /// "Untitled" for the first, then "Untitled 2", "Untitled 3", …

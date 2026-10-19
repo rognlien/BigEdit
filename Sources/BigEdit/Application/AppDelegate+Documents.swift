@@ -234,7 +234,8 @@ extension AppDelegate {
         case .nothingPending:
             break
         case .recoverable:
-            choice = askToRecover(document)
+            // Quitting left an untitled document's text in its journal.
+            choice = document.isUntitled ? .recover(adoptingBaseline: false) : askToRecover(document)
         case .baselineUncertain:
             choice = askToRecoverOntoModifiedFile(document)
         case .baselineChanged:

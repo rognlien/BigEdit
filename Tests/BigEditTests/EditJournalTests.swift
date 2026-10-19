@@ -168,6 +168,14 @@ final class EditJournalTests: XCTestCase {
         XCTAssertEqual(text(third), "typed start\nmore\n")
     }
 
+    func testPendingOperationsCanBeSeenWithoutOpeningTheJournal() {
+        let (first, url) = openFresh("seen\n")
+        XCTAssertFalse(EditJournal.hasPendingOperations(forPath: url.path, in: root))
+        first.replace(0..<0, with: Array("+".utf8))
+        XCTAssertTrue(EditJournal.hasPendingOperations(forPath: url.path, in: root))
+        XCTAssertFalse(EditJournal.hasPendingOperations(forPath: "/nowhere/at/all", in: root))
+    }
+
     func testDiscardRemovesEverything() {
         let (first, url) = openFresh("x\n")
         first.replace(0..<0, with: Array("y".utf8))

@@ -75,6 +75,13 @@ final class Document {
         untitledNumber != nil
     }
 
+    /// Whether quitting can leave the document as it is: an untitled
+    /// document whose journal holds every unsaved edit is reopened from it
+    /// at the next launch, the way TextEdit keeps untitled windows.
+    var survivesQuit: Bool {
+        isUntitled && view.journalHoldsEveryEdit
+    }
+
     /// True while the document has an unsaved deferred-edit rule.
     var isEdited: Bool {
         view.isEdited

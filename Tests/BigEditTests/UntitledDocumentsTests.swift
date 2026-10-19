@@ -47,6 +47,61 @@ final class UntitledDocumentsTests: XCTestCase {
         XCTAssertEqual(UntitledDocuments.lowestUnusedNumber(among: [3, 1]), 2)
     }
 
+    // MARK: - Across launches
+
+    private func typeIntoPlaceholder(_ url: URL, _ text: String, journalRoot: URL) -> EditedDocument {
+        let file = MappedFile(path: url.path)!
+        let index = LineIndex()
+        index.buildSynchronously(from: file)
+        let document = EditedDocument(file: file, editModel: EditModel(), lineIndex: index)
+        document.journal = EditJournal.open(for: url.path, in: journalRoot)
+        document.journal!.setBaseline(document.file)
+        document.replace(0..<0, with: Array(text.utf8))
+        return document
+    }
+
+    func testTheTextOfAnUntitledDocumentComesBackFromItsJournal() throws {
+        let journalRoot = untitled.directory.appendingPathComponent("Journals", isDirectory: true)
+        let url = try XCTUnwrap(untitled.makePlaceholder())
+        _ = typeIntoPlaceholder(url, "kept across quit\n", journalRoot: journalRoot)
+
+        let file = MappedFile(path: url.path)!
+        let index = LineIndex()
+        index.buildSynchronously(from: file)
+        let reopened = EditedDocument(file: file, editModel: EditModel(), lineIndex: index)
+        reopened.journal = EditJournal.open(for: url.path, in: journalRoot)
+        XCTAssertEqual(reopened.journal!.recoveryState(for: file), .recoverable)
+        XCTAssertTrue(reopened.recover(from: reopened.journal!))
+        XCTAssertEqual(String(decoding: reopened.bytes(in: 0..<reopened.length), as: UTF8.self),
+                       "kept across quit\n")
+    }
+
+    func testPlaceholdersWithTextAreThoseWrittenToOrWithJournaledEdits() throws {
+        let journalRoot = untitled.directory.appendingPathComponent("Journals", isDirectory: true)
+        let empty = try XCTUnwrap(untitled.makePlaceholder())
+        let written = try XCTUnwrap(untitled.makePlaceholder())
+        try Data("on disk\n".utf8).write(to: written)
+        let journaled = try XCTUnwrap(untitled.makePlaceholder())
+        _ = typeIntoPlaceholder(journaled, "typed\n", journalRoot: journalRoot)
+
+        let found = untitled.placeholdersWithText(excluding: [], journalRoot: journalRoot)
+        XCTAssertEqual(Set(found.map(\.lastPathComponent)),
+                       [written.lastPathComponent, journaled.lastPathComponent])
+        XCTAssertFalse(found.map(\.lastPathComponent).contains(empty.lastPathComponent))
+    }
+
+    func testPlaceholdersAlreadyOpenAreNotReopened() throws {
+        let journalRoot = untitled.directory.appendingPathComponent("Journals", isDirectory: true)
+        let written = try XCTUnwrap(untitled.makePlaceholder())
+        try Data("on disk\n".utf8).write(to: written)
+
+        XCTAssertEqual(untitled.placeholdersWithText(excluding: [written], journalRoot: journalRoot), [])
+    }
+
+    func testAMissingDirectoryHasNoPlaceholders() {
+        XCTAssertEqual(untitled.placeholders(), [])
+    }
+
     // MARK: - The first save
 
     private func suggestedName(for text: String) -> String {

@@ -81,6 +81,14 @@ final class EditJournal {
         EditJournal(directory: directory(for: path, in: root))
     }
 
+    /// Whether the journal for `path` has operations recorded since its last
+    /// baseline, read without opening it.
+    static func hasPendingOperations(forPath path: String, in root: URL = EditJournal.root) -> Bool {
+        let operations = directory(for: path, in: root).appendingPathComponent("ops")
+        let attributes = try? FileManager.default.attributesOfItem(atPath: operations.path)
+        return ((attributes?[.size] as? NSNumber)?.intValue ?? 0) > 0
+    }
+
     // MARK: - Journals in use
 
     private static let registryLock = NSLock()

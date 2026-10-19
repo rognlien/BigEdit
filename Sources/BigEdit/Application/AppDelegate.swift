@@ -117,6 +117,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         // any pending open-URL event has a chance to fire first.
         DispatchQueue.main.async { [weak self] in
             self?.restoreSessionIfNeeded()
+            self?.reopenUntitledDocumentsLeftOut()
             self?.removeStaleJournals()
         }
 
@@ -194,7 +195,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         var reply = NSApplication.TerminateReply.terminateNow
-        let dirtyNames = documents.filter(\.isEdited).map(\.fileName)
+        let unsaved = documents.filter { $0.isEdited && !$0.survivesQuit }
+        let dirtyNames = unsaved.map(\.fileName)
         if !dirtyNames.isEmpty {
             let alert = NSAlert()
             let description = dirtyNames.count == 1
@@ -209,7 +211,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
                 reply = .terminateCancel
             } else {
                 // Quit Anyway is an explicit choice to lose them.
-                documents.filter(\.isEdited).forEach { $0.view.discardJournal() }
+                unsaved.forEach { $0.view.discardJournal() }
             }
         }
         if reply == .terminateNow {

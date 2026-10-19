@@ -56,6 +56,13 @@ extension DocumentView {
         viewport.document?.journal = nil
     }
 
+    /// Whether the journal alone could rebuild the document as it is: every
+    /// edit is in it and replayable, and no deferred rule (which is never
+    /// journaled) is pending.
+    var journalHoldsEveryEdit: Bool {
+        currentRule == nil && viewport.document?.journal?.isReplayable == true
+    }
+
     /// Removes the journal: the document closed cleanly or its unsaved edits
     /// were deliberately discarded.
     func discardJournal() {

@@ -47,6 +47,21 @@ extension AppDelegate {
         }
     }
 
+    /// Reopens untitled documents with text that the session did not bring
+    /// back — a launch that opened a file skips the session — keeping the
+    /// selection where it is. Quitting never asked about them, so they must
+    /// not be lost.
+    func reopenUntitledDocumentsLeftOut() {
+        let leftOut = untitledDocuments.placeholdersWithText(excluding: documents.map(\.url))
+        let selected = activeIndex
+        if !leftOut.isEmpty {
+            openDocuments(at: leftOut)
+        }
+        if let selected, selected != activeIndex {
+            selectDocument(at: selected)
+        }
+    }
+
     /// Persists the open document paths, scroll positions, and active index.
     func persistSession() {
         let defaults = UserDefaults.standard
