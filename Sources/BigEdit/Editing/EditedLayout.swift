@@ -262,6 +262,13 @@ final class EditedLayout {
         return start..<logicalLineEnd(afterPosition: start)
     }
 
+    /// The start of the logical line containing `position`, without finding
+    /// where a long line ends.
+    func logicalLineStart(containing position: Int) -> Int {
+        ensureSegmentTable()
+        return logicalLineStart(containingPosition: position)
+    }
+
     /// The visual row containing logical byte `offset` (clamped).
     func visualRow(forLogicalByteOffset offset: Int) -> Int {
         var result = 0

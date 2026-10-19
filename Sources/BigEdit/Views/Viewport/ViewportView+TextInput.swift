@@ -3,9 +3,16 @@ import CoreText
 
 /// The input-client conformance needed for IME composition, dead keys, and
 /// press-and-hold accents. The document is far too large for global UTF-16
-/// ranges, so ranges are reported in a synthetic space anchored at the start
-/// of the marked text; composition bytes live in the document itself.
+/// ranges, so ranges count from an anchor near the caret — see
+/// `inputAnchor()`; composition bytes live in the document itself.
 extension ViewportView: NSTextInputClient {
+
+    /// A long line is split into blocks of this many bytes, so that UTF-16
+    /// positions never count from further back than one block.
+    static let inputAnchorBlockLength = 4096
+
+    /// The most bytes a range conversion decodes.
+    static let inputSpanLimit = 1 << 20
 
     /// Text the document's encoding cannot write is not inserted; any
     /// composition it was meant to replace is removed with it.
@@ -51,26 +58,29 @@ extension ViewportView: NSTextInputClient {
 
     func markedRange() -> NSRange {
         var result = NSRange(location: NSNotFound, length: 0)
-        if let marked = markedByteRange, let document {
-            let text = textEncoding.decode(document.bytes(in: marked))
-            result = NSRange(location: 0, length: text.utf16.count)
+        if let marked = markedByteRange, let anchor = inputAnchor() {
+            result = utf16Range(of: marked, from: anchor)
         }
         return result
     }
 
     func selectedRange() -> NSRange {
-        // During composition the caret sits at the marked text's end; there
-        // is no meaningful global range to report otherwise.
         var result = NSRange(location: NSNotFound, length: 0)
-        if hasMarkedText() {
-            result = NSRange(location: markedRange().length, length: 0)
+        if let selection, let anchor = inputAnchor() {
+            result = utf16Range(of: selection.range, from: anchor)
         }
         return result
     }
 
     func attributedSubstring(forProposedRange range: NSRange,
                              actualRange: NSRangePointer?) -> NSAttributedString? {
-        nil
+        var result: NSAttributedString?
+        if let document, let bytes = byteRange(for: range) {
+            let text = textEncoding.decode(document.bytes(in: bytes))
+            result = NSAttributedString(string: text)
+            actualRange?.pointee = NSRange(location: range.location, length: text.utf16.count)
+        }
+        return result
     }
 
     func validAttributesForMarkedText() -> [NSAttributedString.Key] {
@@ -100,24 +110,68 @@ extension ViewportView: NSTextInputClient {
         return result
     }
 
-    /// The logical byte range an input-method `replacementRange` addresses.
-    /// Its offsets are UTF-16 positions in the synthetic space anchored at the
-    /// marked text; without an explicit range, the marked range or selection.
+    /// The logical byte range an input-method `replacementRange` addresses;
+    /// without an explicit range, the marked range or selection.
     private func editTargetRange(for replacementRange: NSRange) -> Range<Int>? {
-        var result: Range<Int>?
-        if let marked = markedByteRange, let document {
-            result = marked
-            if replacementRange.location != NSNotFound {
-                let text = textEncoding.decode(document.bytes(in: marked))
-                let start = ViewportView.byteOffset(forUTF16Index: replacementRange.location,
-                                                    in: text, encoding: textEncoding)
-                let end = ViewportView.byteOffset(
-                    forUTF16Index: replacementRange.location + replacementRange.length,
-                    in: text, encoding: textEncoding)
-                result = (marked.lowerBound + start)..<(marked.lowerBound + end)
+        var result = markedByteRange ?? selection?.range
+        if replacementRange.location != NSNotFound {
+            result = byteRange(for: replacementRange)
+        }
+        return result
+    }
+
+    /// The logical byte offset input-method positions count from: the start
+    /// of the line holding the composition, or the selection when there is
+    /// none. On a long line it is the start of the block that holds it
+    /// instead, so a position never costs more than a block to convert.
+    private func inputAnchor() -> Int? {
+        var result: Int?
+        if let document, let reference = markedByteRange?.lowerBound ?? selection?.range.lowerBound {
+            let lineStart = document.layout.logicalLineStart(containing: reference)
+            let blockLength = ViewportView.inputAnchorBlockLength
+            var anchor = lineStart + (reference - lineStart) / blockLength * blockLength
+            while anchor < reference, document.isContinuationByte(at: anchor) {
+                anchor += 1
             }
-        } else if let selection {
-            result = selection.range
+            result = anchor
+        }
+        return result
+    }
+
+    /// `bytes`, which start at or after `anchor`, as UTF-16 positions.
+    private func utf16Range(of bytes: Range<Int>, from anchor: Int) -> NSRange {
+        let location = utf16Length(of: anchor..<max(anchor, bytes.lowerBound))
+        return NSRange(location: location, length: utf16Length(of: bytes))
+    }
+
+    private func utf16Length(of bytes: Range<Int>) -> Int {
+        var result = 0
+        if let document {
+            let end = min(bytes.upperBound, bytes.lowerBound + ViewportView.inputSpanLimit)
+            result = textEncoding.decode(document.bytes(in: bytes.lowerBound..<end)).utf16.count
+        }
+        return result
+    }
+
+    /// The logical bytes the UTF-16 `range` covers, clamped to the document.
+    private func byteRange(for range: NSRange) -> Range<Int>? {
+        var result: Range<Int>?
+        if let anchor = inputAnchor(), range.location != NSNotFound {
+            let start = byteOffset(forUTF16Location: range.location, from: anchor)
+            let end = byteOffset(forUTF16Location: range.location + max(0, range.length), from: anchor)
+            result = start..<max(start, end)
+        }
+        return result
+    }
+
+    private func byteOffset(forUTF16Location location: Int, from anchor: Int) -> Int {
+        var result = anchor
+        if let document {
+            let units = min(max(0, location), ViewportView.inputSpanLimit)
+            let end = min(document.length, anchor + units * (textEncoding.isSingleByte ? 1 : 3))
+            let text = textEncoding.decode(document.bytes(in: anchor..<end))
+            let offset = ViewportView.byteOffset(forUTF16Index: units, in: text, encoding: textEncoding)
+            result = min(end, anchor + offset)
         }
         return result
     }

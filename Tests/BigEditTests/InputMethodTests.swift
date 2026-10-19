@@ -234,6 +234,69 @@ final class InputMethodTests: XCTestCase {
         viewport.mouseUp(with: up)
     }
 
+    // MARK: - Press-and-hold
+
+    func testPressAndHoldReplacesTheLetterJustTyped() {
+        let (viewport, document) = makeViewport("caf")
+
+        viewport.insertText("e", replacementRange: none)
+        let caret = viewport.selectedRange()
+        XCTAssertNotEqual(caret.location, NSNotFound)
+        viewport.insertText("é", replacementRange: NSRange(location: caret.location - 1, length: 1))
+
+        XCTAssertEqual(text(of: document), "café")
+        XCTAssertEqual(viewport.caretByteOffset, document.length)
+    }
+
+    func testPressAndHoldThatMarksTheLetterFirstReplacesIt() {
+        let (viewport, document) = makeViewport("caf")
+
+        viewport.insertText("e", replacementRange: none)
+        let caret = viewport.selectedRange()
+        viewport.setMarkedText("e", selectedRange: NSRange(location: 1, length: 0),
+                               replacementRange: NSRange(location: caret.location - 1, length: 1))
+        XCTAssertEqual(text(of: document), "cafe")
+        XCTAssertTrue(viewport.hasMarkedText())
+        viewport.insertText("é", replacementRange: none)
+
+        XCTAssertEqual(text(of: document), "café")
+        XCTAssertFalse(viewport.hasMarkedText())
+    }
+
+    func testTheTextBeforeTheCaretCanBeRead() {
+        let (viewport, _) = makeViewport("first line\ncafe")
+
+        let caret = viewport.selectedRange()
+        let substring = viewport.attributedSubstring(
+            forProposedRange: NSRange(location: caret.location - 1, length: 1), actualRange: nil)
+
+        XCTAssertEqual(substring?.string, "e")
+    }
+
+    func testTheSelectedRangeCoversTheSelection() {
+        let (viewport, _) = makeViewport("first line\nblåbær")
+        viewport.selection = TextSelection(anchorOffset: 11, activeOffset: 11 + "blå".utf8.count)
+
+        let selected = viewport.selectedRange()
+
+        XCTAssertEqual(selected.length, 3)
+        XCTAssertEqual(viewport.attributedSubstring(forProposedRange: selected, actualRange: nil)?.string, "blå")
+    }
+
+    func testPressAndHoldFarIntoALongLine() {
+        let line = String(repeating: "blåbær ", count: 2000)
+        let (viewport, document) = makeViewport(line + "\nnext")
+        let caret = line.utf8.count
+        viewport.selection = TextSelection(anchorOffset: caret, activeOffset: caret)
+
+        viewport.insertText("e", replacementRange: none)
+        let selected = viewport.selectedRange()
+        XCTAssertLessThan(selected.location, ViewportView.inputAnchorBlockLength)
+        viewport.insertText("é", replacementRange: NSRange(location: selected.location - 1, length: 1))
+
+        XCTAssertEqual(text(of: document), line + "é\nnext")
+    }
+
     // MARK: - Character Viewer
 
     func testTheCharacterViewerInsertsMultiScalarCharactersWhole() {
@@ -325,6 +388,24 @@ final class InputMethodTests: XCTestCase {
 
     // MARK: - UTF-16 ranges over multi-byte text
 
+    func testRangesCountUTF16UnitsOverMultiByteText() {
+        let prefix = "blåbær 👍 "
+        let (viewport, document) = makeViewport(prefix)
+
+        mark(viewport, "かな")
+        let marked = viewport.markedRange()
+        XCTAssertEqual(viewport.attributedSubstring(forProposedRange: marked, actualRange: nil)?.string, "かな")
+        let emoji = NSRange(location: marked.location - 3, length: 2)
+        XCTAssertEqual(viewport.attributedSubstring(forProposedRange: emoji, actualRange: nil)?.string, "👍")
+        viewport.insertText("仮名", replacementRange: marked)
+        viewport.insertText("e", replacementRange: none)
+        let caret = viewport.selectedRange()
+        viewport.insertText("é", replacementRange: NSRange(location: caret.location - 1, length: 1))
+
+        XCTAssertEqual(text(of: document), prefix + "仮名é")
+        XCTAssertEqual(bytes(of: document), Array((prefix + "仮名é").utf8))
+    }
+
     func testAReplacementRangeInsideTheMarkedTextMapsToItsBytes() {
         let (viewport, document) = makeViewport("blåbær ")
 
@@ -373,6 +454,28 @@ final class InputMethodTests: XCTestCase {
         viewport.setMarkedText("", selectedRange: NSRange(location: 0, length: 0), replacementRange: none)
 
         XCTAssertEqual(bytes(of: document), Array("ab".utf8))
+        XCTAssertFalse(viewport.hasMarkedText())
+    }
+
+    func testPressAndHoldInWindows1252() {
+        let (viewport, document) = makeViewport("blåbær caf", encoding: .windows1252)
+
+        viewport.insertText("e", replacementRange: none)
+        let caret = viewport.selectedRange()
+        viewport.insertText("é", replacementRange: NSRange(location: caret.location - 1, length: 1))
+
+        XCTAssertEqual(bytes(of: document), TextEncoding.windows1252.encode("blåbær café"))
+        XCTAssertEqual(document.length, 11)
+    }
+
+    func testPressAndHoldForALetterWindows1252LacksKeepsTheTypedOne() {
+        let (viewport, document) = makeViewport("caf", encoding: .windows1252)
+
+        viewport.insertText("e", replacementRange: none)
+        let caret = viewport.selectedRange()
+        viewport.insertText("ē", replacementRange: NSRange(location: caret.location - 1, length: 1))
+
+        XCTAssertEqual(bytes(of: document), Array("cafe".utf8))
         XCTAssertFalse(viewport.hasMarkedText())
     }
 
