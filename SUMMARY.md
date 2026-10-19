@@ -115,7 +115,13 @@ there — a deliberate bound that keeps cost tied to the viewport, not the file.
   the edit itself, never the file.
 - `NSTextInputClient` conformance: IME composition (with underline), dead
   keys, press-and-hold accents. Composition bytes commit live to the piece
-  table; ranges are reported in a synthetic space anchored at the marked text.
+  table. Ranges count UTF-16 units from the start of the caret's line (from its
+  4 KB block on a longer line), so press-and-hold replaces the letter it was
+  opened on, clause selection inside marked text is followed, and the
+  candidate window sits under the requested range. The caret steps over whole
+  characters (emoji sequences, flags, combining marks, CR LF).
+  `InputMethodTests` replays the call sequences of Kotoeri, Pinyin, dead keys,
+  press-and-hold and the Character Viewer, in UTF-8, Windows-1252 and CSV.
 - Editing is enabled for UTF-8 / ASCII files; Return inserts the detected
   line ending (CRLF files get `\r\n`), pasted text is normalised to it, and a
   CRLF pair deletes as one unit.
@@ -199,7 +205,10 @@ piece-table search vs naive search. Run with `swift test`.
   character. It is edited in its own encoding: typed and pasted text is encoded before it enters
   the add buffer, so the save writes the bytes unchanged; a character the encoding cannot hold is
   refused, and File ▸ Convert to UTF-8… streams the document through `TranscodingWriter`.
-  Process Lines and CSV sorting need UTF-8. UTF-16 and binary are labelled but
+  Process Lines and CSV sorting need UTF-8. A file up to 4 MB is checked whole for invalid
+  UTF-8; a larger one at 16 windows of 64 KB (head, tail and evenly between), so at most 1 MB
+  is read whatever the size. The byte order mark, binary and line endings are still judged
+  from the first 64 KB. UTF-16 and binary are labelled but
   not decoded: the line index finds newlines by the `0x0A` byte, and UTF-16 would need an
   indexer that understands two-byte units. `scripts/verify-encodings.sh` checks the decoded
   rows, searches and character count against `iconv`.
@@ -215,6 +224,13 @@ piece-table search vs naive search. Run with `swift test`.
   Reload and Discard, or Quit Anyway removes the journal, as does a clean close. At launch, after
   the session is restored, a background pass removes journals whose file is gone or that have been
   untouched for 30 days, skipping any an open document holds.
+- File ▸ New opens an untitled document backed by an empty placeholder file in
+  `~/Library/Application Support/BigEdit/Untitled/` (`UntitledDocuments`), so every path-keyed
+  part — journal, session restore, view state, watcher — works unchanged. Its content lives in
+  the journal: quitting keeps it without asking, and the next launch replays it silently. The
+  first save asks for a location, moves the document there and removes the placeholder; closing
+  an empty one deletes it. At launch, placeholders left out of the session are reopened if they
+  hold text and removed if not.
 - Editing inside a single multi-GB line re-scans that line's span per splice — no worse than the viewer's own cost profile in a megaline file, but noticeable.
 - The view mode, CSV options, resized column widths and chosen language are remembered per path (`DocumentViewStateStore`, the 200 most recent files). Changing a CSV option keeps resized widths unless the delimiter changed.
 - CSV editing keeps cells: a typed delimiter, quote or line break quotes the cell, Delete stops at a cell edge, and deleting across cells clears them (`CSVCellEditing`). Ctrl-K is not cell-aware, and lines of 1024 bytes or more keep plain-text behaviour. Above 4 MB column widths come from a bounded head sample (a much wider field further down is truncated until that row is edited). A quoted field containing a newline is not joined across rows.
