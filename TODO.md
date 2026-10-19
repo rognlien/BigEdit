@@ -3,18 +3,18 @@
 What is actually left. Everything above the "Done" section is open work;
 `[x]` items in Done are recorded so this file stops re-proposing them.
 
-Last audited against the code on 2026-10-16, at v0.1.24 plus the work that
+Last audited against the code on 2026-10-19, at v0.1.24 plus the work that
 followed it: the highlighter refactor finished, safe crash recovery,
 Windows-1252 and Latin-1 editing, CSV cell editing, per-file view state,
-adaptive limits for small documents, and the README rewrite.
+adaptive limits for small documents, the README rewrite, the input-method
+test pass, untitled documents and sampled encoding detection.
 
 ## Beta polish
 
 - [ ] **README screenshots.** The text is rewritten for the beta; it still
       wants screenshots (open file, search, info pane, coloured JSON/XML/
       Markdown/YAML, CSV columns) and a short GIF of scrolling a huge file and
-      a Find & Replace. The bug-report section points at GitHub Issues, which
-      only works once the repository (or an issue tracker) is public.
+      a Find & Replace.
 - [ ] **VoiceOver / accessibility.** `ViewportView` is custom-drawn and exposes
       nothing to assistive tech. Real fix: `NSAccessibilityStaticText` (or
       similar) exposing visible row text via `accessibilityValue`. Substantial;
@@ -25,9 +25,17 @@ adaptive limits for small documents, and the README rewrite.
 - [ ] **Editing (from Stage 2).**
       - Disk-backed storage for huge pastes. The journal mirrors the add
         buffer to disk already, but the buffer itself is still in memory.
-      - **Manual IME test pass** (Japanese/Chinese input, dead keys,
-        press-and-hold). The `NSTextInputClient` synthetic-range scheme has
-        only ever had unit tests, and has now shipped to users twice.
+      - **Input methods by hand.** `InputMethodTests` replays the call
+        sequences, but a real Kotoeri/Pinyin session, dead keys,
+        press-and-hold and the Character Viewer still want one manual pass —
+        especially the candidate window's position (also under a pinned CSV
+        header) and clicks inside marked text.
+      - Backspace and Forward Delete remove one scalar at a time; Indic and
+        Thai want Backspace by mark, everything else by character.
+      - Escape after a composition that quoted a CSV cell leaves the quotes;
+        composing in a newly quoted cell undoes step by step.
+      - The emacs moves (Ctrl-F/B/N/P, `moveForward:` and friends) are not
+        implemented.
       - Raise the Replace All materialisation cap by moving the layout's prefix
         sums into a balanced tree (same pattern as `PieceTable`).
 - [ ] **Regular-expression search.** One match cannot span more than one
@@ -49,20 +57,26 @@ adaptive limits for small documents, and the README rewrite.
       ID build; deferred until the App Store question is decided.
 - [ ] **Follow File.** Only a clean document follows; an append to a file
       with unsaved edits would have to be spliced in behind every edit.
-- [ ] **Windows-1252 / Latin-1.** Detection reads the first 64 KB, so a file
-      that is ASCII there opens as UTF-8 and typed accents go in as UTF-8.
-      Process Lines and CSV sorting decode as UTF-8 and are refused outside
+- [ ] **Windows-1252 / Latin-1.** Above 4 MB detection samples 1 MB through
+      the file, so a lone legacy byte between the samples is missed and the
+      file opens as UTF-8. Process Lines and CSV sorting decode as UTF-8 and are refused outside
       it. A row holding a byte Windows-1252 leaves undefined (0x81, 0x8D…) is
       decoded as Latin-1 throughout, so a € on that row shows as U+0080.
 - [ ] **Edit journal.** A journal kept with Not Now leaves that session's
       document unjournaled, so a second crash loses its edits. Tests that load
       a `DocumentView` write journals into the real Application Support folder.
+- [ ] **Untitled documents.** Only the model is tested; ⌘N, the first save,
+      the close sheet and quit-and-relaunch want a click-through. Journal
+      appends are not fsynced, so a power loss may drop an untitled
+      document's last edits with no prompt to fall back on. Replace in File,
+      Convert to UTF-8 and Follow write into the placeholder and leave the
+      document untitled.
 - [ ] **CSV.**
       - **Cell editing gaps.** Ctrl-K is not cell-aware; lines of 1024 bytes
         or more keep plain-text typing and deleting; clearing a selection
         reads the lines it touches, so above 64 MB it is refused; a
-        selection edge inside a doubled quote can leave a stray quote; an
-        uncommitted IME composition is inserted unquoted. With Return taken
+        selection edge inside a doubled quote can leave a stray quote. With
+        Return taken
         by cell navigation, a row cannot be inserted mid-table in CSV mode.
       - Sorting rewrites the file under the 32 MB Process Lines ceiling. A
         view-only sort (a permutation over the line index) would lift the
@@ -119,10 +133,10 @@ they are not proposed again.
 - [x] **Dock-click reopen** (`applicationShouldHandleReopen`).
 - [x] **Cancel `LineIndex` indexing** when the file changes — `LineIndex` has
       `cancel()` alongside `SearchScan` and `StatisticsScan`.
-- [x] **Unit tests.** 619 XCTests, run by the release workflow and on demand
-      from the Actions tab (CI no longer runs per push: macOS minutes are
-      billed 10× for a private repository), plus the headless cross-checks
-      below.
+- [x] **Unit tests.** 701 XCTests, run by the release workflow and on demand
+      from the Actions tab, plus the headless cross-checks below. CI stopped
+      running per push while the repository was private; now that it is
+      public, standard runners are free and per-push runs could return.
 - [x] **Word-width hit testing** via `CTLineGetStringIndexForPosition`.
 - [x] **Cursor refinement** — the I-beam stops at the gutter.
 - [x] **Carry lexer state across rows** — `HighlightState` threads through
@@ -240,7 +254,14 @@ they are not proposed again.
       chosen language are remembered; resized columns survive option changes.
 - [x] **Adaptive limits below 4 MB** — exact colouring from the first row,
       CSV widths from every row, and every search match collected and listed.
-- [x] **README** rewritten for the public beta.
+- [x] **README** rewritten for the public beta, linking Releases and Issues.
+- [x] **Input-method test pass** — Kotoeri, Pinyin, dead keys,
+      press-and-hold and the Character Viewer replayed in tests; arrows,
+      press-and-hold, clause selection, candidate placement, whole-character
+      caret steps and CSV quoting of compositions fixed.
+- [x] **Untitled documents** — ⌘N without a dialog, kept across quit, asked
+      where on first save.
+- [x] **Encoding detection beyond the first 64 KB.**
 
 ## Verification scripts to keep around
 
