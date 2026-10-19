@@ -18,9 +18,9 @@ atomically — when you save.
 ## Getting BigEdit
 
 Download the signed and notarized DMG from
-[maendeleo.io/bigedit](https://maendeleo.io/bigedit), or from the
-repository's Releases page. BigEdit updates itself (Sparkle); updates can be
-turned off in Settings.
+[maendeleo.io/bigedit](https://maendeleo.io/bigedit), or from
+[GitHub Releases](https://github.com/rognlien/BigEdit/releases). BigEdit
+updates itself (Sparkle); updates can be turned off in Settings.
 
 **Requirements:** macOS 13 Ventura or later, on Apple silicon. The Apple
 Intelligence items need macOS 26 with Apple Intelligence turned on; without
@@ -181,7 +181,8 @@ apply.
 
 ## Reporting a bug
 
-Open an issue on the repository's GitHub Issues page, with:
+[Open an issue](https://github.com/rognlien/BigEdit/issues/new) on GitHub,
+with:
 
 - the BigEdit version (BigEdit ▸ About BigEdit) and the macOS version,
 - the size and kind of file, and its encoding and line endings from the
