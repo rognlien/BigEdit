@@ -52,6 +52,9 @@ them everything else works the same.
 
 ### Editing
 
+- **New documents** (**⌘N**) start untitled, without asking for a name. They
+  are kept when you quit and come back at the next launch; the first save
+  asks where the file goes.
 - **Click and type.** Undo and redo (**⌘Z** / **⇧⌘Z**) reach back across a
   save. **⌘S** saves atomically through a temporary file, with a progress
   sheet for large files.
@@ -171,8 +174,9 @@ apply.
   and is limited to 32 MB.
 - **Windows-1252 and Latin-1:** a character those encodings cannot hold is
   refused rather than typed (BigEdit offers to convert the file to UTF-8).
-  Process Lines and CSV sorting need UTF-8. The encoding is detected from the
-  first 64 KB, so a file whose first 64 KB are plain ASCII opens as UTF-8.
+  Process Lines and CSV sorting need UTF-8. A file over 4 MB has its encoding
+  judged from 1 MB sampled through it, so a single accented byte that falls
+  between the samples is missed and the file opens as UTF-8.
   UTF-16 and binary files are labelled but not decoded.
 - **Compare Documents** holds both lists in memory, up to 256 MB each.
 - **Follow File** follows only a document without unsaved edits.
