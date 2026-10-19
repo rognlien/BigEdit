@@ -75,6 +75,17 @@ final class Document {
         untitledNumber != nil
     }
 
+    /// Whether the document, edits included, has no text at all.
+    var isEmpty: Bool {
+        (view.editedDocument?.length ?? file.size) == 0
+    }
+
+    /// Whether closing asks to save first: when there are unsaved edits, or,
+    /// for an untitled document, when there is any text to lose.
+    var asksBeforeClosing: Bool {
+        isUntitled ? !isEmpty : isEdited
+    }
+
     /// Whether quitting can leave the document as it is: an untitled
     /// document whose journal holds every unsaved edit is reopened from it
     /// at the next launch, the way TextEdit keeps untitled windows.

@@ -356,18 +356,27 @@ extension AppDelegate {
             return
         }
         let document = documents[index]
-        if document.isEdited {
+        if document.asksBeforeClosing {
             presentClosePrompt(for: document) { [weak self] shouldClose in
                 if shouldClose, let self,
                    let position = self.documents.firstIndex(where: { $0 === document }) {
                     // Saved, or Don't Save: either way nothing is left to recover.
-                    document.view.discardJournal()
+                    self.discardLeftovers(of: document)
                     self.tearDownDocument(at: position)
                 }
             }
         } else {
-            document.view.discardJournal()
+            discardLeftovers(of: document)
             tearDownDocument(at: index)
+        }
+    }
+
+    /// Removes what a closed document leaves on disk: its journal, and the
+    /// placeholder of one still untitled.
+    private func discardLeftovers(of document: Document) {
+        document.view.discardJournal()
+        if document.isUntitled {
+            try? FileManager.default.removeItem(at: document.url)
         }
     }
 
@@ -383,7 +392,9 @@ extension AppDelegate {
         alert.beginSheetModal(for: window) { [weak self] response in
             switch response {
             case .alertFirstButtonReturn:
-                if document.hasDiskChanges {
+                if document.isUntitled {
+                    self?.saveUntitled(document, completion: completion)
+                } else if document.hasDiskChanges {
                     self?.presentDiskChangeConflict(for: document)
                     completion(false)
                 } else {
