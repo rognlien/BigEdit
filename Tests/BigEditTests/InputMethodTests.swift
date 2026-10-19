@@ -342,6 +342,53 @@ final class InputMethodTests: XCTestCase {
         XCTAssertEqual(viewport.caretByteOffset, document.length)
     }
 
+    func testTheCaretStepsOverAWholeEmoji() {
+        let emoji = ["👍🏽", "🇳🇴", "👨‍👩‍👧"]
+        let (viewport, document) = makeViewport("a" + emoji.joined() + "b", caret: 1)
+        var boundaries = [1]
+        for character in emoji {
+            boundaries.append(boundaries.last! + character.utf8.count)
+        }
+
+        for boundary in boundaries.dropFirst() {
+            viewport.moveCaretHorizontally(forward: true, extend: false)
+            XCTAssertEqual(viewport.caretByteOffset, boundary)
+        }
+        for boundary in boundaries.dropLast().reversed() {
+            viewport.moveCaretHorizontally(forward: false, extend: false)
+            XCTAssertEqual(viewport.caretByteOffset, boundary)
+        }
+        XCTAssertEqual(document.length, boundaries.last! + 1)
+    }
+
+    func testTheCaretStepsOverALetterWithACombiningMark() {
+        let (viewport, _) = makeViewport("ae\u{301}b", caret: 1)
+
+        viewport.moveCaretHorizontally(forward: true, extend: false)
+        XCTAssertEqual(viewport.caretByteOffset, 4)
+        viewport.moveCaretHorizontally(forward: false, extend: false)
+        XCTAssertEqual(viewport.caretByteOffset, 1)
+    }
+
+    func testTheCaretNeverStopsInsideACRLFPair() {
+        let (viewport, _) = makeViewport("ab\r\ncd", caret: 2)
+
+        viewport.moveCaretHorizontally(forward: true, extend: false)
+        XCTAssertEqual(viewport.caretByteOffset, 4)
+        viewport.moveCaretHorizontally(forward: false, extend: false)
+        XCTAssertEqual(viewport.caretByteOffset, 2)
+    }
+
+    func testTheCaretStepsOverACharacterLongerThanTheLookAhead() {
+        let marks = String(repeating: "\u{301}", count: EditedDocument.graphemeLookLength)
+        let (viewport, document) = makeViewport("e" + marks + "b", caret: 0)
+
+        viewport.moveCaretHorizontally(forward: true, extend: false)
+
+        XCTAssertGreaterThan(viewport.caretByteOffset!, 1)
+        XCTAssertLessThan(viewport.caretByteOffset!, document.length)
+    }
+
     // MARK: - Where the composition lands
 
     func testMarkedTextReplacesTheSelection() {

@@ -32,8 +32,8 @@ extension ViewportView {
             target = forward ? range.upperBound : range.lowerBound   // collapse to edge
         } else {
             let caret = selection?.activeOffset ?? 0
-            target = forward ? document.nextCharacterOffset(after: caret)
-                             : document.previousCharacterOffset(before: caret)
+            target = forward ? document.nextGraphemeOffset(after: caret)
+                             : document.previousGraphemeOffset(before: caret)
         }
         desiredCaretX = nil
         setCaret(to: target, extend: extend)

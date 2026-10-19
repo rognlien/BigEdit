@@ -259,6 +259,41 @@ final class EditedDocument {
 
     // MARK: - Character stepping
 
+    /// How far a step over one user-perceived character looks; a longer
+    /// cluster is stepped over in parts.
+    static let graphemeLookLength = 256
+
+    /// The logical offset after the user-perceived character at `offset`:
+    /// an emoji with its modifiers, a flag, a letter with its marks.
+    func nextGraphemeOffset(after offset: Int) -> Int {
+        let end = min(length, offset + EditedDocument.graphemeLookLength)
+        let character = encoding.decode(bytes(in: offset..<end)).first
+        return multiScalarByteLength(of: character).map { min(length, offset + $0) }
+            ?? nextCharacterOffset(after: offset)
+    }
+
+    /// The logical offset before the user-perceived character that ends at
+    /// `offset`.
+    func previousGraphemeOffset(before offset: Int) -> Int {
+        var start = max(0, offset - EditedDocument.graphemeLookLength)
+        while start < offset, isContinuationByte(at: start) {
+            start += 1
+        }
+        let character = encoding.decode(bytes(in: start..<offset)).last
+        return multiScalarByteLength(of: character).map { max(0, offset - $0) }
+            ?? previousCharacterOffset(before: offset)
+    }
+
+    /// The byte length of `character` when it is made of several scalars;
+    /// nil for a single scalar, which the scalar steps already handle.
+    private func multiScalarByteLength(of character: Character?) -> Int? {
+        var result: Int?
+        if let scalars = character?.unicodeScalars, scalars.count > 1 {
+            result = scalars.reduce(0) { $0 + encoding.byteLength(of: $1) }
+        }
+        return result
+    }
+
     /// The logical offset of the next character boundary after `offset`.
     func nextCharacterOffset(after offset: Int) -> Int {
         let size = length
