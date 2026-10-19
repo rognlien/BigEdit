@@ -40,6 +40,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
     let savedPatternsMenu = NSMenu(title: "Saved Patterns")
     let syntaxColoringMenu = NSMenu(title: "Syntax Coloring")
 
+    /// Where new documents are created before they are first saved.
+    var untitledDocuments = UntitledDocuments.shared
+
     let openRecentMenu = NSMenu(title: "Open Recent")
     var didOpenFromURL = false
     static let lastFilePathDefaultsKey = "BigEditLastFilePath"

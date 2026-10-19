@@ -62,7 +62,14 @@ extension AppDelegate {
 
     // MARK: - Recent documents
 
+    /// Notes `url` in Open Recent, unless it is an untitled placeholder.
     func addRecentDocument(_ url: URL) {
+        if !untitledDocuments.contains(url) {
+            rememberRecentDocument(url)
+        }
+    }
+
+    private func rememberRecentDocument(_ url: URL) {
         let defaults = UserDefaults.standard
         var paths = defaults.stringArray(forKey: AppDelegate.recentDocumentsDefaultsKey) ?? []
         paths.removeAll { $0 == url.path }

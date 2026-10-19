@@ -28,6 +28,14 @@ enum TestHelpers {
         defaults.removePersistentDomain(forName: suiteName)
         return DocumentViewStateStore(defaults: defaults)
     }
+
+    /// Untitled documents in a fresh temporary directory, so a test never
+    /// writes placeholders into Application Support.
+    static func isolatedUntitledDocuments() -> UntitledDocuments {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("BigEditUntitled-\(UUID().uuidString)", isDirectory: true)
+        return UntitledDocuments(directory: directory)
+    }
 }
 
 /// A deterministic random generator (SplitMix64) so fuzz tests are

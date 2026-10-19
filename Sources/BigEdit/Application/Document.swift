@@ -6,10 +6,13 @@ import AppKit
 final class Document {
 
     private(set) var url: URL
-    private(set) var fileName: String
     private(set) var file: MappedFile
     private(set) var index: LineIndex
     let view: DocumentView
+
+    /// Set while the document is untitled — its file a placeholder that has
+    /// never been saved anywhere — to the number it is shown with.
+    var untitledNumber: Int?
 
     /// Watches the file on disk; owned by the document so it stops on close.
     var watcher: FileWatcher?
@@ -36,7 +39,6 @@ final class Document {
 
     init(url: URL, file: MappedFile, index: LineIndex, view: DocumentView) {
         self.url = url
-        self.fileName = url.lastPathComponent
         self.file = file
         self.index = index
         self.view = view
@@ -50,7 +52,6 @@ final class Document {
     func reload(url newURL: URL, file newFile: MappedFile, index newIndex: LineIndex,
                 keepingEncoding: Bool = false) {
         url = newURL
-        fileName = newURL.lastPathComponent
         file = newFile
         index = newIndex
         let scanned = FileFormat(scanning: newFile)
@@ -62,6 +63,16 @@ final class Document {
     func adoptGrownFile(_ grown: MappedFile) {
         file = grown
         format = FileFormat(scanning: grown)
+    }
+
+    /// The name shown for the document: its file's, or "Untitled" and a
+    /// number while it is untitled.
+    var fileName: String {
+        untitledNumber.map(UntitledDocuments.name(numbered:)) ?? url.lastPathComponent
+    }
+
+    var isUntitled: Bool {
+        untitledNumber != nil
     }
 
     /// True while the document has an unsaved deferred-edit rule.

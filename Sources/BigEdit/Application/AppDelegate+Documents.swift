@@ -4,33 +4,19 @@ import AppKit
 /// when one changes on disk.
 extension AppDelegate {
 
-    /// Creates an empty file and opens it.
-    ///
-    /// BigEdit reads through `mmap`, so a document is always a real file —
-    /// there is no untitled-and-unsaved state to fall back on. Asking where
-    /// the file goes up front keeps every other part of the app (the file
-    /// watcher, Open Recent, session restore, Save) working exactly as it does
-    /// for a file that was already there.
+    /// Opens a new untitled document. BigEdit reads through `mmap`, so it is
+    /// an empty placeholder file until its first save asks where it goes.
     @objc func newDocument() {
-        let panel = NSSavePanel()
-        panel.nameFieldStringValue = "Untitled.txt"
-        panel.canCreateDirectories = true
-        panel.message = "Choose where to create the new file."
-        panel.beginSheetModal(for: window) { [weak self] response in
-            if response == .OK, let url = panel.url {
-                self?.createAndOpenDocument(at: url)
-            }
+        if let url = untitledDocuments.makePlaceholder() {
+            openDocuments(at: [url])
+        } else {
+            presentError("Could not create a new document.")
         }
     }
 
-    /// Writes an empty file at `url` and opens it, replacing anything already
-    /// there — the save panel has already asked about overwriting.
-    private func createAndOpenDocument(at url: URL) {
-        if FileManager.default.createFile(atPath: url.path, contents: Data()) {
-            openDocuments(at: [url])
-        } else {
-            presentError("Could not create \(url.lastPathComponent).")
-        }
+    /// The number a newly opened untitled document is shown with.
+    private func nextUntitledNumber() -> Int {
+        UntitledDocuments.lowestUnusedNumber(among: documents.compactMap(\.untitledNumber))
     }
 
     /// Asks which line operation to run, then runs it over the whole document.
@@ -208,6 +194,9 @@ extension AppDelegate {
         let index = LineIndex()
         let view = DocumentView(frame: contentContainer.bounds)
         let document = Document(url: url, file: file, index: index, view: view)
+        if untitledDocuments.contains(url) {
+            document.untitledNumber = nextUntitledNumber()
+        }
 
         view.load(file: file, index: index)
         view.apply(settings)
@@ -462,7 +451,7 @@ extension AppDelegate {
         // count, encoding, and disk-change state live in the info pane / status
         // bar / sidebar instead.
         window?.title = activeDocument?.fileName ?? "BigEdit"
-        window?.representedURL = activeDocument?.url
+        window?.representedURL = activeDocument.flatMap { $0.isUntitled ? nil : $0.url }
     }
 
     private func presentError(_ message: String) {

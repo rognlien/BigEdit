@@ -19,9 +19,10 @@ extension AppDelegate {
             enabled = activeDocument?.isEdited == true
         case #selector(convertToUTF8):
             enabled = activeView?.canConvertToUTF8 == true
-        case #selector(closeActiveDocument), #selector(reloadActiveFromDisk),
-             #selector(revealInFinder):
+        case #selector(closeActiveDocument), #selector(reloadActiveFromDisk):
             enabled = activeDocument != nil
+        case #selector(revealInFinder):
+            enabled = activeDocument.map { !$0.isUntitled } ?? false
         case #selector(toggleInfoPane):
             menuItem.state = (activeView?.isInfoPaneVisible ?? false) ? .on : .off
             enabled = activeDocument != nil
