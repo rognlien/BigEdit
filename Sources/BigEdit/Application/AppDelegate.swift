@@ -118,6 +118,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         DispatchQueue.main.async { [weak self] in
             self?.restoreSessionIfNeeded()
             self?.reopenUntitledDocumentsLeftOut()
+            self?.removeUnusedPlaceholders()
             self?.removeStaleJournals()
         }
 
@@ -127,6 +128,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
         if updaterController.updater.automaticallyChecksForUpdates {
             updaterController.updater.checkForUpdatesInBackground()
         }
+    }
+
+    /// Runs after the session is restored, so the placeholders of the
+    /// untitled documents it reopened are kept; the journals of the rest are
+    /// then removed with the stale ones, their files being gone.
+    private func removeUnusedPlaceholders() {
+        untitledDocuments.removeUnusedPlaceholders(keeping: documents.map(\.url))
     }
 
     /// Runs after the session is restored, so the journals of the documents

@@ -62,6 +62,17 @@ final class UntitledDocuments {
         }
     }
 
+    /// Removes the placeholders no open document refers to, left by a crash
+    /// or a closed document. One that still holds text is kept, so nothing
+    /// is lost if it could not be reopened.
+    func removeUnusedPlaceholders(keeping openURLs: [URL], journalRoot: URL = EditJournal.root) {
+        let openPaths = Set(openURLs.map(\.standardizedFileURL.path))
+        for url in placeholders() where !openPaths.contains(url.standardizedFileURL.path)
+            && !UntitledDocuments.holdsText(url, journalRoot: journalRoot) {
+            try? FileManager.default.removeItem(at: url)
+        }
+    }
+
     private static func holdsText(_ url: URL, journalRoot: URL) -> Bool {
         let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
         let size = (attributes?[.size] as? NSNumber)?.intValue ?? 0

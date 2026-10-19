@@ -98,6 +98,23 @@ final class UntitledDocumentsTests: XCTestCase {
         XCTAssertEqual(untitled.placeholdersWithText(excluding: [written], journalRoot: journalRoot), [])
     }
 
+    func testCleanupRemovesOnlyEmptyPlaceholdersThatAreNotOpen() throws {
+        let journalRoot = untitled.directory.appendingPathComponent("Journals", isDirectory: true)
+        let open = try XCTUnwrap(untitled.makePlaceholder())
+        let abandoned = try XCTUnwrap(untitled.makePlaceholder())
+        let written = try XCTUnwrap(untitled.makePlaceholder())
+        try Data("on disk\n".utf8).write(to: written)
+        let journaled = try XCTUnwrap(untitled.makePlaceholder())
+        _ = typeIntoPlaceholder(journaled, "typed\n", journalRoot: journalRoot)
+
+        untitled.removeUnusedPlaceholders(keeping: [open], journalRoot: journalRoot)
+
+        let remaining = Set(untitled.placeholders().map(\.lastPathComponent))
+        XCTAssertEqual(remaining, [open.lastPathComponent, written.lastPathComponent,
+                                   journaled.lastPathComponent])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: abandoned.path))
+    }
+
     func testAMissingDirectoryHasNoPlaceholders() {
         XCTAssertEqual(untitled.placeholders(), [])
     }
