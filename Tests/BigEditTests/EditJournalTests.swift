@@ -145,6 +145,29 @@ final class EditJournalTests: XCTestCase {
                        "only the post-save edit replays, over the saved file")
     }
 
+    func testEditsAfterASaveToANewFileComeBackAfterACrash() {
+        let (first, _) = openFresh("start\n")
+        first.replace(0..<0, with: Array("typed ".utf8))
+        let destination = TestHelpers.writeTempFile("")
+        temporaryFiles.append(destination)
+        guard case .success = FileWriter.saveSynchronously(document: first, to: destination) else {
+            return XCTFail("save failed")
+        }
+        // As the app does after Save As: the new file carries the add buffer over.
+        let savedFile = MappedFile(path: destination.path)!
+        let index = LineIndex()
+        index.buildSynchronously(from: savedFile)
+        let saved = EditedDocument(file: savedFile, editModel: EditModel(), lineIndex: index,
+                                   inheritingHistoryFrom: first)
+        saved.journal = EditJournal.open(for: destination.path, in: root)
+        saved.journal!.setBaseline(saved.file, mirroring: saved.addBuffer)
+        saved.replace(saved.length..<saved.length, with: Array("more\n".utf8))
+
+        let (third, recovered) = reopenAndRecover(destination)
+        XCTAssertTrue(recovered)
+        XCTAssertEqual(text(third), "typed start\nmore\n")
+    }
+
     func testDiscardRemovesEverything() {
         let (first, url) = openFresh("x\n")
         first.replace(0..<0, with: Array("y".utf8))

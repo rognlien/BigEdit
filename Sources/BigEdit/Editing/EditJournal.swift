@@ -203,20 +203,33 @@ final class EditJournal {
     /// Makes `file` the baseline: records what it is and empties the ops.
     /// Called on open (when nothing is pending) and after every save.
     ///
-    /// The bytes file mirrors the add buffer offset for offset, so it is kept
-    /// only if the buffer carried over (`retainingAddedBytes`); a document
-    /// starting with an empty buffer starts with an empty bytes file.
-    func setBaseline(_ file: MappedFile, retainingAddedBytes: Bool = false) {
+    /// The bytes file mirrors the add buffer offset for offset. When the
+    /// buffer carried over a save it is passed as `addedBytes`: the bytes
+    /// file is kept if it already holds them, and rewritten from the buffer
+    /// if not — after a save to a new file, whose journal starts empty. A
+    /// document starting with an empty buffer starts with an empty bytes file.
+    func setBaseline(_ file: MappedFile, mirroring addedBytes: AddedByteStore? = nil) {
         operationsHandle?.closeFile()
         operationsHandle = nil
         try? Data().write(to: operationsURL)
-        if !retainingAddedBytes {
-            bytesHandle?.closeFile()
-            bytesHandle = nil
-            try? Data().write(to: bytesURL)
+        if recordedByteCount != (addedBytes?.count ?? 0) {
+            rewriteBytes(from: addedBytes)
         }
         isReplayable = true
         adoptBaseline(file)
+    }
+
+    private var recordedByteCount: Int {
+        let attributes = try? FileManager.default.attributesOfItem(atPath: bytesURL.path)
+        return (attributes?[.size] as? NSNumber)?.intValue ?? 0
+    }
+
+    private func rewriteBytes(from addedBytes: AddedByteStore?) {
+        bytesHandle?.closeFile()
+        bytesHandle = nil
+        let count = addedBytes?.count ?? 0
+        let data = addedBytes?.withUnsafeBytes(in: 0..<count) { Data($0) } ?? Data()
+        try? data.write(to: bytesURL)
     }
 
     /// Records `file` as the baseline without touching the ops: after the

@@ -45,8 +45,7 @@ extension DocumentView {
     /// operations it held. Called on a fresh open, and after every save.
     func startJournalFromCurrentFile() {
         if let document = viewport.document {
-            document.journal?.setBaseline(document.file,
-                                          retainingAddedBytes: document.addBuffer.count > 0)
+            document.journal?.setBaseline(document.file, mirroring: document.addBuffer)
         }
     }
 
