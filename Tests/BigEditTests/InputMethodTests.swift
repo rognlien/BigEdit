@@ -190,6 +190,28 @@ final class InputMethodTests: XCTestCase {
         XCTAssertEqual(text(of: document), "´x")
     }
 
+    func testAnArrowKeyCommitsTheDeadKeyThenMovesTheCaret() {
+        let (viewport, document) = makeViewport("ab", caret: 1)
+
+        mark(viewport, "´")
+        viewport.insertText("´", replacementRange: none)
+        viewport.doCommand(by: #selector(NSResponder.moveLeft(_:)))
+
+        XCTAssertEqual(text(of: document), "a´b")
+        XCTAssertEqual(viewport.caretByteOffset, 1)
+    }
+
+    func testShiftArrowAfterADeadKeyExtendsTheSelection() {
+        let (viewport, _) = makeViewport("ab\ncd", caret: 1)
+
+        mark(viewport, "´")
+        viewport.insertText("´", replacementRange: none)
+        viewport.doCommand(by: #selector(NSResponder.moveDownAndModifySelection(_:)))
+
+        XCTAssertEqual(viewport.selection?.anchorOffset, 3)
+        XCTAssertEqual(viewport.selection?.activeOffset, "a´b\ncd".utf8.count)
+    }
+
     func testAClickCommitsTheDeadKeyAndMovesTheCaret() {
         let (viewport, document) = makeViewport("abc\ndef", caret: 1)
 

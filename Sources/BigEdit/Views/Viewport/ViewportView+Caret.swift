@@ -84,6 +84,39 @@ extension ViewportView {
         needsDisplay = true
     }
 
+    // An input method sends these for an arrow key that ends a composition.
+    override func moveLeft(_ sender: Any?) {
+        moveCaretHorizontally(forward: false, extend: false)
+    }
+
+    override func moveLeftAndModifySelection(_ sender: Any?) {
+        moveCaretHorizontally(forward: false, extend: true)
+    }
+
+    override func moveRight(_ sender: Any?) {
+        moveCaretHorizontally(forward: true, extend: false)
+    }
+
+    override func moveRightAndModifySelection(_ sender: Any?) {
+        moveCaretHorizontally(forward: true, extend: true)
+    }
+
+    override func moveUp(_ sender: Any?) {
+        moveCaretVertically(by: -1, extend: false)
+    }
+
+    override func moveUpAndModifySelection(_ sender: Any?) {
+        moveCaretVertically(by: -1, extend: true)
+    }
+
+    override func moveDown(_ sender: Any?) {
+        moveCaretVertically(by: 1, extend: false)
+    }
+
+    override func moveDownAndModifySelection(_ sender: Any?) {
+        moveCaretVertically(by: 1, extend: true)
+    }
+
     // Control-A and Control-E are bound to these in the standard key bindings.
     override func moveToBeginningOfParagraph(_ sender: Any?) {
         moveCaretToLineBoundary(end: false, extend: false)
