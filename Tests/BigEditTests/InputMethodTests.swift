@@ -693,6 +693,38 @@ final class InputMethodTests: XCTestCase {
         XCTAssertEqual(text(of: document), csv)
     }
 
+    func testPressAndHoldInACell() {
+        let csv = "name,age\nbob,2\n"
+        let (viewport, document) = makeCSVViewport(csv, caret: "name,age\nbob".utf8.count)
+
+        viewport.insertText("e", replacementRange: none)
+        let caret = viewport.selectedRange()
+        viewport.insertText("é", replacementRange: NSRange(location: caret.location - 1, length: 1))
+
+        XCTAssertEqual(text(of: document), "name,age\nbobé,2\n")
+    }
+
+    func testACompositionWithADelimiterQuotesAWindows1252Cell() {
+        let csv = "name,åge\nbøb,2\n"
+        let (viewport, document) = makeCSVViewport(csv, encoding: .windows1252, caret: 12)
+
+        mark(viewport, "é,è")
+        viewport.insertText("é,è", replacementRange: none)
+
+        XCTAssertEqual(bytes(of: document), TextEncoding.windows1252.encode("name,åge\n\"bøbé,è\",2\n"))
+    }
+
+    func testKanaInAWindows1252CellAreRefused() {
+        let csv = "name,åge\nbøb,2\n"
+        let (viewport, document) = makeCSVViewport(csv, encoding: .windows1252, caret: 12)
+
+        typeRomajiForKanji(into: viewport)
+        viewport.insertText("漢字", replacementRange: none)
+
+        XCTAssertEqual(text(of: document), csv)
+        XCTAssertFalse(viewport.hasMarkedText())
+    }
+
     func testADeadKeyInAWindows1252Cell() {
         let csv = "name,åge\nbøb,2\n"
         let (viewport, document) = makeCSVViewport(csv, encoding: .windows1252, caret: 12)
