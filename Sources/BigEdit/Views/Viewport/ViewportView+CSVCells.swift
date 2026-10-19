@@ -43,12 +43,25 @@ extension ViewportView {
     /// when the cell cannot hold them.
     func insertComposedKeepingCells(_ bytes: [UInt8], replacing range: Range<Int>) -> Range<Int>? {
         var result: Range<Int>?
-        if let edit = cellInsertion(of: bytes, replacing: range) {
+        if let target = compositionTarget(replacing: range),
+           let edit = cellInsertion(of: bytes, replacing: target) {
             performEdit(replacing: edit.range, with: edit.bytes, bytesAfterCaret: edit.bytesAfterCaret)
             let end = selection?.activeOffset ?? edit.range.upperBound
             result = (end - typedLength(of: bytes))..<end
         } else {
             NSSound.beep()
+        }
+        return result
+    }
+
+    /// Where a composition over `range` goes: the range itself, or, when it
+    /// covers several cells, the caret left after clearing them. Nil when
+    /// they are too many to clear.
+    private func compositionTarget(replacing range: Range<Int>) -> Range<Int>? {
+        var result: Range<Int>? = range
+        if isCSVRenderingActive && !range.isEmpty && !liesInOneCSVField(range) {
+            let caret = deleteKeepingCells(range) ? selection?.activeOffset : nil
+            result = caret.map { $0..<$0 }
         }
         return result
     }

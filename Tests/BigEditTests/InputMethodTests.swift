@@ -667,6 +667,32 @@ final class InputMethodTests: XCTestCase {
         XCTAssertEqual(viewport.caretByteOffset, "name,age\n\"bobx,\"\"y".utf8.count)
     }
 
+    func testMarkedTextOverSeveralCellsKeepsTheirDelimiters() {
+        let csv = "name,age\nbob,2\n"
+        let (viewport, document) = makeCSVViewport(csv, caret: 0)
+        viewport.selection = TextSelection(anchorOffset: 9, activeOffset: 14)
+
+        mark(viewport, "か")
+        viewport.insertText("加", replacementRange: none)
+
+        XCTAssertEqual(text(of: document), "name,age\n加,\n")
+    }
+
+    func testUndoAfterComposingOverSeveralCellsRestoresThem() {
+        let csv = "name,age\nbob,2\n"
+        let (viewport, document) = makeCSVViewport(csv, caret: 0)
+        viewport.selection = TextSelection(anchorOffset: 9, activeOffset: 14)
+
+        mark(viewport, "か")
+        mark(viewport, "かき")
+        viewport.insertText("柿", replacementRange: none)
+        viewport.undo(nil)
+        XCTAssertEqual(text(of: document), "name,age\n,\n", "the word goes first")
+        viewport.undo(nil)
+
+        XCTAssertEqual(text(of: document), csv)
+    }
+
     func testADeadKeyInAWindows1252Cell() {
         let csv = "name,åge\nbøb,2\n"
         let (viewport, document) = makeCSVViewport(csv, encoding: .windows1252, caret: 12)
