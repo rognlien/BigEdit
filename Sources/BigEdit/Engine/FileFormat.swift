@@ -63,23 +63,35 @@ struct FileFormat {
             return ("Binary", nil)
         }
 
-        // Validate the sample as UTF-8, trimming any sequence cut at the end.
-        var end = count
-        if end < buffer.count {
-            var trim = 0
-            while end > 0 && trim < 3 && (buffer[end - 1] & 0xC0) == 0x80 {
-                end -= 1
-                trim += 1
-            }
-            if end > 0 && (buffer[end - 1] & 0x80) != 0 {
-                end -= 1   // drop a lead byte whose continuations were cut
-            }
-        }
-        let bytes = Array(UnsafeRawBufferPointer(rebasing: buffer[0..<end]))
-        if String(bytes: bytes, encoding: .utf8) != nil {
+        if isValidUTF8(buffer, in: 0..<count) {
             return ("UTF-8", .utf8)
         }
         return (TextEncoding.windows1252.label, .windows1252)
+    }
+
+    /// Whether the bytes in `window` are valid UTF-8, ignoring a sequence the
+    /// window's end cuts short.
+    private static func isValidUTF8(_ buffer: UnsafeRawBufferPointer, in window: Range<Int>) -> Bool {
+        let end = completeSequenceEnd(buffer, upTo: window.upperBound)
+        let bytes = Array(UnsafeRawBufferPointer(rebasing: buffer[window.lowerBound..<end]))
+        return String(bytes: bytes, encoding: .utf8) != nil
+    }
+
+    /// `end`, moved back before a sequence it cuts short. The end of the file
+    /// cuts nothing, so a truncated final sequence there stays invalid.
+    private static func completeSequenceEnd(_ buffer: UnsafeRawBufferPointer, upTo end: Int) -> Int {
+        var result = end
+        if result < buffer.count {
+            var trim = 0
+            while result > 0 && trim < 3 && (buffer[result - 1] & 0xC0) == 0x80 {
+                result -= 1
+                trim += 1
+            }
+            if result > 0 && (buffer[result - 1] & 0x80) != 0 {
+                result -= 1   // drop a lead byte whose continuations were cut
+            }
+        }
+        return result
     }
 
     private static func detectLineEnding(_ buffer: UnsafeRawBufferPointer, count: Int) -> String {
