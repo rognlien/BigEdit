@@ -394,6 +394,60 @@ final class InputMethodTests: XCTestCase {
         XCTAssertEqual(text(of: document), "ab漢字\r\n二cd\r\n")
     }
 
+    // MARK: - Geometry
+
+    private func placeInWindow(_ viewport: ViewportView) -> NSWindow {
+        let window = NSWindow(contentRect: viewport.frame, styleMask: [.titled], backing: .buffered, defer: false)
+        window.contentView = viewport
+        return window
+    }
+
+    func testTheCandidateWindowGoesUnderTheClauseBeingConverted() {
+        let (viewport, _) = makeViewport("x")
+        let window = placeInWindow(viewport)
+        mark(viewport, "わたしは")
+        let marked = viewport.markedRange()
+
+        var actual = NSRange(location: NSNotFound, length: 0)
+        let whole = viewport.firstRect(forCharacterRange: marked, actualRange: &actual)
+        let clause = viewport.firstRect(forCharacterRange: NSRange(location: marked.location + 3, length: 1),
+                                        actualRange: nil)
+
+        XCTAssertEqual(actual, marked)
+        XCTAssertGreaterThan(whole.width, 1)
+        XCTAssertEqual(clause.minY, whole.minY)
+        XCTAssertGreaterThan(clause.minX, whole.minX)
+        XCTAssertEqual(clause.maxX, whole.maxX, accuracy: 0.5)
+        withExtendedLifetime(window) {}
+    }
+
+    func testARangeOverARowWrapReportsItsFirstRow() {
+        let line = String(repeating: "abcdefghij", count: 200)
+        let (viewport, _) = makeViewport(line + "\n", caret: 0)
+        let window = placeInWindow(viewport)
+        let boundary = viewport.layout!.visualLines(forRows: 1..<2).first!.byteRange.lowerBound
+
+        var actual = NSRange(location: NSNotFound, length: 0)
+        _ = viewport.firstRect(forCharacterRange: NSRange(location: boundary - 2, length: 4), actualRange: &actual)
+
+        XCTAssertEqual(actual, NSRange(location: boundary - 2, length: 2))
+        withExtendedLifetime(window) {}
+    }
+
+    func testTheCharacterUnderAPointIsFound() {
+        let (viewport, _) = makeViewport("blåbær ")
+        let window = placeInWindow(viewport)
+        mark(viewport, "わたしは")
+        let marked = viewport.markedRange()
+        let third = viewport.firstRect(forCharacterRange: NSRange(location: marked.location + 2, length: 1),
+                                       actualRange: nil)
+
+        let index = viewport.characterIndex(for: NSPoint(x: third.minX + 2, y: third.midY))
+
+        XCTAssertEqual(index, marked.location + 2)
+        withExtendedLifetime(window) {}
+    }
+
     // MARK: - Undo
 
     func testUndoRemovesTheCommittedWordInOneStep() {

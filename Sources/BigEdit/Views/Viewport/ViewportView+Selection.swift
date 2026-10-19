@@ -294,7 +294,7 @@ extension ViewportView {
     /// Hit testing assumes a monospaced font and ASCII content; non-ASCII text
     /// may select a few bytes off, and with an active replacement rule the
     /// mapping near a replacement is approximate.
-    private func byteOffset(at point: NSPoint) -> Int {
+    func byteOffset(at point: NSPoint) -> Int {
         var result = 0
         if let document, let layout, layout.visualRowCount > 0 {
             let rowIndex = visualRowIndex(at: point)

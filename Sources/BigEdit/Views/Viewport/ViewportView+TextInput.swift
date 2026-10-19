@@ -106,25 +106,39 @@ extension ViewportView: NSTextInputClient {
         []
     }
 
+    /// The position of the character under the screen `point`, or
+    /// NSNotFound when it lies before the anchor or too far beyond it.
     func characterIndex(for point: NSPoint) -> Int {
-        0
+        var result = NSNotFound
+        if let window, let anchor = inputAnchor() {
+            let offset = byteOffset(at: convert(window.convertPoint(fromScreen: point), from: nil))
+            if offset >= anchor && offset - anchor <= ViewportView.inputSpanLimit {
+                result = utf16Length(of: anchor..<offset)
+            }
+        }
+        return result
     }
 
-    /// The caret rectangle in screen coordinates — anchors the input method's
-    /// candidate window.
+    /// The screen rectangle of the part of `range` on its first row —
+    /// anchors the input method's candidate window under the clause it
+    /// converts.
     func firstRect(forCharacterRange range: NSRange, actualRange: NSRangePointer?) -> NSRect {
         var result = NSRect.zero
-        if let layout, let window, let caret = caretByteOffset {
-            let caretRow = layout.visualRow(forLogicalByteOffset: caret)
-            let x = caretX(forOffset: caret, row: caretRow)
-            let gutterW = gutterWidth(for: layout.gutterLineCount)
+        if let layout, let window, let anchor = inputAnchor(),
+           let bytes = byteRange(for: range) ?? selection?.range {
+            let row = layout.visualRow(forLogicalByteOffset: bytes.lowerBound)
+            let rowEnd = layout.visualLines(forRows: row..<(row + 1)).first?.byteRange.upperBound
+            let end = max(bytes.lowerBound, min(bytes.upperBound, rowEnd ?? bytes.upperBound))
+            let startX = caretX(forOffset: bytes.lowerBound, row: row)
+            let endX = caretX(forOffset: end, row: row)
             let viewRect = NSRect(
-                x: gutterW + gutterPadding - horizontalOffset + x,
-                y: (CGFloat(caretRow) - CGFloat(scrollRow)) * lineHeight,
-                width: 1,
+                x: gutterWidth(for: layout.gutterLineCount) + gutterPadding - horizontalOffset + startX,
+                y: pinnedHeaderHeight + (CGFloat(row) - CGFloat(scrollRow)) * lineHeight,
+                width: max(1, endX - startX),
                 height: lineHeight
             )
             result = window.convertToScreen(convert(viewRect, to: nil))
+            actualRange?.pointee = utf16Range(of: bytes.lowerBound..<end, from: anchor)
         }
         return result
     }
