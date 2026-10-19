@@ -88,6 +88,38 @@ final class InputMethodTests: XCTestCase {
                        NSRange(location: viewport.markedRange().location + 3, length: 0))
     }
 
+    func testTheSelectedRangeFollowsTheInputMethodInsideTheMarkedText() {
+        let (viewport, _) = makeViewport("x")
+
+        mark(viewport, "かんじ", selected: NSRange(location: 1, length: 0))
+
+        XCTAssertEqual(viewport.selectedRange(),
+                       NSRange(location: viewport.markedRange().location + 1, length: 0))
+        XCTAssertEqual(viewport.caretByteOffset, 1 + "か".utf8.count)
+    }
+
+    func testConversionKeepsTheTextMarkedWithTheClauseSelected() {
+        let (viewport, document) = makeViewport("x")
+
+        typeRomajiForKanji(into: viewport)
+
+        XCTAssertEqual(text(of: document), "x漢字")
+        XCTAssertTrue(viewport.hasMarkedText())
+        XCTAssertEqual(viewport.markedRange().length, 2)
+        XCTAssertEqual(viewport.selectedRange(),
+                       NSRange(location: viewport.markedRange().location, length: 2))
+    }
+
+    func testAcceptingAConversionLeavesTheCaretAfterIt() {
+        let (viewport, document) = makeViewport("x\ny", caret: 1)
+        typeRomajiForKanji(into: viewport)
+
+        viewport.unmarkText()
+
+        XCTAssertEqual(text(of: document), "x漢字\ny")
+        XCTAssertEqual(viewport.selection?.range, 7..<7)
+    }
+
     func testCommittingWithoutAReplacementRangeKeepsTheConversion() {
         let (viewport, document) = makeViewport("x")
         typeRomajiForKanji(into: viewport)

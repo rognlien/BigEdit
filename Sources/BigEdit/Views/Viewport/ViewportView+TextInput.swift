@@ -44,10 +44,29 @@ extension ViewportView: NSTextInputClient {
             markedByteRange = text.isEmpty
                 ? nil
                 : target.lowerBound..<(target.lowerBound + bytes.count)
+            selectInMarkedText(text, range: selectedRange)
         }
     }
 
+    /// Selects the part of the marked text the input method chose: the
+    /// clause being converted, or an empty range where it put the caret.
+    private func selectInMarkedText(_ text: String, range: NSRange) {
+        if let marked = markedByteRange, !marked.isEmpty, range.location != NSNotFound {
+            let length = text.utf16.count
+            let start = min(range.location, length)
+            let end = min(start + max(0, range.length), length)
+            let anchor = ViewportView.byteOffset(forUTF16Index: start, in: text, encoding: textEncoding)
+            let active = ViewportView.byteOffset(forUTF16Index: end, in: text, encoding: textEncoding)
+            selection = TextSelection(anchorOffset: marked.lowerBound + anchor,
+                                      activeOffset: marked.lowerBound + active)
+        }
+    }
+
+    /// Accepts the composition as it stands, leaving the caret after it.
     func unmarkText() {
+        if let marked = markedByteRange {
+            selection = TextSelection(anchorOffset: marked.upperBound, activeOffset: marked.upperBound)
+        }
         markedByteRange = nil
         needsDisplay = true
     }
