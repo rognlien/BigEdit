@@ -633,6 +633,40 @@ final class InputMethodTests: XCTestCase {
         XCTAssertEqual(text(of: document), "name,age\nbob漢字,2\n")
     }
 
+    func testCommittingACompositionWithADelimiterQuotesTheCell() {
+        let csv = "name,age\nbob,2\n"
+        let (viewport, document) = makeCSVViewport(csv, caret: "name,age\nbob".utf8.count)
+
+        mark(viewport, "x,y")
+        viewport.insertText("x,y", replacementRange: none)
+
+        XCTAssertEqual(text(of: document), "name,age\n\"bobx,y\",2\n")
+        XCTAssertFalse(viewport.hasMarkedText())
+    }
+
+    func testAnUncommittedCompositionWithADelimiterQuotesTheCell() {
+        let csv = "name,age\nbob,2\n"
+        let (viewport, document) = makeCSVViewport(csv, caret: "name,age\nbob".utf8.count)
+
+        mark(viewport, "x,y")
+        viewport.unmarkText()
+
+        XCTAssertEqual(text(of: document), "name,age\n\"bobx,y\",2\n")
+    }
+
+    func testAGrowingCompositionStaysInsideTheQuotes() {
+        let csv = "name,age\nbob,2\n"
+        let (viewport, document) = makeCSVViewport(csv, caret: "name,age\nbob".utf8.count)
+
+        mark(viewport, "x,")
+        mark(viewport, "x,\"y")
+        XCTAssertEqual(text(of: document), "name,age\n\"bobx,\"\"y\",2\n")
+        viewport.insertText("x,\"y", replacementRange: none)
+
+        XCTAssertEqual(text(of: document), "name,age\n\"bobx,\"\"y\",2\n")
+        XCTAssertEqual(viewport.caretByteOffset, "name,age\n\"bobx,\"\"y".utf8.count)
+    }
+
     func testADeadKeyInAWindows1252Cell() {
         let csv = "name,åge\nbøb,2\n"
         let (viewport, document) = makeCSVViewport(csv, encoding: .windows1252, caret: 12)

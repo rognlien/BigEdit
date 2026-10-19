@@ -40,10 +40,8 @@ extension ViewportView: NSTextInputClient {
         let text = ViewportView.plainString(from: string)
         if isEditingAllowed, let target = editTargetRange(for: replacementRange) {
             let bytes = textEncoding.encode(text) ?? []
-            performEdit(replacing: target, with: bytes)
-            markedByteRange = text.isEmpty
-                ? nil
-                : target.lowerBound..<(target.lowerBound + bytes.count)
+            let marked = insertComposedKeepingCells(bytes, replacing: target)
+            markedByteRange = text.isEmpty ? nil : marked
             selectInMarkedText(text, range: selectedRange)
         }
     }

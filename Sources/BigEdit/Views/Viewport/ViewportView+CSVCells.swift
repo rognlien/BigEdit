@@ -37,6 +37,30 @@ extension ViewportView {
         }
     }
 
+    /// Puts composed `bytes` in place of `range` as typing would, and
+    /// returns where they landed: inside the quotes, any quote in them
+    /// doubled, when they made the cell need quoting. Nil, after a beep,
+    /// when the cell cannot hold them.
+    func insertComposedKeepingCells(_ bytes: [UInt8], replacing range: Range<Int>) -> Range<Int>? {
+        var result: Range<Int>?
+        if let edit = cellInsertion(of: bytes, replacing: range) {
+            performEdit(replacing: edit.range, with: edit.bytes, bytesAfterCaret: edit.bytesAfterCaret)
+            let end = selection?.activeOffset ?? edit.range.upperBound
+            result = (end - typedLength(of: bytes))..<end
+        } else {
+            NSSound.beep()
+        }
+        return result
+    }
+
+    private func typedLength(of bytes: [UInt8]) -> Int {
+        var result = bytes.count
+        if let csvDialect, isCSVRenderingActive {
+            result = CSVCellEditing.typedValue(of: bytes, dialect: csvDialect, encoding: textEncoding).count
+        }
+        return result
+    }
+
     private func insertIntoCell(_ bytes: [UInt8], replacing range: Range<Int>) {
         if let edit = cellInsertion(of: bytes, replacing: range) {
             performEdit(replacing: edit.range, with: edit.bytes, bytesAfterCaret: edit.bytesAfterCaret)

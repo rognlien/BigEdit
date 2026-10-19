@@ -145,6 +145,12 @@ enum CSVCellEditing {
         dialect.quote.flatMap { encoding.encode(String($0)) } ?? []
     }
 
+    /// `text` as a field holds it once typed in: with each quote doubled,
+    /// since a field it needs quoting for is quoted.
+    static func typedValue(of text: [UInt8], dialect: CSVDialect, encoding: TextEncoding) -> [UInt8] {
+        doublingQuotes(in: text, quote: quoteBytes(of: dialect, encoding: encoding))
+    }
+
     private static func doublingQuotes(in bytes: [UInt8], quote: [UInt8]) -> [UInt8] {
         quote.isEmpty ? bytes : bytes.replacing(quote, with: quote + quote)
     }
