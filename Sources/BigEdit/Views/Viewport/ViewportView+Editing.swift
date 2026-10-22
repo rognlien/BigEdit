@@ -232,6 +232,40 @@ extension ViewportView {
         }
     }
 
+    /// Control-T: swaps the characters either side of the caret, or the two
+    /// before it at the end of a line, and leaves the caret after them, as
+    /// NSTextView does. Under CSV columns it beeps rather than move a
+    /// delimiter, quote or line break.
+    override func transpose(_ sender: Any?) {
+        if let document, let selection, selection.isEmpty,
+           let swap = transposition(at: selection.activeOffset, in: document),
+           !movesCSVStructure(swap.bytes) {
+            performEdit(replacing: swap.range, with: swap.bytes)
+        } else {
+            NSSound.beep()
+        }
+    }
+
+    private func transposition(at caret: Int, in document: EditedDocument) -> (range: Range<Int>, bytes: [UInt8])? {
+        var result: (range: Range<Int>, bytes: [UInt8])?
+        let atLineEnd = caret == lineContentRange(containing: caret).upperBound
+        let middle = atLineEnd ? document.previousGraphemeOffset(before: caret) : caret
+        let start = document.previousGraphemeOffset(before: middle)
+        let end = atLineEnd ? caret : document.nextGraphemeOffset(after: caret)
+        if start < middle && middle < end {
+            result = (start..<end, document.bytes(in: middle..<end) + document.bytes(in: start..<middle))
+        }
+        return result
+    }
+
+    private func movesCSVStructure(_ bytes: [UInt8]) -> Bool {
+        var result = false
+        if let csvDialect, isCSVRenderingActive {
+            result = CSVCellEditing.needsQuoting(bytes, dialect: csvDialect, encoding: textEncoding)
+        }
+        return result
+    }
+
     /// Under CSV columns Return moves down a row, as in a spreadsheet: a
     /// line break would end the row, and quoted inside a field it would
     /// still be drawn as a row of its own. Otherwise it types a line ending.

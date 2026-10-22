@@ -196,6 +196,61 @@ final class EmacsKeyBindingTests: XCTestCase {
         XCTAssertEqual(text(of: document), ",,f\n")
     }
 
+    func testControlTTransposesAsNSTextViewDoes() {
+        let samples = ["abcd\nef", "a👍🏽b\ncafe\u{301}!", "x", "ab\n\ncd"]
+        for sample in samples {
+            var index = sample.startIndex
+            while true {
+                let (viewport, document) = makeViewport(sample, caret: sample[..<index].utf8.count)
+                let view = NSTextView(frame: NSRect(x: 0, y: 0, width: 600, height: 200))
+                view.string = sample
+                view.setSelectedRange(NSRange(location: sample[..<index].utf16.count, length: 0))
+
+                viewport.transpose(nil)
+                view.transpose(nil)
+
+                let caret = String(view.string.utf16.prefix(view.selectedRange().location))!.utf8.count
+                XCTAssertEqual(text(of: document), view.string, "at \(sample[..<index].debugDescription)")
+                XCTAssertEqual(viewport.caretByteOffset, caret, "at \(sample[..<index].debugDescription)")
+                if index == sample.endIndex { break }
+                index = sample.index(after: index)
+            }
+        }
+    }
+
+    func testControlTKeepsACRLFPairTogether() {
+        let (viewport, document) = makeViewport("ab\r\ncd", caret: 4)
+
+        pressControl("t", in: viewport)
+
+        XCTAssertEqual(text(of: document), "abc\r\nd")
+        XCTAssertEqual(viewport.caretByteOffset, 5)
+    }
+
+    func testControlTLeavesASelectionAlone() {
+        let (viewport, document) = makeViewport("abcd", caret: 0)
+        viewport.selection = TextSelection(anchorOffset: 1, activeOffset: 3)
+
+        viewport.transpose(nil)
+
+        XCTAssertEqual(text(of: document), "abcd")
+    }
+
+    func testControlTInACSVCellNeverMovesADelimiter() {
+        let (viewport, document) = makeViewport("ab,cd\n", caret: 2)
+        let dialect = CSVDialect()
+        viewport.setCSVRendering(dialect: dialect,
+                                 columnLayout: CSVColumnLayout.measure(file: document.file, dialect: dialect,
+                                                                       encoding: .utf8))
+
+        viewport.transpose(nil)
+        XCTAssertEqual(text(of: document), "ab,cd\n")
+        viewport.selection = TextSelection(anchorOffset: 4, activeOffset: 4)
+        viewport.transpose(nil)
+
+        XCTAssertEqual(text(of: document), "ab,dc\n")
+    }
+
     func testControlYYanksTheKilledText() {
         let (viewport, document) = makeViewport("one two\nthree\n", caret: 3)
         viewport.deleteToEndOfParagraph(nil)
