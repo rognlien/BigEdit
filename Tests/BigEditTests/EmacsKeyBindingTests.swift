@@ -156,6 +156,46 @@ final class EmacsKeyBindingTests: XCTestCase {
         XCTAssertEqual(text(of: document), "onetwo\r\n")
     }
 
+    func testCommandBackspaceDeletesToTheStartOfTheLineAndKeepsIt() {
+        let (viewport, document) = makeViewport("one two\nthree four\n", caret: 14)
+
+        viewport.deleteToBeginningOfLine(nil)
+        XCTAssertEqual(text(of: document), "one two\nfour\n")
+        viewport.selection = TextSelection(anchorOffset: 0, activeOffset: 0)
+        viewport.yank(nil)
+
+        XCTAssertEqual(text(of: document), "three one two\nfour\n")
+    }
+
+    func testCommandBackspaceAtTheStartOfALineLeavesItAlone() {
+        let (viewport, document) = makeViewport("one\r\ntwo\r\n", caret: 5)
+
+        viewport.deleteToBeginningOfLine(nil)
+
+        XCTAssertEqual(text(of: document), "one\r\ntwo\r\n")
+    }
+
+    func testCommandBackspaceDeletesASelection() {
+        let (viewport, document) = makeViewport("one two\nthree four\n", caret: 0)
+        viewport.selection = TextSelection(anchorOffset: 9, activeOffset: 13)
+
+        viewport.deleteToBeginningOfLine(nil)
+
+        XCTAssertEqual(text(of: document), "one two\nt four\n")
+    }
+
+    func testCommandBackspaceInACSVRowKeepsTheDelimiters() {
+        let (viewport, document) = makeViewport("ab,cd,ef\n", caret: 7)
+        let dialect = CSVDialect()
+        viewport.setCSVRendering(dialect: dialect,
+                                 columnLayout: CSVColumnLayout.measure(file: document.file, dialect: dialect,
+                                                                       encoding: .utf8))
+
+        viewport.deleteToBeginningOfLine(nil)
+
+        XCTAssertEqual(text(of: document), ",,f\n")
+    }
+
     func testControlYYanksTheKilledText() {
         let (viewport, document) = makeViewport("one two\nthree\n", caret: 3)
         viewport.deleteToEndOfParagraph(nil)

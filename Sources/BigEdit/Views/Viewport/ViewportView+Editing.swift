@@ -310,6 +310,15 @@ extension ViewportView {
         kill(killRange()) { self.performEdit(replacing: $0, with: []) }
     }
 
+    /// Command-Backspace: deletes the selection, or from the start of the
+    /// line to the caret, and keeps the deleted text for Control-Y. Under
+    /// CSV columns it clears cell content and keeps the delimiters.
+    override func deleteToBeginningOfLine(_ sender: Any?) {
+        let range = selection.map { $0.isEmpty ? lineContentRange(containing: $0.activeOffset).lowerBound..<$0.activeOffset
+                                               : $0.range }
+        kill(range) { self.deleteKeepingCells($0) }
+    }
+
     /// Keeps the text in `range` for Control-Y, then removes it with `delete`.
     private func kill(_ range: Range<Int>?, deletingWith delete: (Range<Int>) -> Void) {
         if let document, let range, isEditingAllowed {
