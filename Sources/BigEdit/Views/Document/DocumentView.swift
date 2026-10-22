@@ -185,6 +185,7 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
         let previousMode = formatBar.mode
         let previousDialect = formatBar.dialect
         let previousLanguage = keepingViewMode ? chosenLanguage : nil
+        let previousWidths = viewport.csvChosenColumnWidths
         unsavedColumnChanges = 0
         resetSearch()
         editModel.clear()
@@ -217,6 +218,10 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
         hideRenderedMarkdown(keepingPlace: false)
         if keepingViewMode {
             formatBar(formatBar, didSelect: formatBar.mode)
+            if keepsColumns {
+                viewport.applyCSVChosenColumnWidths(previousWidths)
+                rememberViewState()
+            }
         } else {
             restoreViewState(for: file)
         }

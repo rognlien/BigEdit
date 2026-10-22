@@ -48,6 +48,18 @@ final class ReloadViewModeTests: XCTestCase {
         XCTAssertEqual(view.formatBar.dialect.trimsFieldWhitespace, true)
     }
 
+    func testASaveKeepsTheResizedColumns() {
+        let (view, file) = makeColumnsView()
+        view.viewport.applyCSVChosenColumnWidths([1: 9])
+        view.viewport.onCSVColumnResize?()
+
+        reload(view, file, keepingViewMode: true)
+
+        XCTAssertEqual(view.viewport.csvColumnLayout?.columnWidths[1], 9)
+        XCTAssertEqual(view.viewStateStore.state(forPath: file.path)?.columnWidths, [1: 9],
+                       "the widths are still remembered for the file")
+    }
+
     func testLoadingAnotherFileStartsInText() {
         let (view, _) = makeColumnsView()
         let url = TestHelpers.writeTempFile("name,age\nann,37\n")

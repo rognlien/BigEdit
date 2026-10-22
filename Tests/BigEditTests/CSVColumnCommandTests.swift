@@ -171,7 +171,7 @@ final class CSVColumnCommandTests: XCTestCase {
         view.viewport.applyCSVChosenColumnWidths([2: 7])
         view.viewport.onCSVColumnResize?()
 
-        XCTAssertEqual(storedWidths(of: view), [2: 7])
+        XCTAssertEqual(storedWidths(of: view), [1: 1, 2: 7], "the added column kept the width it was given")
     }
 
     func testColumnsChangeInWindows1252() {
