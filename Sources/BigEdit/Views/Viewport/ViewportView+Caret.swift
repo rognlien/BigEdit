@@ -101,6 +101,24 @@ extension ViewportView {
         moveCaretHorizontally(forward: true, extend: true)
     }
 
+    // Control-F and Control-B are bound to these in the standard key bindings,
+    // and Option-Up and Option-Down send them before a paragraph move.
+    override func moveForward(_ sender: Any?) {
+        moveCaretHorizontally(forward: true, extend: false)
+    }
+
+    override func moveForwardAndModifySelection(_ sender: Any?) {
+        moveCaretHorizontally(forward: true, extend: true)
+    }
+
+    override func moveBackward(_ sender: Any?) {
+        moveCaretHorizontally(forward: false, extend: false)
+    }
+
+    override func moveBackwardAndModifySelection(_ sender: Any?) {
+        moveCaretHorizontally(forward: false, extend: true)
+    }
+
     override func moveUp(_ sender: Any?) {
         moveCaretVertically(by: -1, extend: false)
     }

@@ -2,7 +2,8 @@ import AppKit
 import XCTest
 @testable import BigEdit
 
-/// The Control-key line bindings: Control-A and Control-E move to the ends of
+/// The emacs bindings in the standard key bindings: Control-F, B, N and P
+/// move by character and line, Control-A and Control-E move to the ends of
 /// the logical line, Control-K kills to its end, and Control-Y yanks it back.
 final class EmacsKeyBindingTests: XCTestCase {
 
@@ -30,6 +31,58 @@ final class EmacsKeyBindingTests: XCTestCase {
 
     private func text(of document: EditedDocument) -> String {
         String(decoding: document.bytes(in: 0..<document.length), as: UTF8.self)
+    }
+
+    /// Presses `key` with Control, and Shift when `key` is upper case, so the
+    /// standard key bindings pick the action.
+    private func pressControl(_ key: Character, option: Bool = false, in viewport: ViewportView) {
+        var flags: NSEvent.ModifierFlags = [.control]
+        if key.isUppercase { flags.insert(.shift) }
+        if option { flags.insert(.option) }
+        let control = String(UnicodeScalar(key.asciiValue! & 0x1F))
+        let event = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: flags,
+                                     timestamp: 0, windowNumber: 0, context: nil,
+                                     characters: control, charactersIgnoringModifiers: String(key),
+                                     isARepeat: false, keyCode: 0)!
+        viewport.keyDown(with: event)
+    }
+
+    func testControlFAndControlBStepOverWholeCharacters() {
+        let (viewport, _) = makeViewport("a👍🏽b", caret: 1)
+
+        pressControl("f", in: viewport)
+        XCTAssertEqual(viewport.caretByteOffset, 9)
+        pressControl("b", in: viewport)
+        XCTAssertEqual(viewport.caretByteOffset, 1)
+    }
+
+    func testShiftControlFAndShiftControlBExtendTheSelection() {
+        let (viewport, _) = makeViewport("one two", caret: 4)
+
+        pressControl("F", in: viewport)
+        pressControl("F", in: viewport)
+        XCTAssertEqual(viewport.selectionByteRange, 4..<6)
+        pressControl("B", in: viewport)
+        XCTAssertEqual(viewport.selectionByteRange, 4..<5)
+    }
+
+    func testControlFCollapsesASelectionToItsEnd() {
+        let (viewport, _) = makeViewport("one two", caret: 0)
+        viewport.selection = TextSelection(anchorOffset: 4, activeOffset: 1)
+
+        viewport.moveForward(nil)
+
+        XCTAssertNil(viewport.selectionByteRange)
+        XCTAssertEqual(viewport.caretByteOffset, 4)
+    }
+
+    func testControlNAndControlPMoveBetweenLines() {
+        let (viewport, _) = makeViewport("one\ntwo\n", caret: 1)
+
+        pressControl("n", in: viewport)
+        XCTAssertEqual(viewport.caretByteOffset, 5)
+        pressControl("p", in: viewport)
+        XCTAssertEqual(viewport.caretByteOffset, 1)
     }
 
     func testControlAMovesToTheStartOfTheLine() {
