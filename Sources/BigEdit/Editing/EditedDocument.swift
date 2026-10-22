@@ -119,23 +119,42 @@ final class EditedDocument {
     @discardableResult
     func replace(_ logicalRange: Range<Int>, with bytes: [UInt8],
                  selectionBefore: TextSelection? = nil) -> [PieceTable.Piece] {
-        let removedContainsNewline = rangeContainsNewline(logicalRange)
+        replace(logicalRange, withAdded: appendToAddBuffer(bytes),
+                insertedContainsNewline: bytes.contains(0x0A), selectionBefore: selectionBefore)
+    }
+
+    /// Appends `bytes` to the add buffer, and to the journal, without
+    /// putting them in the document — for an insertion arriving in parts,
+    /// which `replace(_:withAdded:insertedContainsNewline:selectionBefore:)`
+    /// then splices in as one. Returns where they landed.
+    func appendToAddBuffer(_ bytes: [UInt8]) -> Range<Int> {
         let addedRange = addBuffer.append(bytes)
+        if !isReplayingJournal {
+            journal?.recordAppend(bytes)
+        }
+        return addedRange
+    }
+
+    /// Replaces `logicalRange` with bytes already in the add buffer.
+    @discardableResult
+    func replace(_ logicalRange: Range<Int>, withAdded addedRange: Range<Int>,
+                 insertedContainsNewline: Bool,
+                 selectionBefore: TextSelection? = nil) -> [PieceTable.Piece] {
+        let removedContainsNewline = rangeContainsNewline(logicalRange)
         let removed = pieceTable.replace(logicalRange, withAddedRange: addedRange)
-        layout.applyReplacement(logicalRange, insertedLength: bytes.count) { range in
+        layout.applyReplacement(logicalRange, insertedLength: addedRange.count) { range in
             self.bytes(in: range)
         }
-        if let journal, !isReplayingJournal {
-            journal.recordAppend(bytes)
-            journal.recordSplice(logicalRange, pieces: [
-                PieceTable.Piece(source: .added, start: addedRange.lowerBound, length: bytes.count)
+        if !isReplayingJournal {
+            journal?.recordSplice(logicalRange, pieces: [
+                PieceTable.Piece(source: .added, start: addedRange.lowerBound, length: addedRange.count)
             ])
         }
         undoStack.recordEdit(
             position: logicalRange.lowerBound,
-            insertedLength: bytes.count,
+            insertedLength: addedRange.count,
             removedPieces: removed,
-            insertedContainsNewline: bytes.contains(0x0A),
+            insertedContainsNewline: insertedContainsNewline,
             removedContainsNewline: removedContainsNewline,
             selectionBefore: selectionBefore
         )
