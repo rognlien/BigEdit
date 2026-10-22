@@ -20,9 +20,11 @@ import Foundation
 /// the freshly written file and empties the ops; the bytes file keeps growing,
 /// as the add buffer does, until the document is closed cleanly.
 ///
-/// Writes are appends without fsync: an application crash leaves the kernel's
-/// buffers intact, and that is the failure this exists for. A kernel panic or
-/// power loss may lose the last few operations.
+/// Writes are plain appends: an application crash leaves the kernel's
+/// buffers intact. For a kernel panic or power loss, the files are flushed to
+/// the drive's permanent storage off the main thread once edits pause, and
+/// at least every few seconds while they do not (`JournalFlushSchedule`), so
+/// at most the last few seconds can be lost.
 final class EditJournal {
 
     let directory: URL
@@ -45,15 +47,30 @@ final class EditJournal {
     /// Identifies the directory in the registry of journals in use.
     private let registryKey: String
 
-    private init(directory: URL) {
+    /// When the files are next flushed to permanent storage.
+    private let flushSchedule: JournalFlushSchedule
+
+    /// Where flushes run: one serial queue, so they never overlap.
+    static let flushQueue = DispatchQueue(label: "BigEdit.EditJournal.flush", qos: .utility)
+
+    private init(directory: URL, clock: FlushClock) {
         self.directory = directory
         self.bytesURL = directory.appendingPathComponent("bytes")
         self.operationsURL = directory.appendingPathComponent("ops")
         self.manifestURL = directory.appendingPathComponent(EditJournal.manifestName)
         self.registryKey = EditJournal.register(directory)
+        let files = EditJournal.flushedFiles(in: directory)
+        self.flushSchedule = JournalFlushSchedule(clock: clock) {
+            EditJournal.flushQueue.async {
+                EditJournal.synchronise(files)
+            }
+        }
     }
 
     deinit {
+        if flushSchedule.hasUnflushedWrites {
+            flushSchedule.flushNow()
+        }
         EditJournal.unregister(registryKey)
     }
 
@@ -77,8 +94,9 @@ final class EditJournal {
     /// Opens the journal for `path`, creating its directory. Nothing in it is
     /// touched: a pending journal from a crashed run stays pending until the
     /// caller decides to recover it or start fresh.
-    static func open(for path: String, in root: URL = EditJournal.root) -> EditJournal {
-        EditJournal(directory: directory(for: path, in: root))
+    static func open(for path: String, in root: URL = EditJournal.root,
+                     clock: FlushClock = MainQueueFlushClock.shared) -> EditJournal {
+        EditJournal(directory: directory(for: path, in: root), clock: clock)
     }
 
     /// Whether the journal for `path` has operations recorded since its last
@@ -248,6 +266,7 @@ final class EditJournal {
            let data = try? JSONEncoder().encode(manifest) {
             try? data.write(to: manifestURL)
         }
+        flushSchedule.noteWrite()
     }
 
     /// How `file` compares with the file the ops apply to. A missing or
@@ -337,6 +356,7 @@ final class EditJournal {
             bytesHandle = EditJournal.appendHandle(for: bytesURL)
         }
         bytesHandle?.write(Data(bytes))
+        flushSchedule.noteWrite()
     }
 
     /// Records one splice. A piece from a retired mapping cannot be replayed
@@ -374,6 +394,7 @@ final class EditJournal {
             isReplayable = false
         }
         operationsHandle?.write(record)
+        flushSchedule.noteWrite()
     }
 
     private static func appendHandle(for url: URL) -> FileHandle? {
@@ -383,6 +404,52 @@ final class EditJournal {
         let handle = try? FileHandle(forWritingTo: url)
         handle?.seekToEndOfFile()
         return handle
+    }
+
+    // MARK: - Flushing
+
+    /// Whether something written has not been flushed yet.
+    var hasUnflushedWrites: Bool {
+        flushSchedule.hasUnflushedWrites
+    }
+
+    /// Flushes everything written so far to permanent storage before
+    /// returning, after any flush already under way. For quitting and
+    /// closing, when there is no later to wait for.
+    func flush() {
+        let files = hasUnflushedWrites ? EditJournal.flushedFiles(in: directory) : []
+        flushSchedule.cancel()
+        EditJournal.flushQueue.sync {
+            EditJournal.synchronise(files)
+        }
+    }
+
+    /// The files and, for the entries naming them, their directory.
+    private static func flushedFiles(in directory: URL) -> [URL] {
+        ["bytes", "ops", manifestName].map(directory.appendingPathComponent) + [directory]
+    }
+
+    /// Writes `files` through to permanent storage. Plain `fsync` on macOS
+    /// stops at the drive's volatile cache, which a power loss empties;
+    /// `F_FULLFSYNC` asks the drive to empty that cache too. It flushes the
+    /// whole cache, so each file is synced and only the last one, the
+    /// directory, takes the full flush — falling back to `fsync` where the
+    /// file system does not support it. A file that is gone, the journal
+    /// having been discarded, is skipped.
+    private static func synchronise(_ files: [URL]) {
+        for (position, url) in files.enumerated() {
+            synchronise(url, throughDriveCache: position == files.count - 1)
+        }
+    }
+
+    private static func synchronise(_ url: URL, throughDriveCache: Bool) {
+        let descriptor = Darwin.open(url.path, O_RDONLY)
+        if descriptor >= 0 {
+            if !throughDriveCache || fcntl(descriptor, F_FULLFSYNC) == -1 {
+                fsync(descriptor)
+            }
+            close(descriptor)
+        }
     }
 
     // MARK: - Reading back
@@ -441,6 +508,7 @@ final class EditJournal {
     /// no longer wanted: the document closed cleanly, or the user chose to
     /// discard them.
     func discard() {
+        flushSchedule.cancel()
         bytesHandle?.closeFile()
         operationsHandle?.closeFile()
         bytesHandle = nil

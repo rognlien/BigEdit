@@ -8,9 +8,11 @@ final class EditJournalTests: XCTestCase {
 
     private var temporaryFiles: [URL] = []
     private var root: URL!
+    private var clock: ManualFlushClock!
 
     override func setUp() {
         super.setUp()
+        clock = ManualFlushClock()
         root = FileManager.default.temporaryDirectory
             .appendingPathComponent("BigEditJournalTest-\(UUID().uuidString)", isDirectory: true)
     }
@@ -27,7 +29,7 @@ final class EditJournalTests: XCTestCase {
         let index = LineIndex()
         index.buildSynchronously(from: file)
         let document = EditedDocument(file: file, editModel: EditModel(), lineIndex: index)
-        document.journal = EditJournal.open(for: url.path, in: root)
+        document.journal = EditJournal.open(for: url.path, in: root, clock: clock)
         return document
     }
 
@@ -397,5 +399,38 @@ final class EditJournalTests: XCTestCase {
         let two = EditJournal.directory(for: "/a/c.txt", in: root)
         XCTAssertNotEqual(one, two)
         XCTAssertEqual(one, EditJournal.directory(for: "/a/b.txt", in: root), "stable across runs")
+    }
+
+    // MARK: - Flushing
+
+    func testEditsAreFlushedOnceTypingPauses() {
+        let (document, url) = openFresh("abc\n")
+        clock.advance(by: JournalFlushSchedule.quietInterval)
+        document.replace(0..<0, with: Array("x".utf8))
+        XCTAssertTrue(document.journal!.hasUnflushedWrites)
+        clock.advance(by: JournalFlushSchedule.quietInterval)
+        XCTAssertFalse(document.journal!.hasUnflushedWrites)
+        EditJournal.flushQueue.sync {}
+
+        let (second, recovered) = reopenAndRecover(url)
+        XCTAssertTrue(recovered)
+        XCTAssertEqual(text(second), "xabc\n")
+    }
+
+    func testAFlushOnQuitHappensAtOnce() {
+        let (document, _) = openFresh("abc\n")
+        document.replace(0..<0, with: Array("x".utf8))
+        document.journal!.flush()
+        XCTAssertFalse(document.journal!.hasUnflushedWrites)
+    }
+
+    func testADiscardedJournalIsNotFlushed() {
+        let (document, _) = openFresh("abc\n")
+        document.replace(0..<0, with: Array("x".utf8))
+        let directory = document.journal!.directory
+        document.journal!.discard()
+        XCTAssertFalse(document.journal!.hasUnflushedWrites)
+        document.journal!.flush()
+        XCTAssertFalse(exists(directory))
     }
 }
