@@ -30,6 +30,7 @@ final class DocumentViewStateTests: XCTestCase {
         let index = LineIndex()
         index.buildSynchronously(from: file)
         let view = DocumentView(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
+        view.journalRoot = TestHelpers.isolatedJournalRoot()
         view.viewStateStore = store
         view.load(file: file, index: index)
         return view

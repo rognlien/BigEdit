@@ -31,7 +31,7 @@ final class FollowFileTests: XCTestCase {
         let file = MappedFile(path: url.path)!
         let index = LineIndex()
         index.buildSynchronously(from: file)
-        let view = DocumentView(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
+        let view = TestHelpers.isolatedDocumentView()
         view.load(file: file, index: index)
         // Shrink the viewport so the document is taller than the window.
         let rowHeight = view.viewport.bounds.height / CGFloat(max(1, view.viewport.rowsPerPage))

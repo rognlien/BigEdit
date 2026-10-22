@@ -282,7 +282,7 @@ final class TextEncodingTests: XCTestCase {
         let file = mapped(bytes)
         let index = LineIndex()
         index.buildSynchronously(from: file)
-        let view = DocumentView(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
+        let view = TestHelpers.isolatedDocumentView()
         view.load(file: file, index: index)
         view.setFileFormat(FileFormat(scanning: file))
         return view

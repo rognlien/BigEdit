@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 import XCTest
 @testable import BigEdit
 
@@ -27,6 +27,22 @@ enum TestHelpers {
         let defaults = UserDefaults(suiteName: suiteName)!
         defaults.removePersistentDomain(forName: suiteName)
         return DocumentViewStateStore(defaults: defaults)
+    }
+
+    /// A fresh temporary directory for edit journals, so a test never writes
+    /// one into Application Support.
+    static func isolatedJournalRoot() -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("BigEditJournals-\(UUID().uuidString)", isDirectory: true)
+    }
+
+    /// A document view that keeps its journal and view state away from the
+    /// user's: in a temporary directory and an emptied defaults suite.
+    static func isolatedDocumentView(width: CGFloat = 600, height: CGFloat = 400) -> DocumentView {
+        let view = DocumentView(frame: NSRect(x: 0, y: 0, width: width, height: height))
+        view.journalRoot = isolatedJournalRoot()
+        view.viewStateStore = isolatedViewStateStore()
+        return view
     }
 
     /// Untitled documents in a fresh temporary directory, so a test never

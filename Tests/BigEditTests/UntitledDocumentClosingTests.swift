@@ -19,7 +19,7 @@ final class UntitledDocumentClosingTests: XCTestCase {
         let url = TestHelpers.writeTempFile(text)
         temporaryFiles.append(url)
         let document = Document(url: url, file: MappedFile(path: url.path)!, index: LineIndex(),
-                                view: DocumentView(frame: NSRect(x: 0, y: 0, width: 400, height: 300)))
+                                view: TestHelpers.isolatedDocumentView(width: 400, height: 300))
         document.untitledNumber = untitledNumber
         return document
     }

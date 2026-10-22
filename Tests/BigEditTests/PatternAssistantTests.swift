@@ -42,7 +42,7 @@ final class PatternAssistantTests: XCTestCase {
         let file = MappedFile(path: url.path)!
         let index = LineIndex()
         index.buildSynchronously(from: file)
-        let view = DocumentView(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
+        let view = TestHelpers.isolatedDocumentView()
         view.load(file: file, index: index)
 
         let sample = view.sampleText(maxBytes: 200, maxLines: 5)!
