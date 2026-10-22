@@ -1,0 +1,154 @@
+import AppKit
+import XCTest
+@testable import BigEdit
+
+/// Adding and deleting rows under aligned CSV columns, as Numbers' Table
+/// menu does.
+final class CSVRowEditingTests: XCTestCase {
+
+    private var temporaryFiles: [URL] = []
+
+    override func tearDown() {
+        temporaryFiles.forEach(TestHelpers.remove)
+        temporaryFiles = []
+        super.tearDown()
+    }
+
+    private func makeViewport(_ text: String, caret: Int, encoding: TextEncoding = .utf8,
+                              dialect: CSVDialect = CSVDialect()) -> (ViewportView, EditedDocument) {
+        let url = TestHelpers.writeTempFile(Data(encoding.encode(text)!))
+        temporaryFiles.append(url)
+        let file = MappedFile(path: url.path)!
+        let index = LineIndex()
+        index.buildSynchronously(from: file)
+        let document = EditedDocument(file: file, editModel: EditModel(), lineIndex: index)
+        document.isEditable = true
+        document.newlineBytes = text.contains("\r\n") ? [0x0D, 0x0A] : [0x0A]
+        let viewport = ViewportView(frame: NSRect(x: 0, y: 0, width: 600, height: 200))
+        viewport.load(document: document)
+        viewport.setTextEncoding(encoding)
+        viewport.setCSVRendering(dialect: dialect,
+                                 columnLayout: CSVColumnLayout.measure(file: file, dialect: dialect, encoding: encoding))
+        viewport.selection = TextSelection(anchorOffset: caret, activeOffset: caret)
+        return (viewport, document)
+    }
+
+    private func text(of document: EditedDocument, encoding: TextEncoding = .utf8) -> String {
+        encoding.decode(document.bytes(in: 0..<document.length))
+    }
+
+    private func offset(of prefix: String) -> Int {
+        prefix.utf8.count
+    }
+
+    func testAddRowAboveInsertsAnEmptyRowWithTheTablesCells() {
+        let (viewport, document) = makeViewport("name,age,city\nbob,2,Oslo\n", caret: offset(of: "name,age,city\nbo"))
+
+        viewport.addRowAbove(nil)
+
+        XCTAssertEqual(text(of: document), "name,age,city\n,,\nbob,2,Oslo\n")
+        let start = offset(of: "name,age,city\n")
+        XCTAssertEqual(viewport.selection?.range, start..<start, "the caret is in the new row's first cell")
+    }
+
+    func testAddRowBelowInsertsAfterTheCaretsRow() {
+        let (viewport, document) = makeViewport("name,age\nbob,2\nann,3\n", caret: offset(of: "name,age\nbob,"))
+
+        viewport.addRowBelow(nil)
+
+        XCTAssertEqual(text(of: document), "name,age\nbob,2\n,\nann,3\n")
+        let start = offset(of: "name,age\nbob,2\n")
+        XCTAssertEqual(viewport.selection?.range, start..<start)
+    }
+
+    func testAddRowBelowTheLastRowWithoutALineEnding() {
+        let (viewport, document) = makeViewport("name,age\nbob,2", caret: offset(of: "name,age\nb"))
+
+        viewport.addRowBelow(nil)
+
+        XCTAssertEqual(text(of: document), "name,age\nbob,2\n,")
+        let start = offset(of: "name,age\nbob,2\n")
+        XCTAssertEqual(viewport.selection?.range, start..<start)
+    }
+
+    func testAddRowBelowTheLastRowKeepsTheTrailingLineEnding() {
+        let (viewport, document) = makeViewport("name,age\nbob,2\n", caret: offset(of: "name,age\nb"))
+
+        viewport.addRowBelow(nil)
+
+        XCTAssertEqual(text(of: document), "name,age\nbob,2\n,\n")
+    }
+
+    func testAddedRowsUseTheFilesLineEnding() {
+        let (viewport, document) = makeViewport("name,age\r\nbob,2\r\n", caret: offset(of: "name,age\r\nb"))
+
+        viewport.addRowBelow(nil)
+        viewport.addRowAbove(nil)
+
+        XCTAssertEqual(text(of: document), "name,age\r\nbob,2\r\n,\r\n,\r\n")
+    }
+
+    func testAddRowAboveIsNotOfferedOnTheHeader() {
+        let (viewport, document) = makeViewport("name,age\nbob,2\n", caret: 2)
+
+        XCTAssertFalse(viewport.canAddCSVRowAbove)
+        viewport.addRowAbove(nil)
+
+        XCTAssertEqual(text(of: document), "name,age\nbob,2\n", "the header stays the first line")
+    }
+
+    func testAddRowAboveTheFirstLineWithoutAHeader() {
+        let (viewport, document) = makeViewport("bob,2\nann,3\n", caret: 2,
+                                                dialect: CSVDialect(hasHeaderRow: false))
+
+        XCTAssertTrue(viewport.canAddCSVRowAbove)
+        viewport.addRowAbove(nil)
+
+        XCTAssertEqual(text(of: document), ",\nbob,2\nann,3\n")
+    }
+
+    func testAddRowBelowTheHeaderAddsTheFirstDataRow() {
+        let (viewport, document) = makeViewport("name,age\nbob,2\n", caret: 2)
+
+        viewport.addRowBelow(nil)
+
+        XCTAssertEqual(text(of: document), "name,age\n,\nbob,2\n")
+    }
+
+    func testAnAddedRowUndoesAsOneStep() {
+        let (viewport, document) = makeViewport("name,age\nbob,2\n", caret: offset(of: "name,age\nb"))
+
+        viewport.addRowBelow(nil)
+        viewport.insertText("x", replacementRange: NSRange(location: NSNotFound, length: 0))
+        XCTAssertEqual(text(of: document), "name,age\nbob,2\nx,\n")
+
+        viewport.undo(nil)
+        XCTAssertEqual(text(of: document), "name,age\nbob,2\n,\n", "typing undoes apart from the row")
+        viewport.undo(nil)
+        XCTAssertEqual(text(of: document), "name,age\nbob,2\n")
+    }
+
+    func testAddedRowsAreEncodedInWindows1252() {
+        let (viewport, document) = makeViewport("navn;by\nÅse;Ørsta\n", caret: 12, encoding: .windows1252,
+                                                dialect: CSVDialect(delimiter: ";"))
+
+        viewport.addRowAbove(nil)
+
+        XCTAssertEqual(text(of: document, encoding: .windows1252), "navn;by\n;\nÅse;Ørsta\n")
+    }
+
+    func testAnAddedRowHasTheTablesCellsBesideQuotedDelimiters() {
+        let (viewport, document) = makeViewport("a,b,c\n\"x,y\",2,3\n", caret: offset(of: "a,b,c\n\"x"))
+
+        viewport.addRowBelow(nil)
+
+        XCTAssertEqual(text(of: document), "a,b,c\n\"x,y\",2,3\n,,\n")
+    }
+
+    func testRowCommandsNeedColumns() {
+        let (viewport, _) = makeViewport("name,age\nbob,2\n", caret: offset(of: "name,age\nb"))
+        viewport.setCSVRendering(dialect: nil, columnLayout: nil)
+
+        XCTAssertFalse(viewport.canEditCSVRows)
+    }
+}

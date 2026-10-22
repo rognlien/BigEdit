@@ -99,6 +99,10 @@ extension ViewportView: NSMenuItemValidation {
             enabled = isEditingAllowed && document?.undoStack.canUndo == true
         case #selector(redo(_:)):
             enabled = isEditingAllowed && document?.undoStack.canRedo == true
+        case #selector(addRowAbove(_:)):
+            enabled = canAddCSVRowAbove
+        case #selector(addRowBelow(_:)):
+            enabled = canEditCSVRows
         default:
             enabled = true
         }
