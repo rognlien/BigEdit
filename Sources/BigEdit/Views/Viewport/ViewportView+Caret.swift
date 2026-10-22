@@ -206,6 +206,33 @@ extension ViewportView {
         moveCaretToLineBoundary(end: true, extend: true)
     }
 
+    /// Scrolls a page and moves the caret the same number of rows, so it
+    /// stays where it was on screen.
+    func moveCaretByPage(forward: Bool, extend: Bool) {
+        let rows = max(1, rowsPerPage - 1)
+        scrollByPages(forward ? 1 : -1)
+        moveCaretVertically(by: forward ? rows : -rows, extend: extend)
+    }
+
+    // Control-V and Option-Page Down are bound to pageDown: in the standard
+    // key bindings, Option-Page Up to pageUp:, and Shift-Page Up and
+    // Shift-Page Down to the selecting forms.
+    override func pageDown(_ sender: Any?) {
+        moveCaretByPage(forward: true, extend: false)
+    }
+
+    override func pageDownAndModifySelection(_ sender: Any?) {
+        moveCaretByPage(forward: true, extend: true)
+    }
+
+    override func pageUp(_ sender: Any?) {
+        moveCaretByPage(forward: false, extend: false)
+    }
+
+    override func pageUpAndModifySelection(_ sender: Any?) {
+        moveCaretByPage(forward: false, extend: true)
+    }
+
     // Option-Shift-Up and Option-Shift-Down are bound to these in the
     // standard key bindings: to the start or end of the line, or on to the
     // previous or next one from there.

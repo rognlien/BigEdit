@@ -297,6 +297,41 @@ final class EmacsKeyBindingTests: XCTestCase {
         }
     }
 
+    private func numberedLines(_ count: Int) -> String {
+        (0..<count).map { String(format: "%03d\n", $0) }.joined()
+    }
+
+    func testControlVMovesTheCaretAndTheViewDownAPage() {
+        let (viewport, _) = makeViewport(numberedLines(200), caret: 4 * 2)
+        let page = viewport.rowsPerPage - 1
+
+        pressControl("v", in: viewport)
+
+        XCTAssertEqual(viewport.caretByteOffset, 4 * (2 + page))
+        XCTAssertEqual(viewport.scrollRow, Double(page), accuracy: 0.01)
+    }
+
+    func testShiftControlVSelectsAPageDown() {
+        let (viewport, _) = makeViewport(numberedLines(200), caret: 4)
+        let page = viewport.rowsPerPage - 1
+
+        pressControl("V", in: viewport)
+
+        XCTAssertEqual(viewport.selectionByteRange, 4..<(4 * (1 + page)))
+    }
+
+    func testPageUpMovesTheCaretBackAndStopsAtTheTop() {
+        let (viewport, _) = makeViewport(numberedLines(200), caret: 4 * 3)
+
+        viewport.pageDown(nil)
+        viewport.pageUp(nil)
+        XCTAssertEqual(viewport.caretByteOffset, 4 * 3)
+        viewport.pageUpAndModifySelection(nil)
+
+        XCTAssertEqual(viewport.selectionByteRange, 0..<(4 * 3))
+        XCTAssertEqual(viewport.scrollRow, 0, accuracy: 0.01)
+    }
+
     func testControlYYanksTheKilledText() {
         let (viewport, document) = makeViewport("one two\nthree\n", caret: 3)
         viewport.deleteToEndOfParagraph(nil)
