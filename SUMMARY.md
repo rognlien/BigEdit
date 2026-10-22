@@ -16,7 +16,7 @@ file and a 50 KB file cost the same to display and to edit.
 | `SearchScan` | Background search with byte-progress reporting: `memmem` for literal queries, or `NSRegularExpression` over windows cut at line boundaries (UTF-16 ranges walked back to byte offsets in one pass) for patterns. Case-sensitive uses the fast path; case-insensitive is byte-by-byte with ASCII case folding. Match offsets collected for display: every one in a document of up to 4 MB (`SmallDocument`), the first 1,000,000 above that. |
 | `StatisticsScan` | Background per-byte pass counting words and characters; matches `wc -lwm`. |
 | `ReplacementRule` + `EditModel` | The "lazy editor" Stage 1: one deferred find-and-replace rule, never written to disk until the user saves. The viewport renders the transformed result live. Still used when Replace All has too many matches to materialise, and by the CLI. |
-| `PieceTable` + `AddBuffer` | The "lazy editor" Stage 2 storage: logical bytes map onto pieces of the read-only mmap and an append-only add buffer. Edits are O(log pieces) splices in a balanced tree (treap, flat node pool); typed bytes are never copied out of the add buffer again. `AddedByteStore` is the seam for a future on-disk edit journal. |
+| `PieceTable` + `AddBuffer` | The "lazy editor" Stage 2 storage: logical bytes map onto pieces of the read-only mmap and an append-only add buffer. Edits are O(log pieces) splices in a balanced tree (treap, flat node pool); typed bytes are never copied out of the add buffer again. Past 8 MB the buffer spills to an unlinked file in `$TMPDIR/BigEdit Add Buffers/` (`SpillFile`: `pwrite`, a 64-page LRU of 64 KB for the renderer's short reads, `pread` for scans), and a paste of a million UTF-16 units or more is encoded into it a chunk at a time (`StreamedInsertion`). |
 | `EditedDocument` | The single read/write funnel between the UI and the bytes. Logical offsets everywhere; zero-edit reads pass straight through to the mmap. `replace(_:with:)` keeps the piece table, layout, and undo history in step. |
 | `EditedLayout` | Line/row layout of the edited document. The original `LineIndex` is never rebuilt; line-aligned edit *spans* (with their own local line layout, re-derived by scanning just the edit) overlay it, composed through prefix sums — O(log #spans) queries, O(#spans) update per edit. |
 | `UndoStack` | Edit history as piece splices — never copied bytes, so undoing a 10 GB deletion is O(pieces). Typing/deletion runs coalesce; Replace All applies as one grouped step. Carried across a save: the saved file's bytes are the previous document's logical bytes, so positions still hold, and `.original` pieces are rewritten to `.retired(n)` — the mapping the save replaced, kept alive by the new document. |
@@ -219,8 +219,10 @@ piece-table search vs naive search. Run with `swift test`.
   still the file they were made against (size, inode, modification date and a digest of the first
   and last 64 KB). A file with the same size and sampled content but a new date or inode offers
   Recover Anyway; a file that has changed is never replayed onto, and its journal can be kept
-  for when the earlier version is restored (that document is then not journaled). Appends are not
-  fsynced: an app crash keeps them, a power loss may lose the last few. Choosing Don't Save,
+  for when the earlier version is restored (that document is then not journaled). The journal is
+  flushed off the main thread 1 s after typing pauses and at most 3 s after the first unflushed
+  write (`JournalFlushSchedule`; `fsync` per file, `F_FULLFSYNC` once on the directory, since only
+  that survives a power loss on macOS), and synchronously on quit and close. Choosing Don't Save,
   Reload and Discard, or Quit Anyway removes the journal, as does a clean close. At launch, after
   the session is restored, a background pass removes journals whose file is gone or that have been
   untouched for 30 days, skipping any an open document holds.
@@ -233,6 +235,17 @@ piece-table search vs naive search. Run with `swift test`.
   hold text and removed if not.
 - Editing inside a single multi-GB line re-scans that line's span per splice — no worse than the viewer's own cost profile in a megaline file, but noticeable.
 - The view mode, CSV options, resized column widths and chosen language are remembered per path (`DocumentViewStateStore`, the 200 most recent files). Changing a CSV option keeps resized widths unless the delimiter changed.
+- Deleting and moving follow NSTextView, checked against a real one in tests: Backspace removes
+  a deletion cluster (`.byDeletionClusters` — one scalar at a time only in Indic, Thai, Arabic and
+  Hebrew), Forward Delete a composed character, and the `StandardKeyBinding.dict` actions — word
+  moves, Control-F/B/T/O/V/L, Command-Backspace, decomposing Control-Backspace — are NSResponder
+  overrides. Arrows, Page Up/Down, Home and End go through `interpretKeyEvents`.
+- CSV mode has a Table menu (also on a cell's context menu): add a row above or below, add a
+  column before or after, delete rows (⌥⌘⌫) or a column (⌃⌘⌫), with Numbers' names and its two
+  delete shortcuts; the ⌥-arrow shortcuts Numbers uses are system text moves, so the add commands
+  have none. Row edits are single splices; column edits rewrite the file under the 32 MB ceiling.
+  An undo step can carry an `UndoCompanion`, which a column change uses to put the column widths
+  back exactly on undo and redo.
 - CSV editing keeps cells: a typed delimiter, quote or line break quotes the cell, Delete stops at a cell edge, and deleting across cells clears them (`CSVCellEditing`). Ctrl-K is not cell-aware, and lines of 1024 bytes or more keep plain-text behaviour. Above 4 MB column widths come from a bounded head sample (a much wider field further down is truncated until that row is edited). A quoted field containing a newline is not joined across rows.
 - Undo reaches back across saves, but not without limit: each save retires the previous
   mapping (the old inode stays readable after the atomic rename), and after eight of them
