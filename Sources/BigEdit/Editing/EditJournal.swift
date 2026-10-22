@@ -78,9 +78,9 @@ final class EditJournal {
 
     // MARK: - Locating
 
-    /// The root every journal lives under: Application Support, unless a test
-    /// points it somewhere temporary.
-    static var root: URL = FileManager.default
+    /// The root journals live under: Application Support. A test passes a
+    /// temporary one instead.
+    static let root: URL = FileManager.default
         .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         .appendingPathComponent("BigEdit/Journals", isDirectory: true)
 

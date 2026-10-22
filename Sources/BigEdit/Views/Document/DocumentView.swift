@@ -69,6 +69,9 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
     /// Where each file's view mode, CSV options and language are remembered.
     var viewStateStore = DocumentViewStateStore.shared
 
+    /// Where this document's edit journal is kept.
+    var journalRoot = EditJournal.root
+
     /// A journal from an earlier run the user chose to keep rather than
     /// recover or discard. Held so it is not cleaned up while this document
     /// is open; while it is, this document is not journaled.

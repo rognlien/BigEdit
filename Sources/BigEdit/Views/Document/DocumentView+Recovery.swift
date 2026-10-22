@@ -6,8 +6,8 @@ extension DocumentView {
     /// occupies the same directory.
     func openJournal(for file: MappedFile) -> EditJournal? {
         var result: EditJournal?
-        if keptJournal?.directory != EditJournal.directory(for: file.path) {
-            result = EditJournal.open(for: file.path)
+        if keptJournal?.directory != EditJournal.directory(for: file.path, in: journalRoot) {
+            result = EditJournal.open(for: file.path, in: journalRoot)
         }
         return result
     }
