@@ -275,13 +275,19 @@ final class EditedDocument {
     /// The logical offset before the user-perceived character that ends at
     /// `offset`.
     func previousGraphemeOffset(before offset: Int) -> Int {
+        let character = encoding.decode(bytes(in: lookBehindRange(before: offset))).last
+        return multiScalarByteLength(of: character).map { max(0, offset - $0) }
+            ?? previousCharacterOffset(before: offset)
+    }
+
+    /// The bytes a step back from `offset` looks at, starting on a
+    /// character boundary.
+    private func lookBehindRange(before offset: Int) -> Range<Int> {
         var start = max(0, offset - EditedDocument.graphemeLookLength)
         while start < offset, isContinuationByte(at: start) {
             start += 1
         }
-        let character = encoding.decode(bytes(in: start..<offset)).last
-        return multiScalarByteLength(of: character).map { max(0, offset - $0) }
-            ?? previousCharacterOffset(before: offset)
+        return start..<offset
     }
 
     /// The byte length of `character` when it is made of several scalars;
