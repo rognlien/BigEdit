@@ -435,9 +435,31 @@ extension ViewportView {
     /// Inserts pasted or yanked text at the selection, unless the document's
     /// encoding cannot write it.
     func insertTextAtSelection(_ text: String) {
-        if let bytes = encodedForInsertion(normalizingLineEndings(of: text)) {
+        if !insertStreamed(text), let bytes = encodedForInsertion(normalizingLineEndings(of: text)) {
             insertBytesAtSelection(bytes)
         }
+    }
+
+    /// Text at least this long, in UTF-16 units, is inserted as it is
+    /// encoded rather than encoded whole first.
+    static let streamedInsertionLength = 1024 * 1024
+
+    /// Inserts long text at the selection a chunk at a time, outside CSV
+    /// columns, whose cell editing needs the bytes whole. False when it did
+    /// not apply, or some character could not be encoded, leaving the
+    /// ordinary insertion to beep or report it.
+    private func insertStreamed(_ text: String) -> Bool {
+        var inserted = false
+        if let document, let selection, isEditingAllowed, !isCSVRenderingActive,
+           (text as NSString).length >= ViewportView.streamedInsertionLength,
+           let added = StreamedInsertion(encoding: textEncoding, newline: document.newlineBytes)
+               .append(text, to: document) {
+            document.replace(selection.range, withAdded: added.range,
+                             insertedContainsNewline: added.containsNewline, selectionBefore: selection)
+            finishEdit(caret: selection.range.lowerBound + added.range.count)
+            inserted = true
+        }
+        return inserted
     }
 
     /// Pasted text normalised to the document's detected line ending.

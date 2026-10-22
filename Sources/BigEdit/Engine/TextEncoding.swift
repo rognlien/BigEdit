@@ -31,7 +31,7 @@ enum TextEncoding: Equatable {
         self != .utf8
     }
 
-    private var foundationEncoding: String.Encoding {
+    var foundationEncoding: String.Encoding {
         switch self {
         case .utf8: return .utf8
         case .windows1252: return .windowsCP1252
