@@ -638,50 +638,64 @@ final class ViewportView: NSView {
         // Mid-composition every key belongs to the input method.
         if hasMarkedText() {
             interpretKeyEvents([event])
-            return
+        } else if !handleColumnSelectionKey(event) {
+            routeKey(event)
         }
-        let command = event.modifierFlags.contains(.command)
-        let shift = event.modifierFlags.contains(.shift)
-        // Once a caret/selection exists, the arrows navigate text (extending
-        // with Shift); before that they scroll, so plain browsing still works.
-        let hasCaret = selection != nil
-        if handleColumnSelectionKey(event) {
-            return
-        }
-        let arrowKeyCodes: Set<UInt16> = [123, 124, 125, 126]
-        if command && arrowKeyCodes.contains(event.keyCode) {
-            // The standard key bindings turn these into line and document moves.
+    }
+
+    private func routeKey(_ event: NSEvent) {
+        if isBrowsingArrow(event) {
+            browse(with: event)
+        } else if isEditingAllowed || isNavigationKey(event) || event.modifierFlags.contains(.control) {
+            // Routes through the input context: typing arrives via insertText,
+            // and every other key via the NSResponder action the standard key
+            // bindings name for it. Moves and Control-key bindings work in
+            // read-only documents too.
             interpretKeyEvents([event])
         } else {
-            switch event.keyCode {
-            case 126:                                          // up
-                if shift || hasCaret { moveCaretVertically(by: -1, extend: shift) }
-                else { scrollByRows(-1) }
-            case 125:                                          // down
-                if shift || hasCaret { moveCaretVertically(by: 1, extend: shift) }
-                else { scrollByRows(1) }
-            case 123:                                          // left
-                if shift || hasCaret { moveCaretHorizontally(forward: false, extend: shift) }
-                else { shiftHorizontally(by: -characterWidth * 8) }
-            case 124:                                          // right
-                if shift || hasCaret { moveCaretHorizontally(forward: true, extend: shift) }
-                else { shiftHorizontally(by: characterWidth * 8) }
-            case 116: scrollByPages(-1)                        // page up
-            case 121: scrollByPages(1)                         // page down
-            case 115: setScrollRow(0)                          // home
-            case 119: setScrollRow(maxScrollRow)               // end
-            default:
-                // Control-key bindings are mostly caret moves, which read-only
-                // documents support too.
-                if isEditingAllowed || event.modifierFlags.contains(.control) {
-                    // Routes through the input context: typing arrives via
-                    // insertText, editing keys via the NSResponder actions below.
-                    interpretKeyEvents([event])
-                } else {
-                    super.keyDown(with: event)
-                }
-            }
+            super.keyDown(with: event)
         }
+    }
+
+    private static let arrowKeyCodes: Set<UInt16> = [123, 124, 125, 126]
+
+    /// Before there is a caret, an arrow without Shift or Command scrolls,
+    /// so plain browsing needs no click first.
+    private func isBrowsingArrow(_ event: NSEvent) -> Bool {
+        selection == nil && event.modifierFlags.intersection([.shift, .command]).isEmpty
+            && ViewportView.arrowKeyCodes.contains(event.keyCode)
+    }
+
+    private func browse(with event: NSEvent) {
+        switch event.keyCode {
+        case 126: scrollByRows(-1)
+        case 125: scrollByRows(1)
+        case 123: shiftHorizontally(by: -characterWidth * 8)
+        default: shiftHorizontally(by: characterWidth * 8)
+        }
+    }
+
+    /// The arrows, Page Up, Page Down, Home and End.
+    private func isNavigationKey(_ event: NSEvent) -> Bool {
+        ViewportView.arrowKeyCodes.contains(event.keyCode) || [115, 116, 119, 121].contains(event.keyCode)
+    }
+
+    // Page Up, Page Down, Home and End are bound to these in the standard key
+    // bindings: they scroll and leave the caret where it is.
+    override func scrollPageUp(_ sender: Any?) {
+        scrollByPages(-1)
+    }
+
+    override func scrollPageDown(_ sender: Any?) {
+        scrollByPages(1)
+    }
+
+    override func scrollToBeginningOfDocument(_ sender: Any?) {
+        setScrollRow(0)
+    }
+
+    override func scrollToEndOfDocument(_ sender: Any?) {
+        setScrollRow(maxScrollRow)
     }
 
     // MARK: - Editing hooks
