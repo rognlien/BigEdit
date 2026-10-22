@@ -74,8 +74,13 @@ extension ViewportView {
                            in document: EditedDocument) {
         let bytes = csvDelimitersCreatingCaretCell(before: bytes, at: range)
         document.replace(range, with: bytes, selectionBefore: selection)
+        finishEdit(caret: range.lowerBound + bytes.count - bytesAfterCaret)
+    }
+
+    /// Refreshes everything that depends on the content after an edit, and
+    /// puts the caret at `caret`.
+    private func finishEdit(caret: Int) {
         documentContentChanged()
-        let caret = range.lowerBound + bytes.count - bytesAfterCaret
         widenCSVColumnsToFitRow(containing: caret)
         selection = TextSelection(anchorOffset: caret, activeOffset: caret)
         desiredCaretX = nil
