@@ -37,9 +37,24 @@ final class PasteMemoryMeasurement: XCTestCase {
         return megabytes * 1024 * 1024 / PasteMemoryMeasurement.lineLength
     }
 
+    /// Lines of random letters, so the memory compressor cannot shrink the
+    /// text the way it would a repeated character.
     private func makeText() -> String {
-        let line = String(repeating: "x", count: PasteMemoryMeasurement.lineLength - 1) + "\n"
-        return String(repeating: line, count: lineCount)
+        var generator = SeededGenerator(seed: 1)
+        let letters = Array("abcdefghijklmnopqrstuvwxyz".utf8)
+        let linesPerBlock = 10_000
+        var block: [UInt8] = []
+        for _ in 0..<linesPerBlock {
+            block += (1..<PasteMemoryMeasurement.lineLength).map { _ in letters.randomElement(using: &generator)! }
+            block.append(0x0A)
+        }
+        var text = String(repeating: String(decoding: block, as: UTF8.self), count: lineCount / linesPerBlock)
+        text.makeContiguousUTF8()
+        return text
+    }
+
+    private var pastedLength: Int {
+        lineCount / 10_000 * 10_000 * PasteMemoryMeasurement.lineLength
     }
 
     func testFillThePasteboard() throws {
@@ -69,18 +84,22 @@ final class PasteMemoryMeasurement: XCTestCase {
 
     private func measure(_ verb: String, _ paste: (ViewportView) -> Void) {
         let (viewport, document) = makeViewport()
-        let before = PasteMemoryMeasurement.residentBytes()
+        let before = PasteMemoryMeasurement.memory()
         let start = Date()
         autoreleasepool {
             paste(viewport)
         }
         let seconds = Date().timeIntervalSince(start)
-        let peak = PasteMemoryMeasurement.peakResidentBytes()
-        let after = PasteMemoryMeasurement.residentBytes()
-        let pasted = lineCount * PasteMemoryMeasurement.lineLength
-        print(String(format: "%@ %d MB in %.1f s: resident %d MB before, %d MB after, peak %d MB (%d MB above before)",
-                     verb, pasted >> 20, seconds, before >> 20, after >> 20, peak >> 20, (peak - before) >> 20))
-        XCTAssertEqual(document.length, PasteMemoryMeasurement.prefix.utf8.count + pasted)
+        let after = PasteMemoryMeasurement.memory()
+        let peakResident = PasteMemoryMeasurement.peakResidentBytes()
+        print(String(format: "%@ %d MB in %.1f s. Resident: %d MB before, %d MB after, peak %d MB (+%d MB). "
+                     + "Footprint: %d MB before, %d MB after, peak %d MB (+%d MB).",
+                     verb, pastedLength >> 20, seconds,
+                     before.resident >> 20, after.resident >> 20, peakResident >> 20,
+                     (peakResident - before.resident) >> 20,
+                     before.footprint >> 20, after.footprint >> 20, after.peakFootprint >> 20,
+                     (after.peakFootprint - before.footprint) >> 20))
+        XCTAssertEqual(document.length, PasteMemoryMeasurement.prefix.utf8.count + pastedLength)
     }
 
     private func makeViewport() -> (ViewportView, EditedDocument) {
@@ -100,15 +119,16 @@ final class PasteMemoryMeasurement: XCTestCase {
         return (viewport, document)
     }
 
-    private static func residentBytes() -> Int {
-        var info = mach_task_basic_info()
-        var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size / MemoryLayout<natural_t>.size)
+    private static func memory() -> (resident: Int, footprint: Int, peakFootprint: Int) {
+        var info = task_vm_info_data_t()
+        var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<natural_t>.size)
         let status = withUnsafeMutablePointer(to: &info) { pointer in
             pointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
-                task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count)
+                task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
             }
         }
-        return status == KERN_SUCCESS ? Int(info.resident_size) : 0
+        XCTAssertEqual(status, KERN_SUCCESS)
+        return (Int(info.resident_size), Int(info.phys_footprint), Int(info.ledger_phys_footprint_peak))
     }
 
     private static func peakResidentBytes() -> Int {
