@@ -3,11 +3,13 @@
 What is actually left. Everything above the "Done" section is open work;
 `[x]` items in Done are recorded so this file stops re-proposing them.
 
-Last audited against the code on 2026-10-19, at v0.1.24 plus the work that
+Last audited against the code on 2026-10-22, at v0.1.24 plus the work that
 followed it: the highlighter refactor finished, safe crash recovery,
 Windows-1252 and Latin-1 editing, CSV cell editing, per-file view state,
 adaptive limits for small documents, the README rewrite, the input-method
-test pass, untitled documents and sampled encoding detection.
+test pass, untitled documents, sampled encoding detection, character-wise
+deleting and the standard key bindings, the CSV Table menu, journal flushing
+and disk-backed pastes.
 
 ## Beta polish
 
@@ -23,19 +25,22 @@ test pass, untitled documents and sampled encoding detection.
 ## Follow-ups from shipped work
 
 - [ ] **Editing (from Stage 2).**
-      - Disk-backed storage for huge pastes. The journal mirrors the add
-        buffer to disk already, but the buffer itself is still in memory.
+      - **Huge pastes.** The add buffer spills to disk past 8 MB, but a
+        paste still passes through AppKit's NSString, and the macOS
+        pasteboard refuses about 300–400 MB anyway. Reading the pasteboard's
+        UTF-8 data and streaming it would drop the NSString copy. The layout
+        keeps two `[Int]` per inserted line (~300 MB for 10 M lines). The
+        disk-full fallback and a real cross-app paste are untested.
       - **Input methods by hand.** `InputMethodTests` replays the call
         sequences, but a real Kotoeri/Pinyin session, dead keys,
         press-and-hold and the Character Viewer still want one manual pass —
         especially the candidate window's position (also under a pinned CSV
         header) and clicks inside marked text.
-      - Backspace and Forward Delete remove one scalar at a time; Indic and
-        Thai want Backspace by mark, everything else by character.
       - Escape after a composition that quoted a CSV cell leaves the quotes;
         composing in a newly quoted cell undoes step by step.
-      - The emacs moves (Ctrl-F/B/N/P, `moveForward:` and friends) are not
-        implemented.
+      - Consecutive Control-K kills replace the kill buffer instead of
+        appending to it as NSTextView does. Command-Page Up/Down, which have
+        no system binding, now beep instead of scrolling.
       - Raise the Replace All materialisation cap by moving the layout's prefix
         sums into a balanced tree (same pattern as `PieceTable`).
 - [ ] **Regular-expression search.** One match cannot span more than one
@@ -63,21 +68,22 @@ test pass, untitled documents and sampled encoding detection.
       it. A row holding a byte Windows-1252 leaves undefined (0x81, 0x8D…) is
       decoded as Latin-1 throughout, so a € on that row shows as U+0080.
 - [ ] **Edit journal.** A journal kept with Not Now leaves that session's
-      document unjournaled, so a second crash loses its edits. Tests that load
-      a `DocumentView` write journals into the real Application Support folder.
+      document unjournaled, so a second crash loses its edits. Flushing with
+      `F_FULLFSYNC` every 1–3 s while typing may be felt on slow external
+      disks; real power-loss durability is untested.
 - [ ] **Untitled documents.** Only the model is tested; ⌘N, the first save,
-      the close sheet and quit-and-relaunch want a click-through. Journal
-      appends are not fsynced, so a power loss may drop an untitled
-      document's last edits with no prompt to fall back on. Replace in File,
+      the close sheet and quit-and-relaunch want a click-through. Replace in File,
       Convert to UTF-8 and Follow write into the placeholder and leave the
       document untitled.
 - [ ] **CSV.**
       - **Cell editing gaps.** Ctrl-K is not cell-aware; lines of 1024 bytes
         or more keep plain-text typing and deleting; clearing a selection
         reads the lines it touches, so above 64 MB it is refused; a
-        selection edge inside a doubled quote can leave a stray quote. With
-        Return taken
-        by cell navigation, a row cannot be inserted mid-table in CSV mode.
+        selection edge inside a doubled quote can leave a stray quote.
+      - **Table menu.** Rows are physical lines, so a quoted field holding a
+        line break counts as two. Right-click now moves the caret to the
+        clicked cell. Menu placement, the two shortcuts and the progress sheet
+        of a column change are untested in the running app.
       - Sorting rewrites the file under the 32 MB Process Lines ceiling. A
         view-only sort (a permutation over the line index) would lift the
         ceiling and leave the file clean, at the cost of a new layer between
@@ -133,7 +139,7 @@ they are not proposed again.
 - [x] **Dock-click reopen** (`applicationShouldHandleReopen`).
 - [x] **Cancel `LineIndex` indexing** when the file changes — `LineIndex` has
       `cancel()` alongside `SearchScan` and `StatisticsScan`.
-- [x] **Unit tests.** 701 XCTests, run by the release workflow and on demand
+- [x] **Unit tests.** 850 XCTests, run by the release workflow and on demand
       from the Actions tab, plus the headless cross-checks below. CI stopped
       running per push while the repository was private; now that it is
       public, standard runners are free and per-push runs could return.
@@ -262,6 +268,12 @@ they are not proposed again.
 - [x] **Untitled documents** — ⌘N without a dialog, kept across quit, asked
       where on first save.
 - [x] **Encoding detection beyond the first 64 KB.**
+- [x] **Deleting and moving like NSTextView** — Backspace and Forward Delete
+      by character, word moves, and the `StandardKeyBinding.dict` actions.
+- [x] **CSV Table menu** — add rows and columns, delete rows and columns;
+      widths follow undo, and resized widths survive a save.
+- [x] **Journal flushing** and **tests kept out of Application Support**.
+- [x] **Disk-backed add buffer** — a 1 GB paste went from +3.3 GB to +0.3 GB.
 
 ## Verification scripts to keep around
 
