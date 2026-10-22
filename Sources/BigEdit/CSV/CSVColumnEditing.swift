@@ -7,6 +7,21 @@ enum CSVColumnChange: Equatable {
     case removal(of: Int)
 }
 
+/// The widths a table is drawn with, as resized and as measured from the
+/// file, for the delimiter that split it into those columns.
+struct CSVColumnWidths: Equatable {
+    let delimiter: Character
+    let working: CSVColumnLayout
+    let measured: CSVColumnLayout
+}
+
+/// The widths on both sides of a column change, kept with its undoable
+/// edit so that undo and redo put them back exactly.
+struct CSVColumnWidthChange: UndoCompanion {
+    let before: CSVColumnWidths
+    let after: CSVColumnWidths
+}
+
 /// Rewrites a delimited file's bytes a column at a time. Each line keeps
 /// every byte but the delimiter and field the change adds or removes, so
 /// the encoding, quoting and line endings pass through untouched.

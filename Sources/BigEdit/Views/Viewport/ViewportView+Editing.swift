@@ -100,14 +100,14 @@ extension ViewportView {
     }
 
     @objc func undo(_ sender: Any?) {
-        replayHistory { document in document.undoStack.undo(in: document) }
+        replayHistory(isUndo: true) { document in document.undoStack.undo(in: document) }
     }
 
     @objc func redo(_ sender: Any?) {
-        replayHistory { document in document.undoStack.redo(in: document) }
+        replayHistory(isUndo: false) { document in document.undoStack.redo(in: document) }
     }
 
-    private func replayHistory(_ action: (EditedDocument) -> TextSelection?) {
+    private func replayHistory(isUndo: Bool, _ action: (EditedDocument) -> TextSelection?) {
         guard let document, isEditingAllowed else {
             NSSound.beep()
             return
@@ -118,6 +118,7 @@ extension ViewportView {
         }
         if let restored = action(document) {
             documentContentChanged()
+            replayCSVColumnWidths(of: document, isUndo: isUndo)
             selection = restored
             desiredCaretX = nil
             onEdit?()
@@ -125,6 +126,15 @@ extension ViewportView {
             needsDisplay = true
         } else {
             NSSound.beep()
+        }
+    }
+
+    /// After undoing or redoing a column change, puts back the widths the
+    /// table had on that side of it, and tells the container.
+    private func replayCSVColumnWidths(of document: EditedDocument, isUndo: Bool) {
+        if let change = document.undoStack.lastReplayedCompanion as? CSVColumnWidthChange {
+            restoreCSVColumnWidths(isUndo ? change.before : change.after)
+            onCSVColumnChangeReplay?(isUndo)
         }
     }
 

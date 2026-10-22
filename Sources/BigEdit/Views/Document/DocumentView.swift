@@ -147,6 +147,9 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
         viewport.onCSVColumnChange = { [weak self] change in
             self?.changeCSVColumns(change)
         }
+        viewport.onCSVColumnChangeReplay = { [weak self] _ in
+            self?.rememberViewState()
+        }
         viewport.onCSVColumnResize = { [weak self] in
             self?.rememberViewState()
         }

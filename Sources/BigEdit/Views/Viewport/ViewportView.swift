@@ -75,6 +75,10 @@ final class ViewportView: NSView {
     /// Asks the container to add or delete a column on every row.
     var onCSVColumnChange: ((CSVColumnChange) -> Void)?
 
+    /// A column change was undone (`isUndo`) or redone, and the widths the
+    /// table had on that side of it put back.
+    var onCSVColumnChangeReplay: ((_ isUndo: Bool) -> Void)?
+
     /// The user resized a column, by dragging its edge or double-clicking it.
     var onCSVColumnResize: (() -> Void)?
 
@@ -459,6 +463,28 @@ final class ViewportView: NSView {
                 layout = layout.settingWidth(width, forColumn: column)
             }
             csvColumnLayout = layout
+            widestDrawnRowWidth = 0
+            window?.invalidateCursorRects(for: self)
+            needsDisplay = true
+        }
+    }
+
+    /// The widths the table is drawn with, or nil outside CSV mode.
+    var csvColumnWidths: CSVColumnWidths? {
+        var result: CSVColumnWidths?
+        if let csvDialect, let csvColumnLayout, let csvMeasuredColumnLayout {
+            result = CSVColumnWidths(delimiter: csvDialect.delimiter, working: csvColumnLayout,
+                                     measured: csvMeasuredColumnLayout)
+        }
+        return result
+    }
+
+    /// Puts back widths taken from `csvColumnWidths`, unless the table is
+    /// now split by another delimiter, which makes them other columns.
+    func restoreCSVColumnWidths(_ widths: CSVColumnWidths) {
+        if csvDialect?.delimiter == widths.delimiter, csvColumnLayout != nil {
+            csvColumnLayout = widths.working
+            csvMeasuredColumnLayout = widths.measured
             widestDrawnRowWidth = 0
             window?.invalidateCursorRects(for: self)
             needsDisplay = true

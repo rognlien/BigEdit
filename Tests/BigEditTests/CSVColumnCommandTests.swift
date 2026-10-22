@@ -89,6 +89,37 @@ final class CSVColumnCommandTests: XCTestCase {
         XCTAssertEqual(text(of: view), "name,age\nbob,42\n")
     }
 
+    func testUndoAndRedoPutTheWidthsBackExactly() {
+        let view = open("a,b,c\n1,2,3\n")
+        view.viewport.applyCSVChosenColumnWidths([0: 6, 2: 15])
+        let before = view.viewport.csvColumnWidths
+        placeCaret(view, at: 0)
+        view.viewport.addColumnAfter(nil)
+        waitForText("a,,b,c\n1,,2,3\n", in: view)
+        let after = view.viewport.csvColumnWidths
+        XCTAssertEqual(after?.working.columnWidths, [6, 6, 1, 15])
+
+        view.viewport.undo(nil)
+        XCTAssertEqual(view.viewport.csvColumnWidths, before)
+        XCTAssertEqual(view.viewport.csvChosenColumnWidths, [0: 6, 2: 15])
+
+        view.viewport.redo(nil)
+        XCTAssertEqual(view.viewport.csvColumnWidths, after)
+    }
+
+    func testUndoingADeletedColumnBringsItsWidthBack() {
+        let view = open("a,b,c\n1,2,3\n")
+        view.viewport.applyCSVChosenColumnWidths([1: 11])
+        placeCaret(view, at: "a,".utf8.count)
+        view.viewport.deleteColumn(nil)
+        waitForText("a,c\n1,3\n", in: view)
+
+        view.viewport.undo(nil)
+
+        XCTAssertEqual(text(of: view), "a,b,c\n1,2,3\n")
+        XCTAssertEqual(view.viewport.csvColumnLayout?.columnWidths, [1, 11, 1])
+    }
+
     func testColumnsChangeInWindows1252() {
         let view = open("navn,by\nÅse,Ørsta\n", encoding: .windows1252)
         placeCaret(view, at: 1)

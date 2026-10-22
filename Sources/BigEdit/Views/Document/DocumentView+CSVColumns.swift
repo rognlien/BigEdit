@@ -52,13 +52,17 @@ extension DocumentView {
     /// resized width moved along with its column, and selects the added
     /// column's cell, or the one now where the deleted column was.
     private func finishCSVColumnChange(_ change: CSVColumnChange, with bytes: [UInt8], caretRow: Int) {
-        if let dialect = viewport.csvDialect {
+        if let dialect = viewport.csvDialect, let widthsBefore = viewport.csvColumnWidths {
             let widths = DocumentView.chosenWidths(viewport.csvChosenColumnWidths, after: change,
-                                                   current: viewport.csvColumnLayout?.columnWidths ?? [])
+                                                   current: widthsBefore.working.columnWidths)
             let scrollRow = viewport.scrollRow
             viewport.replaceEntireTable(with: bytes)
             applyCSVRendering(enabled: true, dialect: dialect)
             viewport.applyCSVChosenColumnWidths(widths)
+            if let widthsAfter = viewport.csvColumnWidths {
+                viewport.document?.undoStack.attachCompanion(
+                    CSVColumnWidthChange(before: widthsBefore, after: widthsAfter))
+            }
             viewport.setScrollRow(scrollRow)
             viewport.moveToCell(inRow: caretRow, column: .index(selectedColumn(after: change)))
             rememberViewState()
