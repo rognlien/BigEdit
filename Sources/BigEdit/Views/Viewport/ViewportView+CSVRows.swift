@@ -32,6 +32,48 @@ extension ViewportView {
         }
     }
 
+    /// Deletes every row the selection touches, as one undoable edit, and
+    /// puts the caret at the start of the row that takes their place. Not
+    /// the header row, which names the columns.
+    @objc func deleteRow(_ sender: Any?) {
+        if canDeleteCSVRows, let rows = selectedCSVRows() {
+            document?.undoStack.breakCoalescing()
+            csvCaretColumn = nil
+            performEdit(replacing: rowsWithTheirSeparator(rows), with: [])
+            let caret = lineContentRange(containing: selection?.activeOffset ?? 0).lowerBound
+            selection = TextSelection(anchorOffset: caret, activeOffset: caret)
+        } else {
+            NSSound.beep()
+        }
+    }
+
+    /// The empty row drawn after a final line ending is not in the file, so
+    /// there is nothing to delete there.
+    var canDeleteCSVRows: Bool {
+        canEditCSVRows && !selectionTouchesCSVHeader && selectedCSVRows()?.isEmpty == false
+    }
+
+    /// Whether the selection touches more than one row.
+    var selectionSpansCSVRows: Bool {
+        var result = false
+        if let rows = selectedCSVRows(), let layout {
+            result = layout.logicalLineRange(containing: rows.lowerBound).upperBound < rows.upperBound
+        }
+        return result
+    }
+
+    /// `rows` with the line ending that separates them from the rest: their
+    /// own last one, or, when they end the file without one, the ending of
+    /// the row before, so that row becomes the last.
+    private func rowsWithTheirSeparator(_ rows: Range<Int>) -> Range<Int> {
+        var result = rows
+        if let document, rows.lowerBound > 0, rows.upperBound == document.length,
+           document.byte(at: rows.upperBound - 1) != 0x0A {
+            result = lineContentRange(containing: rows.lowerBound - 1).upperBound..<rows.upperBound
+        }
+        return result
+    }
+
     /// Whether the row commands apply: the table is drawn as columns, it
     /// can be edited, and there is a caret to say which row.
     var canEditCSVRows: Bool {

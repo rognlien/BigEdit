@@ -103,6 +103,9 @@ extension ViewportView: NSMenuItemValidation {
             enabled = canAddCSVRowAbove
         case #selector(addRowBelow(_:)):
             enabled = canEditCSVRows
+        case #selector(deleteRow(_:)):
+            menuItem.title = selectionSpansCSVRows ? "Delete Rows" : "Delete Row"
+            enabled = canDeleteCSVRows
         default:
             enabled = true
         }

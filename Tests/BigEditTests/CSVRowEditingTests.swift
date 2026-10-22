@@ -151,4 +151,100 @@ final class CSVRowEditingTests: XCTestCase {
 
         XCTAssertFalse(viewport.canEditCSVRows)
     }
+
+    func testDeleteRowRemovesTheCaretsRow() {
+        let (viewport, document) = makeViewport("name,age\nbob,2\nann,3\n", caret: offset(of: "name,age\nbo"))
+
+        viewport.deleteRow(nil)
+
+        XCTAssertEqual(text(of: document), "name,age\nann,3\n")
+        let start = offset(of: "name,age\n")
+        XCTAssertEqual(viewport.selection?.range, start..<start, "the caret starts the row that moved up")
+    }
+
+    func testDeleteRowRemovesEveryRowTheSelectionTouches() {
+        let (viewport, document) = makeViewport("name,age\nbob,2\nann,3\neve,4\n", caret: 0)
+        viewport.selection = TextSelection(anchorOffset: offset(of: "name,age\nbob,"),
+                                           activeOffset: offset(of: "name,age\nbob,2\nan"))
+
+        XCTAssertEqual(viewport.selectionSpansCSVRows, true)
+        viewport.deleteRow(nil)
+
+        XCTAssertEqual(text(of: document), "name,age\neve,4\n")
+    }
+
+    func testASelectionEndingAtALineStartDoesNotTouchThatLine() {
+        let (viewport, document) = makeViewport("name,age\nbob,2\nann,3\n", caret: 0)
+        viewport.selection = TextSelection(anchorOffset: offset(of: "name,age\n"),
+                                           activeOffset: offset(of: "name,age\nbob,2\n"))
+
+        XCTAssertFalse(viewport.selectionSpansCSVRows)
+        viewport.deleteRow(nil)
+
+        XCTAssertEqual(text(of: document), "name,age\nann,3\n")
+    }
+
+    func testDeletingTheLastRowWithoutALineEndingTakesThePreviousEnding() {
+        let (viewport, document) = makeViewport("name,age\nbob,2\nann,3", caret: offset(of: "name,age\nbob,2\nan"))
+
+        viewport.deleteRow(nil)
+
+        XCTAssertEqual(text(of: document), "name,age\nbob,2")
+        let start = offset(of: "name,age\n")
+        XCTAssertEqual(viewport.selection?.range, start..<start)
+    }
+
+    func testDeletingACRLFRowTakesBothBytesOfItsEnding() {
+        let (viewport, document) = makeViewport("name,age\r\nbob,2\r\nann,3\r\n", caret: offset(of: "name,age\r\nb"))
+
+        viewport.deleteRow(nil)
+
+        XCTAssertEqual(text(of: document), "name,age\r\nann,3\r\n")
+    }
+
+    func testDeletingARowWithAQuotedFieldTakesTheWholeLine() {
+        let (viewport, document) = makeViewport("a,b\n\"x,y\",2\nz,3\n", caret: offset(of: "a,b\n\"x,"))
+
+        viewport.deleteRow(nil)
+
+        XCTAssertEqual(text(of: document), "a,b\nz,3\n")
+    }
+
+    func testDeleteRowIsNotOfferedOnTheHeader() {
+        let (viewport, document) = makeViewport("name,age\nbob,2\n", caret: 2)
+
+        XCTAssertFalse(viewport.canDeleteCSVRows)
+        viewport.deleteRow(nil)
+
+        XCTAssertEqual(text(of: document), "name,age\nbob,2\n")
+    }
+
+    func testDeleteRowIsNotOfferedOnTheEmptyRowAfterTheLastLineEnding() {
+        let (viewport, document) = makeViewport("name,age\nbob,2\n", caret: offset(of: "name,age\nbob,2\n"))
+
+        XCTAssertFalse(viewport.canDeleteCSVRows)
+        viewport.deleteRow(nil)
+
+        XCTAssertEqual(text(of: document), "name,age\nbob,2\n")
+    }
+
+    func testDeletedRowsUndoAsOneStep() {
+        let (viewport, document) = makeViewport("name,age\nbob,2\nann,3\n", caret: 0)
+        viewport.selection = TextSelection(anchorOffset: offset(of: "name,age\nb"),
+                                           activeOffset: offset(of: "name,age\nbob,2\na"))
+
+        viewport.deleteRow(nil)
+        viewport.undo(nil)
+
+        XCTAssertEqual(text(of: document), "name,age\nbob,2\nann,3\n")
+    }
+
+    func testDeletingRowsInWindows1252() {
+        let (viewport, document) = makeViewport("navn;by\nÅse;Ørsta\nÆgir;Bø\n", caret: 9, encoding: .windows1252,
+                                                dialect: CSVDialect(delimiter: ";"))
+
+        viewport.deleteRow(nil)
+
+        XCTAssertEqual(text(of: document, encoding: .windows1252), "navn;by\nÆgir;Bø\n")
+    }
 }
