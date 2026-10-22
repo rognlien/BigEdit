@@ -231,4 +231,27 @@ final class UndoStackTests: XCTestCase {
             XCTAssertEqual(document.bytes(in: 0..<document.length), model, "seed \(seed)")
         }
     }
+
+    private struct Note: UndoCompanion {
+        let name: String
+    }
+
+    func testACompanionComesBackWithItsStepBothWays() {
+        let document = makeDocument("abc")
+        document.replace(0..<3, with: Array("xyz".utf8))
+        document.undoStack.attachCompanion(Note(name: "rewrite"))
+        type("!", at: 3, in: document)
+
+        _ = document.undoStack.undo(in: document)
+        XCTAssertNil(document.undoStack.lastReplayedCompanion, "typing has no companion")
+        XCTAssertEqual(text(of: document), "xyz", "typing did not coalesce into the annotated step")
+
+        _ = document.undoStack.undo(in: document)
+        XCTAssertEqual((document.undoStack.lastReplayedCompanion as? Note)?.name, "rewrite")
+        XCTAssertEqual(text(of: document), "abc")
+
+        _ = document.undoStack.redo(in: document)
+        XCTAssertEqual((document.undoStack.lastReplayedCompanion as? Note)?.name, "rewrite")
+        XCTAssertEqual(text(of: document), "xyz")
+    }
 }

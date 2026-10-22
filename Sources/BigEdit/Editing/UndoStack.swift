@@ -1,5 +1,10 @@
 import Foundation
 
+/// State outside the document's bytes that an undoable step changed along
+/// with them. The stack only carries it; whoever applied the step puts it
+/// back when the step is undone or redone.
+protocol UndoCompanion {}
+
 /// The edit history: every operation is a piece-level splice, so records
 /// reference backing-store ranges and never copy document bytes. Undoing a
 /// 10 GB deletion re-splices a handful of pieces.
@@ -23,6 +28,8 @@ final class UndoStack {
         /// Whether the next edit may merge into this one (typing runs).
         /// Newline edits and caret moves close a run.
         var canCoalesce: Bool
+
+        var companion: UndoCompanion?
 
         var removedLength: Int {
             removedPieces.reduce(0) { $0 + $1.length }
@@ -58,6 +65,10 @@ final class UndoStack {
     var depth: Int {
         undoEntries.count
     }
+
+    /// The companion of the step the last undo or redo replayed, or nil
+    /// when that step had none.
+    private(set) var lastReplayedCompanion: UndoCompanion?
 
     var isEmpty: Bool {
         undoEntries.isEmpty && redoEntries.isEmpty && (openGroup?.isEmpty ?? true)
@@ -181,6 +192,16 @@ final class UndoStack {
         return result
     }
 
+    /// Attaches `companion` to the most recent step, a single edit, and
+    /// keeps later typing from coalescing into it.
+    func attachCompanion(_ companion: UndoCompanion) {
+        if case .single(var last)? = undoEntries.last {
+            last.companion = companion
+            last.canCoalesce = false
+            undoEntries[undoEntries.count - 1] = .single(last)
+        }
+    }
+
     /// Ends the current typing/deletion run — called when the caret moves by
     /// mouse or keyboard, so the next edit starts a fresh undo step.
     func breakCoalescing() {
@@ -194,10 +215,12 @@ final class UndoStack {
     /// to restore, or nil when there is nothing to undo.
     func undo(in document: EditedDocument) -> TextSelection? {
         var result: TextSelection?
+        lastReplayedCompanion = nil
         if let entry = undoEntries.popLast() {
             switch entry {
             case .single(let operation):
                 redoEntries.append(.single(replay(operation, in: document)))
+                lastReplayedCompanion = operation.companion
                 let caret = operation.position + operation.removedLength
                 result = operation.selectionBefore
                     ?? TextSelection(anchorOffset: caret, activeOffset: caret)
@@ -216,10 +239,12 @@ final class UndoStack {
     /// restore, or nil when there is nothing to redo.
     func redo(in document: EditedDocument) -> TextSelection? {
         var result: TextSelection?
+        lastReplayedCompanion = nil
         if let entry = redoEntries.popLast() {
             switch entry {
             case .single(let operation):
                 undoEntries.append(.single(replay(operation, in: document)))
+                lastReplayedCompanion = operation.companion
                 let caret = operation.position + operation.removedLength
                 result = operation.selectionAfter
                     ?? TextSelection(anchorOffset: caret, activeOffset: caret)
@@ -259,7 +284,8 @@ final class UndoStack {
             removedPieces: displaced,
             selectionBefore: operation.selectionBefore,
             selectionAfter: operation.selectionAfter,
-            canCoalesce: false
+            canCoalesce: false,
+            companion: operation.companion
         )
     }
 }
