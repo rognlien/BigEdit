@@ -134,15 +134,26 @@ extension ViewportView {
     /// The items of the Table menu, which the context menu repeats without
     /// their shortcuts. They go up the responder chain to the viewport.
     static func csvTableItems(includingShortcuts: Bool) -> [NSMenuItem] {
-        let deleteRowItem = NSMenuItem(title: "Delete Row", action: #selector(deleteRow(_:)),
-                                       keyEquivalent: includingShortcuts ? "\u{8}" : "")
-        deleteRowItem.keyEquivalentModifierMask = [.command, .option]
-        return [
+        [
             NSMenuItem(title: "Add Row Above", action: #selector(addRowAbove(_:)), keyEquivalent: ""),
             NSMenuItem(title: "Add Row Below", action: #selector(addRowBelow(_:)), keyEquivalent: ""),
+            NSMenuItem(title: "Add Column Before", action: #selector(addColumnBefore(_:)), keyEquivalent: ""),
+            NSMenuItem(title: "Add Column After", action: #selector(addColumnAfter(_:)), keyEquivalent: ""),
             NSMenuItem.separator(),
-            deleteRowItem
+            deleteItem("Delete Row", action: #selector(deleteRow(_:)), modifier: .option,
+                       includingShortcut: includingShortcuts),
+            deleteItem("Delete Column", action: #selector(deleteColumn(_:)), modifier: .control,
+                       includingShortcut: includingShortcuts)
         ]
+    }
+
+    /// A delete command with Numbers' shortcut: Command-Delete with
+    /// `modifier`, which the standard key bindings leave free.
+    private static func deleteItem(_ title: String, action: Selector, modifier: NSEvent.ModifierFlags,
+                                   includingShortcut: Bool) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: includingShortcut ? "\u{8}" : "")
+        item.keyEquivalentModifierMask = [.command, modifier]
+        return item
     }
 
     /// A right-click on a cell outside the selection puts the caret there

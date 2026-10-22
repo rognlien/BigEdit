@@ -54,7 +54,7 @@ extension ViewportView {
 
     /// The caret's visual row, that row's start and cell map, and the column
     /// the caret is in — a parked column included.
-    private func csvCaretPosition() -> (row: Int, rowStart: Int, map: CSVRowMap, column: Int)? {
+    func csvCaretPosition() -> (row: Int, rowStart: Int, map: CSVRowMap, column: Int)? {
         var result: (row: Int, rowStart: Int, map: CSVRowMap, column: Int)?
         if let layout, let caret = selection?.activeOffset {
             let row = layout.visualRow(forLogicalByteOffset: caret)
@@ -77,14 +77,14 @@ extension ViewportView {
         performEdit(replacing: lineEnd..<lineEnd, with: [])
     }
 
-    private enum CellChoice {
+    enum CellChoice {
         case last
         case index(Int)
     }
 
     /// Selects the chosen cell of `row`, or parks the caret in a column the
     /// row has no cell for. Off either end of the document it beeps.
-    private func moveToCell(inRow row: Int, column: CellChoice) {
+    func moveToCell(inRow row: Int, column: CellChoice) {
         guard let layout, row >= 0, row < layout.visualRowCount,
               let line = layout.visualLines(forRows: row..<(row + 1)).first,
               let map = csvRowMap(for: line) else {

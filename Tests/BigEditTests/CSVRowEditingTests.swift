@@ -251,11 +251,16 @@ final class CSVRowEditingTests: XCTestCase {
     func testTheTableMenuFollowsNumbers() {
         let items = ViewportView.csvTableItems(includingShortcuts: true)
 
-        XCTAssertEqual(items.map(\.title), ["Add Row Above", "Add Row Below", "", "Delete Row"])
-        let deleteRow = items.last!
+        XCTAssertEqual(items.map(\.title), ["Add Row Above", "Add Row Below", "Add Column Before",
+                                            "Add Column After", "", "Delete Row", "Delete Column"])
+        let deleteRow = items[5]
         XCTAssertEqual(deleteRow.keyEquivalent, "\u{8}")
         XCTAssertEqual(deleteRow.keyEquivalentModifierMask, [.command, .option], "Numbers' Option-Command-Delete")
-        XCTAssertTrue(items.dropLast().allSatisfy { $0.keyEquivalent.isEmpty },
+        let deleteColumn = items[6]
+        XCTAssertEqual(deleteColumn.keyEquivalent, "\u{8}")
+        XCTAssertEqual(deleteColumn.keyEquivalentModifierMask, [.command, .control],
+                       "Numbers' Control-Command-Delete")
+        XCTAssertTrue(items.prefix(4).allSatisfy { $0.keyEquivalent.isEmpty },
                       "Option-arrows stay the system's paragraph and word moves")
     }
 

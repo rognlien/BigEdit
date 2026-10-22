@@ -72,6 +72,9 @@ final class ViewportView: NSView {
     /// for a header click, which toggles the direction on the sorted column.
     var onCSVSortRequest: ((_ column: Int, _ descending: Bool?) -> Void)?
 
+    /// Asks the container to add or delete a column on every row.
+    var onCSVColumnChange: ((CSVColumnChange) -> Void)?
+
     /// The user resized a column, by dragging its edge or double-clicking it.
     var onCSVColumnResize: (() -> Void)?
 

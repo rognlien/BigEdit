@@ -47,6 +47,18 @@ extension ViewportView {
         }
     }
 
+    /// Replaces the whole table in one undoable step, in whatever encoding
+    /// the document is edited in: a column rewrite leaves every byte but the
+    /// delimiters and fields it adds or removes, so nothing is decoded.
+    func replaceEntireTable(with bytes: [UInt8]) {
+        if let document, isEditingAllowed, isCSVRenderingActive {
+            csvCaretColumn = nil
+            applyEdit(replacing: 0..<document.length, with: bytes, in: document)
+        } else {
+            NSSound.beep()
+        }
+    }
+
     /// Replaces `range` with `bytes`, collapses the caret to the end of the
     /// insertion — or `bytesAfterCaret` before it — and refreshes everything
     /// that depends on the content.

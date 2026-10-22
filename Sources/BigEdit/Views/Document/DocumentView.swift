@@ -144,6 +144,9 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
         viewport.onCSVSortRequest = { [weak self] column, descending in
             self?.sortCSV(byColumn: column, descending: descending)
         }
+        viewport.onCSVColumnChange = { [weak self] change in
+            self?.changeCSVColumns(change)
+        }
         viewport.onCSVColumnResize = { [weak self] in
             self?.rememberViewState()
         }
