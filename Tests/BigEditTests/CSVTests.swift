@@ -159,6 +159,11 @@ final class CSVTests: XCTestCase {
         XCTAssertEqual(layout?.columnWidths, [2, 12])
     }
 
+    func testCRLFRowsAreMeasuredOneByOne() {
+        let layout = columnLayout("id,name\r\n1,Ada Lovelace\r\n2,Alan\r\n", dialect: CSVDialect())
+        XCTAssertEqual(layout?.columnWidths, [2, 12])
+    }
+
     func testAlignedRowPadsToColumnWidths() {
         let layout = CSVColumnLayout(columnWidths: [3, 6])
         let row = layout.alignedRow(["1", "Ada"])

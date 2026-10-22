@@ -137,7 +137,8 @@ struct CSVColumnLayout: Equatable {
         let text = encoding.decode(bytes)
 
         var lines: [String] = []
-        for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
+        // A CRLF pair is one Character, so it has to be named as a separator.
+        for line in text.split(omittingEmptySubsequences: true, whereSeparator: { $0 == "\n" || $0 == "\r\n" }) {
             if isCut && lines.count >= sampleRowLimit {
                 break
             }
