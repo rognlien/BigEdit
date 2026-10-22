@@ -466,8 +466,8 @@ final class EditedLayout {
         }
 
         // Build the replacement span from the post-edit content.
-        let content = contentReader(alignedLower..<(alignedUpper + delta))
-        let newSpan = makeSpan(content: content, originalRange: originalLower..<originalUpper)
+        let newSpan = makeSpan(reading: alignedLower..<(alignedUpper + delta), with: contentReader,
+                               originalRange: originalLower..<originalUpper)
 
         // Splice the span list — dropping a span that covers nothing at all —
         // and re-derive the gaps between spans. Insertion order follows the
@@ -614,21 +614,35 @@ final class EditedLayout {
 
     // MARK: - Span construction
 
-    private func makeSpan(content: [UInt8], originalRange: Range<Int>) -> Span {
+    /// How much of an edited span is read at a time to find its lines, so
+    /// a huge insertion is never copied out whole.
+    private static let scanChunkLength = 4 * 1024 * 1024
+
+    private func makeSpan(reading range: Range<Int>, with contentReader: (Range<Int>) -> [UInt8],
+                          originalRange: Range<Int>) -> Span {
         var lineStarts: [Int] = []
-        if !content.isEmpty {
+        if !range.isEmpty {
             lineStarts.append(0)
         }
-        for (position, byte) in content.enumerated() where byte == 0x0A {
-            if position + 1 < content.count {
-                lineStarts.append(position + 1)
+        var endsWithNewline = false
+        var offset = range.lowerBound
+        while offset < range.upperBound {
+            let end = min(range.upperBound, offset + EditedLayout.scanChunkLength)
+            let chunk = contentReader(offset..<end)
+            for (position, byte) in chunk.enumerated() where byte == 0x0A {
+                let lineStart = offset - range.lowerBound + position + 1
+                if lineStart < range.count {
+                    lineStarts.append(lineStart)
+                }
             }
+            endsWithNewline = chunk.last == 0x0A
+            offset = end
         }
-        var span = Span(contentLength: content.count,
+        var span = Span(contentLength: range.count,
                         originalRange: originalRange,
                         localLineStartOffsets: lineStarts,
                         localRowOffsets: [],
-                        endsWithNewline: content.last == 0x0A,
+                        endsWithNewline: endsWithNewline,
                         visualRowCount: 0)
         rebuildSpanRows(&span)
         return span

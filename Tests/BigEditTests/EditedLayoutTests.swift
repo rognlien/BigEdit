@@ -66,6 +66,26 @@ final class EditedLayoutTests: XCTestCase {
         XCTAssertEqual(layout.gutterLineCount, 3, "the gutter still has to number the last row")
     }
 
+    /// An insertion is scanned for lines a few megabytes at a time; lines
+    /// ending on either side of a chunk boundary still come out as a fresh
+    /// layout of the same bytes has them.
+    func testAnInsertionLongerThanAScanChunkFindsEveryLine() {
+        let chunk = 4 * 1024 * 1024
+        var inserted = [UInt8](repeating: 0x61, count: chunk - 1) + [0x0A, 0x0A]
+        inserted += Array("bbb\nc".utf8)
+        var model = Array("x\n".utf8)
+        let layout = makeLayout(model)
+        edit(layout, &model, replace: 0..<0, with: inserted)
+        let fresh = makeLayout(model)
+
+        XCTAssertEqual(layout.documentLineCount, fresh.documentLineCount)
+        XCTAssertEqual(layout.visualRowCount, fresh.visualRowCount)
+        for offset in [0, chunk - 2, chunk - 1, chunk, chunk + 1, chunk + 4, model.count - 1] {
+            XCTAssertEqual(layout.logicalLineRange(containing: offset), fresh.logicalLineRange(containing: offset),
+                           "offset \(offset)")
+        }
+    }
+
     private struct NaiveLayout {
         struct Line {
             let start: Int
