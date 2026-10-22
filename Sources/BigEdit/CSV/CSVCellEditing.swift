@@ -90,9 +90,28 @@ enum CSVCellEditing {
     /// quote or the delimiter beyond it.
     static func deletion(backward: Bool, at caret: Int, inField field: [UInt8],
                          dialect: CSVDialect, encoding: TextEncoding) -> Range<Int>? {
-        let units = characterUnits(of: field, quote: quoteBytes(of: dialect, encoding: encoding),
-                                   isSingleByte: encoding.isSingleByte)
-        return backward ? units.last { $0.lowerBound < caret } : units.first { $0.upperBound > caret }
+        let quote = quoteBytes(of: dialect, encoding: encoding)
+        let units = characterUnits(of: field, quote: quote, isSingleByte: encoding.isSingleByte)
+        let unit = backward ? units.last { $0.lowerBound < caret } : units.first { $0.upperBound > caret }
+        let value = fieldValueRange(of: field, quote: quote)
+        return unit.map { widenedToCluster($0, backward: backward, in: field, value: value, quote: quote, encoding: encoding) }
+    }
+
+    /// `unit` widened to what one delete removes there — a whole emoji, or
+    /// a letter with its marks — unless that reaches past the value or
+    /// takes in a quote.
+    private static func widenedToCluster(_ unit: Range<Int>, backward: Bool, in field: [UInt8], value: Range<Int>,
+                                         quote: [UInt8], encoding: TextEncoding) -> Range<Int> {
+        let cluster: Range<Int>
+        if backward {
+            let length = encoding.backwardDeletionLength(endOf: field[value.lowerBound..<unit.upperBound]) ?? unit.count
+            cluster = (unit.upperBound - length)..<unit.upperBound
+        } else {
+            let length = encoding.forwardDeletionLength(startOf: field[unit.lowerBound..<value.upperBound]) ?? unit.count
+            cluster = unit.lowerBound..<(unit.lowerBound + length)
+        }
+        let fits = cluster.clamped(to: value) == cluster
+        return fits && (quote.isEmpty || field[cluster].firstRange(of: quote) == nil) ? cluster : unit
     }
 
     /// The field's value cut into what one delete removes: a character, or

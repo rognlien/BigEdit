@@ -42,6 +42,16 @@ final class CharacterDeletionTests: XCTestCase {
         return (viewport, document)
     }
 
+    private func makeCSVViewport(_ text: String, encoding: TextEncoding = .utf8,
+                                 caret: Int) -> (ViewportView, EditedDocument) {
+        let (viewport, document) = makeViewport(text, encoding: encoding, caret: caret)
+        let dialect = CSVDialect()
+        viewport.setCSVRendering(dialect: dialect,
+                                 columnLayout: CSVColumnLayout.measure(file: document.file, dialect: dialect,
+                                                                       encoding: encoding))
+        return (viewport, document)
+    }
+
     private func text(of document: EditedDocument) -> String {
         document.encoding.decode(document.bytes(in: 0..<document.length))
     }
@@ -167,5 +177,50 @@ final class CharacterDeletionTests: XCTestCase {
         viewport.deleteBackward(nil)
 
         XCTAssertEqual(text(of: document), "ab")
+    }
+
+    // MARK: - CSV cells
+
+    func testBackspaceInACellRemovesAWholeEmoji() {
+        let (viewport, document) = makeCSVViewport("a,x👍🏽\nb,c\n", caret: 11)
+
+        viewport.deleteBackward(nil)
+
+        XCTAssertEqual(text(of: document), "a,x\nb,c\n")
+    }
+
+    func testForwardDeleteInAQuotedCellRemovesAWholeFlag() {
+        let (viewport, document) = makeCSVViewport("a,\"🇳🇴,\"\n", caret: 3)
+
+        viewport.deleteForward(nil)
+
+        XCTAssertEqual(text(of: document), "a,\",\"\n")
+    }
+
+    func testBackspaceInACellRemovesAnIndicVowelSignAlone() {
+        let (viewport, document) = makeCSVViewport("a,कि\n", caret: 8)
+
+        viewport.deleteBackward(nil)
+
+        XCTAssertEqual(text(of: document), "a,क\n")
+    }
+
+    func testACellStartingWithAMarkStillStopsAtItsEdge() {
+        let (viewport, document) = makeCSVViewport("e,\u{301}x\n", caret: 4)
+
+        viewport.deleteBackward(nil)
+        XCTAssertEqual(text(of: document), "e,x\n")
+        viewport.deleteBackward(nil)
+
+        XCTAssertEqual(text(of: document), "e,x\n", "the delimiter is not deleted")
+    }
+
+    func testACellClusterNeverTakesInAQuote() {
+        let field = Array("\"a\"\"\u{301}\"".utf8)
+
+        let range = CSVCellEditing.deletion(backward: true, at: 6, inField: field,
+                                            dialect: CSVDialect(), encoding: .utf8)
+
+        XCTAssertEqual(range, 4..<6)
     }
 }
