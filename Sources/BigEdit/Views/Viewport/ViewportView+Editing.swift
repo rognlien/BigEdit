@@ -429,7 +429,7 @@ extension ViewportView {
 
     /// Inserts pasted or yanked text at the selection, unless the document's
     /// encoding cannot write it.
-    private func insertTextAtSelection(_ text: String) {
+    func insertTextAtSelection(_ text: String) {
         if let bytes = encodedForInsertion(normalizingLineEndings(of: text)) {
             insertBytesAtSelection(bytes)
         }
