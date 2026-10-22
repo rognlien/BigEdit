@@ -121,6 +121,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
             self?.removeUnusedPlaceholders()
             self?.removeStaleJournals()
         }
+        DispatchQueue.global(qos: .utility).async {
+            AddBuffer.removeLeftoverSpillFiles()
+        }
 
         // Check for updates on every launch (silent — only surfaces UI if an
         // update is available), in addition to Sparkle's scheduled checks,
