@@ -355,8 +355,13 @@ extension ViewportView {
     }
 
     @objc func paste(_ sender: Any?) {
+        paste(from: .general)
+    }
+
+    /// Inserts the text on `pasteboard` at the selection.
+    func paste(from pasteboard: NSPasteboard) {
         if isEditingAllowed, selection != nil,
-           let text = NSPasteboard.general.string(forType: .string) {
+           let text = pasteboard.string(forType: .string) {
             insertTextAtSelection(text)
         } else {
             NSSound.beep()
