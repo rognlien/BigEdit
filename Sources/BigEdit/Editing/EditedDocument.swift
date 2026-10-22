@@ -280,6 +280,19 @@ final class EditedDocument {
             ?? previousCharacterOffset(before: offset)
     }
 
+    /// The logical offset Backspace deletes back to from `offset`.
+    func previousDeletionOffset(before offset: Int) -> Int {
+        encoding.backwardDeletionLength(endOf: bytes(in: lookBehindRange(before: offset))).map { max(0, offset - $0) }
+            ?? previousCharacterOffset(before: offset)
+    }
+
+    /// The logical offset Forward Delete deletes up to from `offset`.
+    func nextDeletionOffset(after offset: Int) -> Int {
+        let end = min(length, offset + EditedDocument.graphemeLookLength)
+        return encoding.forwardDeletionLength(startOf: bytes(in: offset..<end)).map { min(length, offset + $0) }
+            ?? nextCharacterOffset(after: offset)
+    }
+
     /// The bytes a step back from `offset` looks at, starting on a
     /// character boundary.
     private func lookBehindRange(before offset: Int) -> Range<Int> {

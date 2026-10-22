@@ -167,7 +167,7 @@ extension ViewportView {
             deleteCharacterInCell(backward: true, at: selection.activeOffset, in: row)
         } else if selection.activeOffset > 0 {
             let caret = selection.activeOffset
-            var start = document.previousCharacterOffset(before: caret)
+            var start = document.previousDeletionOffset(before: caret)
             // A CRLF pair deletes as one unit.
             if document.byte(at: start) == 0x0A, start > 0,
                document.byte(at: start - 1) == 0x0D {
@@ -196,7 +196,7 @@ extension ViewportView {
             deleteCharacterInCell(backward: false, at: selection.activeOffset, in: row)
         } else if selection.activeOffset < document.length {
             let caret = selection.activeOffset
-            var end = document.nextCharacterOffset(after: caret)
+            var end = document.nextDeletionOffset(after: caret)
             // A CRLF pair deletes as one unit.
             if document.byte(at: caret) == 0x0D, document.byte(at: end) == 0x0A {
                 end += 1
