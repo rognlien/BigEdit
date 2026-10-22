@@ -232,6 +232,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation,
     func applicationWillTerminate(_ notification: Notification) {
         // Capture final scroll positions for next launch.
         persistSession()
+        documents.forEach { $0.view.flushJournal() }
     }
 
     /// Sparkle relaunches the app after installing an update without a normal

@@ -68,4 +68,10 @@ extension DocumentView {
     func discardJournal() {
         viewport.document?.journal?.discard()
     }
+
+    /// Writes the journal through to permanent storage now, for when the
+    /// app quits or the document closes with it kept.
+    func flushJournal() {
+        viewport.document?.journal?.flush()
+    }
 }

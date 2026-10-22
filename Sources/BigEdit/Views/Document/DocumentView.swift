@@ -319,6 +319,7 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
         statisticsScan = nil
         statisticsRefreshTimer?.invalidate()
         editModel.clear()
+        flushJournal()
     }
 
     override func setFrameSize(_ newSize: NSSize) {
