@@ -307,13 +307,18 @@ extension ViewportView {
     /// line — the line ending itself when the caret is already there — and
     /// keeps the deleted text for Control-Y.
     override func deleteToEndOfParagraph(_ sender: Any?) {
-        if let document, let range = killRange(), isEditingAllowed {
+        kill(killRange()) { self.performEdit(replacing: $0, with: []) }
+    }
+
+    /// Keeps the text in `range` for Control-Y, then removes it with `delete`.
+    private func kill(_ range: Range<Int>?, deletingWith delete: (Range<Int>) -> Void) {
+        if let document, let range, isEditingAllowed {
             if range.count > 64 * 1024 * 1024 {
                 presentSelectionTooLarge()
             } else if !range.isEmpty {
                 let bytes = document.displayBytes(in: range)
                 ViewportView.killBuffer = ViewportView.pasteboardText(from: bytes, encoding: textEncoding)
-                performEdit(replacing: range, with: [])
+                delete(range)
             }
         } else {
             NSSound.beep()
