@@ -58,6 +58,26 @@ extension ViewportView {
         needsDisplay = true
     }
 
+    func moveCaretByWord(forward: Bool, extend: Bool) {
+        ensureCaret()
+        let origin = wordMoveOrigin(forward: forward, extend: extend)
+        let target = forward ? nextWordOffset(after: origin) : previousWordOffset(before: origin)
+        desiredCaretX = nil
+        setCaret(to: target, extend: extend)
+        scrollByteIntoView(target)
+        needsDisplay = true
+    }
+
+    /// Where a word move starts: the caret, or the edge of the selection it
+    /// collapses towards.
+    private func wordMoveOrigin(forward: Bool, extend: Bool) -> Int {
+        var result = selection?.activeOffset ?? 0
+        if !extend, let range = selectionByteRange {
+            result = forward ? range.upperBound : range.lowerBound
+        }
+        return result
+    }
+
     /// The logical line containing `offset`, excluding its line ending. A
     /// wrapped line counts as one line, as in other Mac text views.
     func lineContentRange(containing offset: Int) -> Range<Int> {
@@ -117,6 +137,40 @@ extension ViewportView {
 
     override func moveBackwardAndModifySelection(_ sender: Any?) {
         moveCaretHorizontally(forward: false, extend: true)
+    }
+
+    // Option-Left and Option-Right are bound to these in the standard key
+    // bindings, and Option-Control-F and Option-Control-B to the next four.
+    override func moveWordLeft(_ sender: Any?) {
+        moveCaretByWord(forward: false, extend: false)
+    }
+
+    override func moveWordLeftAndModifySelection(_ sender: Any?) {
+        moveCaretByWord(forward: false, extend: true)
+    }
+
+    override func moveWordRight(_ sender: Any?) {
+        moveCaretByWord(forward: true, extend: false)
+    }
+
+    override func moveWordRightAndModifySelection(_ sender: Any?) {
+        moveCaretByWord(forward: true, extend: true)
+    }
+
+    override func moveWordForward(_ sender: Any?) {
+        moveCaretByWord(forward: true, extend: false)
+    }
+
+    override func moveWordForwardAndModifySelection(_ sender: Any?) {
+        moveCaretByWord(forward: true, extend: true)
+    }
+
+    override func moveWordBackward(_ sender: Any?) {
+        moveCaretByWord(forward: false, extend: false)
+    }
+
+    override func moveWordBackwardAndModifySelection(_ sender: Any?) {
+        moveCaretByWord(forward: false, extend: true)
     }
 
     override func moveUp(_ sender: Any?) {

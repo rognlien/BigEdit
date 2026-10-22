@@ -76,6 +76,18 @@ final class EmacsKeyBindingTests: XCTestCase {
         XCTAssertEqual(viewport.caretByteOffset, 4)
     }
 
+    func testOptionControlFAndBMoveByWord() {
+        let (viewport, _) = makeViewport("one, two three", caret: 0)
+
+        pressControl("f", option: true, in: viewport)
+        pressControl("f", option: true, in: viewport)
+        XCTAssertEqual(viewport.caretByteOffset, 8)
+        pressControl("b", option: true, in: viewport)
+        XCTAssertEqual(viewport.caretByteOffset, 5)
+        pressControl("F", option: true, in: viewport)
+        XCTAssertEqual(viewport.selectionByteRange, 5..<8)
+    }
+
     func testControlNAndControlPMoveBetweenLines() {
         let (viewport, _) = makeViewport("one\ntwo\n", caret: 1)
 
