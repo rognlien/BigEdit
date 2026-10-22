@@ -206,6 +206,19 @@ extension ViewportView {
         moveCaretToLineBoundary(end: true, extend: true)
     }
 
+    // Option-Shift-Up and Option-Shift-Down are bound to these in the
+    // standard key bindings: to the start or end of the line, or on to the
+    // previous or next one from there.
+    override func moveParagraphBackwardAndModifySelection(_ sender: Any?) {
+        moveCaretHorizontally(forward: false, extend: true)
+        moveCaretToLineBoundary(end: false, extend: true)
+    }
+
+    override func moveParagraphForwardAndModifySelection(_ sender: Any?) {
+        moveCaretHorizontally(forward: true, extend: true)
+        moveCaretToLineBoundary(end: true, extend: true)
+    }
+
     func moveCaretToDocumentBoundary(end: Bool, extend: Bool) {
         ensureCaret()
         let target = end ? (document?.length ?? 0) : 0

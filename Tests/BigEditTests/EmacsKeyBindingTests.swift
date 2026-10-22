@@ -273,6 +273,30 @@ final class EmacsKeyBindingTests: XCTestCase {
         XCTAssertEqual(viewport.caretByteOffset, 3)
     }
 
+    func testOptionShiftUpAndDownSelectByParagraphAsNSTextViewDoes() {
+        let sample = "one\ntwo\n\nthree"
+        for caret in 0...sample.utf8.count {
+            for forward in [true, false] {
+                let (viewport, _) = makeViewport(sample, caret: caret)
+                let view = NSTextView(frame: NSRect(x: 0, y: 0, width: 600, height: 200))
+                view.string = sample
+                view.setSelectedRange(NSRange(location: caret, length: 0))
+                for _ in 0..<2 {
+                    if forward {
+                        viewport.moveParagraphForwardAndModifySelection(nil)
+                        view.moveParagraphForwardAndModifySelection(nil)
+                    } else {
+                        viewport.moveParagraphBackwardAndModifySelection(nil)
+                        view.moveParagraphBackwardAndModifySelection(nil)
+                    }
+                }
+
+                let expected = Range(view.selectedRange())!
+                XCTAssertEqual(viewport.selectionByteRange ?? caret..<caret, expected, "from \(caret)")
+            }
+        }
+    }
+
     func testControlYYanksTheKilledText() {
         let (viewport, document) = makeViewport("one two\nthree\n", caret: 3)
         viewport.deleteToEndOfParagraph(nil)
