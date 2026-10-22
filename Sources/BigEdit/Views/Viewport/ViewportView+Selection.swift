@@ -41,7 +41,9 @@ extension ViewportView {
         // because selecting and copying many GB would try to build a huge
         // string on the pasteboard.
         let menu = NSMenu()
-        addCSVSortItems(to: menu, at: convert(event.locationInWindow, from: nil))
+        let point = convert(event.locationInWindow, from: nil)
+        placeCaretForCSVContextMenu(at: point)
+        addCSVSortItems(to: menu, at: point)
         menu.addItem(NSMenuItem(
             title: "Cut",
             action: #selector(NSText.cut(_:)),
@@ -57,6 +59,7 @@ extension ViewportView {
             action: #selector(NSText.paste(_:)),
             keyEquivalent: ""
         ))
+        addCSVTableItems(to: menu)
         return menu
     }
 

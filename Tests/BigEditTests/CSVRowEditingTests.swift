@@ -247,4 +247,50 @@ final class CSVRowEditingTests: XCTestCase {
 
         XCTAssertEqual(text(of: document, encoding: .windows1252), "navn;by\nÆgir;Bø\n")
     }
+
+    func testTheTableMenuFollowsNumbers() {
+        let items = ViewportView.csvTableItems(includingShortcuts: true)
+
+        XCTAssertEqual(items.map(\.title), ["Add Row Above", "Add Row Below", "", "Delete Row"])
+        let deleteRow = items.last!
+        XCTAssertEqual(deleteRow.keyEquivalent, "\u{8}")
+        XCTAssertEqual(deleteRow.keyEquivalentModifierMask, [.command, .option], "Numbers' Option-Command-Delete")
+        XCTAssertTrue(items.dropLast().allSatisfy { $0.keyEquivalent.isEmpty },
+                      "Option-arrows stay the system's paragraph and word moves")
+    }
+
+    func testTheContextMenuOffersTheTableItemsOnlyUnderColumns() {
+        let (viewport, _) = makeViewport("name,age\nbob,2\n", caret: 0)
+        let csvMenu = NSMenu()
+        viewport.addCSVTableItems(to: csvMenu)
+        viewport.setCSVRendering(dialect: nil, columnLayout: nil)
+        let textMenu = NSMenu()
+        viewport.addCSVTableItems(to: textMenu)
+
+        XCTAssertTrue(csvMenu.items.contains { $0.action == #selector(ViewportView.addRowBelow(_:)) })
+        XCTAssertEqual(csvMenu.items.first { $0.action == #selector(ViewportView.deleteRow(_:)) }?.keyEquivalent, "")
+        XCTAssertTrue(textMenu.items.isEmpty)
+    }
+
+    func testARightClickOutsideTheSelectionPutsTheCaretInTheClickedRow() {
+        let (viewport, _) = makeViewport("name,age\nbob,2\nann,3\n", caret: 2)
+        let annRow = NSPoint(x: viewport.csvDividerPositions()[0] - 4, y: 2.5 * viewport.lineHeight)
+
+        viewport.placeCaretForCSVContextMenu(at: annRow)
+
+        let caret = viewport.selection!.activeOffset
+        XCTAssertEqual(viewport.layout?.visualRow(forLogicalByteOffset: caret), 2)
+        XCTAssertTrue(viewport.selection!.isEmpty)
+    }
+
+    func testARightClickInsideTheSelectionKeepsIt() {
+        let (viewport, _) = makeViewport("name,age\nbob,2\nann,3\n", caret: 0)
+        let selected = offset(of: "name,age\n")..<offset(of: "name,age\nbob,2\nann")
+        viewport.selection = TextSelection(anchorOffset: selected.lowerBound, activeOffset: selected.upperBound)
+        let bobRow = NSPoint(x: viewport.csvDividerPositions()[0] - 4, y: 1.5 * viewport.lineHeight)
+
+        viewport.placeCaretForCSVContextMenu(at: bobRow)
+
+        XCTAssertEqual(viewport.selection?.range, selected)
+    }
 }

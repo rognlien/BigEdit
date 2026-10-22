@@ -314,6 +314,12 @@ extension AppDelegate {
         ))
         editMenuItem.submenu = editMenu
 
+        let tableMenuItem = NSMenuItem()
+        mainMenu.addItem(tableMenuItem)
+        let tableMenu = NSMenu(title: "Table")
+        ViewportView.csvTableItems(includingShortcuts: true).forEach(tableMenu.addItem)
+        tableMenuItem.submenu = tableMenu
+
         let viewMenuItem = NSMenuItem()
         mainMenu.addItem(viewMenuItem)
         let viewMenu = NSMenu(title: "View")

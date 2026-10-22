@@ -121,4 +121,42 @@ extension ViewportView {
         performEdit(replacing: offset..<offset, with: bytes, bytesAfterCaret: bytesAfterCaret)
         document?.undoStack.breakCoalescing()
     }
+
+    /// The table commands, in Numbers' order, after the clipboard ones of a
+    /// cell's context menu.
+    func addCSVTableItems(to menu: NSMenu) {
+        if isCSVRenderingActive {
+            menu.addItem(NSMenuItem.separator())
+            ViewportView.csvTableItems(includingShortcuts: false).forEach(menu.addItem)
+        }
+    }
+
+    /// The items of the Table menu, which the context menu repeats without
+    /// their shortcuts. They go up the responder chain to the viewport.
+    static func csvTableItems(includingShortcuts: Bool) -> [NSMenuItem] {
+        let deleteRowItem = NSMenuItem(title: "Delete Row", action: #selector(deleteRow(_:)),
+                                       keyEquivalent: includingShortcuts ? "\u{8}" : "")
+        deleteRowItem.keyEquivalentModifierMask = [.command, .option]
+        return [
+            NSMenuItem(title: "Add Row Above", action: #selector(addRowAbove(_:)), keyEquivalent: ""),
+            NSMenuItem(title: "Add Row Below", action: #selector(addRowBelow(_:)), keyEquivalent: ""),
+            NSMenuItem.separator(),
+            deleteRowItem
+        ]
+    }
+
+    /// A right-click on a cell outside the selection puts the caret there
+    /// first, as Numbers selects the cell it opens the menu on, so the row
+    /// commands act on the row clicked.
+    func placeCaretForCSVContextMenu(at point: NSPoint) {
+        if isCSVRenderingActive, point.y >= pinnedHeaderHeight {
+            let offset = byteOffset(at: point)
+            let isInSelection = selection.map { $0.range.contains(offset) || $0.range.upperBound == offset } ?? false
+            if !isInSelection {
+                selection = TextSelection(anchorOffset: offset, activeOffset: offset)
+                csvCaretColumn = csvVirtualColumn(at: point)
+                needsDisplay = true
+            }
+        }
+    }
 }
