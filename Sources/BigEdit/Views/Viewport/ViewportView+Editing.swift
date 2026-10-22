@@ -293,6 +293,13 @@ extension ViewportView {
         insertBytesAtSelection([0x09])
     }
 
+    /// Option-Return types a line ending even under CSV columns, where
+    /// Return moves down a row; in a cell it is quoted, as a pasted one is.
+    /// Control-O sends this and then moves back over it.
+    override func insertNewlineIgnoringFieldEditor(_ sender: Any?) {
+        insertBytesAtSelection(document?.newlineBytes ?? [0x0A])
+    }
+
     override func insertBacktab(_ sender: Any?) {
         if isCSVRenderingActive {
             moveToAdjacentCSVCell(forward: false)

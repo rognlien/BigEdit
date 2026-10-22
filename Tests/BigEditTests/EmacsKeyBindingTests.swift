@@ -251,6 +251,28 @@ final class EmacsKeyBindingTests: XCTestCase {
         XCTAssertEqual(text(of: document), "ab,dc\n")
     }
 
+    func testControlOOpensALineAfterTheCaret() {
+        let (viewport, document) = makeViewport("abc\n", caret: 1)
+
+        pressControl("o", in: viewport)
+
+        XCTAssertEqual(text(of: document), "a\nbc\n")
+        XCTAssertEqual(viewport.caretByteOffset, 1)
+    }
+
+    func testOptionReturnTypesALineBreakIntoACSVCell() {
+        let (viewport, document) = makeViewport("ab,cd\n", caret: 1)
+        let dialect = CSVDialect()
+        viewport.setCSVRendering(dialect: dialect,
+                                 columnLayout: CSVColumnLayout.measure(file: document.file, dialect: dialect,
+                                                                       encoding: .utf8))
+
+        viewport.insertNewlineIgnoringFieldEditor(nil)
+
+        XCTAssertEqual(text(of: document), "\"a\nb\",cd\n")
+        XCTAssertEqual(viewport.caretByteOffset, 3)
+    }
+
     func testControlYYanksTheKilledText() {
         let (viewport, document) = makeViewport("one two\nthree\n", caret: 3)
         viewport.deleteToEndOfParagraph(nil)
