@@ -401,6 +401,19 @@ final class EditJournalTests: XCTestCase {
         XCTAssertEqual(one, EditJournal.directory(for: "/a/b.txt", in: root), "stable across runs")
     }
 
+    func testInsertionsLongerThanAReadChunkComeBack() {
+        let (first, url) = openFresh("a\n")
+        let long = [UInt8](repeating: 0x78, count: 4 * 1024 * 1024 + 3)
+        first.replace(1..<1, with: long)
+        first.replace(0..<0, with: Array("<".utf8))
+
+        let (second, recovered) = reopenAndRecover(url)
+        XCTAssertTrue(recovered)
+        XCTAssertEqual(second.length, first.length)
+        XCTAssertEqual(second.bytes(in: 0..<3), Array("<ax".utf8))
+        XCTAssertEqual(second.bytes(in: (second.length - 3)..<second.length), Array("xx\n".utf8))
+    }
+
     // MARK: - Flushing
 
     func testEditsAreFlushedOnceTypingPauses() {

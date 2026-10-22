@@ -168,7 +168,9 @@ final class EditedDocument {
         }
         var applied = true
         isReplayingJournal = true
-        addBuffer.append(journal.loadBytes())
+        journal.forEachRecordedChunk { chunk in
+            addBuffer.append(chunk)
+        }
         for operation in operations where applied {
             let addedCount = addBuffer.count
             let fits = operation.range.upperBound <= length && operation.pieces.allSatisfy { piece in

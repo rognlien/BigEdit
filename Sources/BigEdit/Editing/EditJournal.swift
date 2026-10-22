@@ -360,7 +360,12 @@ final class EditJournal {
         if bytesHandle == nil {
             bytesHandle = EditJournal.appendHandle(for: bytesURL)
         }
-        bytesHandle?.write(Data(bytes))
+        bytes.withUnsafeBytes { buffer in
+            if let base = buffer.baseAddress {
+                let mutable = UnsafeMutableRawPointer(mutating: base)
+                bytesHandle?.write(Data(bytesNoCopy: mutable, count: buffer.count, deallocator: .none))
+            }
+        }
         flushSchedule.noteWrite()
     }
 
@@ -459,10 +464,19 @@ final class EditJournal {
 
     // MARK: - Reading back
 
-    /// Every inserted byte, in append order.
-    func loadBytes() -> [UInt8] {
-        (try? Data(contentsOf: bytesURL)).map(Array.init) ?? []
+    /// Calls `body` with every inserted byte, in append order, a few
+    /// megabytes at a time.
+    func forEachRecordedChunk(_ body: ([UInt8]) -> Void) {
+        let handle = try? FileHandle(forReadingFrom: bytesURL)
+        var chunk = handle?.readData(ofLength: EditJournal.readChunkLength) ?? Data()
+        while !chunk.isEmpty {
+            body(Array(chunk))
+            chunk = handle?.readData(ofLength: EditJournal.readChunkLength) ?? Data()
+        }
+        handle?.closeFile()
     }
+
+    private static let readChunkLength = 4 * 1024 * 1024
 
     /// The recorded splices, in order — or `nil` if the journal is unreadable
     /// or was marked unreplayable. A partial record at the end (a crash while
