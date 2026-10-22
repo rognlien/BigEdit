@@ -332,6 +332,24 @@ final class EmacsKeyBindingTests: XCTestCase {
         XCTAssertEqual(viewport.scrollRow, 0, accuracy: 0.01)
     }
 
+    func testControlLCentersTheCaretRow() {
+        let (viewport, _) = makeViewport(numberedLines(200), caret: 4 * 100)
+
+        pressControl("l", in: viewport)
+
+        let middle = viewport.scrollRow + Double(viewport.rowsPerPage - 1) / 2
+        XCTAssertEqual(middle, 100, accuracy: 0.01)
+    }
+
+    func testControlLNearTheTopKeepsTheFirstRowInPlace() {
+        let (viewport, _) = makeViewport(numberedLines(200), caret: 4 * 2)
+        viewport.setScrollRow(50)
+
+        viewport.centerSelectionInVisibleArea(nil)
+
+        XCTAssertEqual(viewport.scrollRow, 0, accuracy: 0.01)
+    }
+
     func testControlYYanksTheKilledText() {
         let (viewport, document) = makeViewport("one two\nthree\n", caret: 3)
         viewport.deleteToEndOfParagraph(nil)

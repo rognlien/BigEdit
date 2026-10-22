@@ -206,6 +206,16 @@ extension ViewportView {
         moveCaretToLineBoundary(end: true, extend: true)
     }
 
+    /// Control-L: scrolls the row with the caret to the middle of the view.
+    override func centerSelectionInVisibleArea(_ sender: Any?) {
+        if let layout, let selection {
+            let row = layout.visualRow(forLogicalByteOffset: selection.activeOffset)
+            setScrollRow(Double(row) - Double(rowsPerPage - 1) / 2)
+        } else {
+            NSSound.beep()
+        }
+    }
+
     /// Scrolls a page and moves the caret the same number of rows, so it
     /// stays where it was on screen.
     func moveCaretByPage(forward: Bool, extend: Bool) {
