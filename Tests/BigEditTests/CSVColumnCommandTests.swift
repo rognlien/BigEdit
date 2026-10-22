@@ -120,6 +120,60 @@ final class CSVColumnCommandTests: XCTestCase {
         XCTAssertEqual(view.viewport.csvColumnLayout?.columnWidths, [1, 11, 1])
     }
 
+    private func storedWidths(of view: DocumentView) -> [Int: Int]? {
+        view.viewStateStore.state(forPath: view.mappedFile!.path)?.columnWidths
+    }
+
+    func testUnsavedColumnChangesRememberTheWidthsThatFitTheFileOnDisk() {
+        let view = open("a,b,c\n1,2,3\n")
+        view.viewport.applyCSVChosenColumnWidths([2: 15])
+        view.viewport.onCSVColumnResize?()
+        placeCaret(view, at: 0)
+
+        view.viewport.addColumnBefore(nil)
+        waitForText(",a,b,c\n,1,2,3\n", in: view)
+        XCTAssertEqual(view.viewport.csvChosenColumnWidths[3], 15, "on screen the width moved with c")
+        XCTAssertEqual(storedWidths(of: view), [2: 15], "on disk c is still the third column")
+
+        view.viewport.applyCSVChosenColumnWidths([0: 4])
+        view.viewport.onCSVColumnResize?()
+        XCTAssertEqual(storedWidths(of: view), [2: 15], "a resize waits for the change to be saved")
+    }
+
+    func testUndoingTheChangeRemembersWidthsAgain() {
+        let view = open("a,b,c\n1,2,3\n")
+        placeCaret(view, at: 0)
+        view.viewport.deleteColumn(nil)
+        waitForText("b,c\n2,3\n", in: view)
+
+        view.viewport.undo(nil)
+        view.viewport.applyCSVChosenColumnWidths([1: 9])
+        view.viewport.onCSVColumnResize?()
+
+        XCTAssertEqual(view.unsavedColumnChanges, 0)
+        XCTAssertEqual(storedWidths(of: view), [1: 9])
+    }
+
+    func testSavingMakesTheChangedColumnsTheOnesOnDisk() {
+        let view = open("a,b\n1,2\n")
+        placeCaret(view, at: 0)
+        view.viewport.addColumnAfter(nil)
+        waitForText("a,,b\n1,,2\n", in: view)
+        let document = view.viewport.document!
+        let path = view.mappedFile!.path
+        try? Data(document.bytes(in: 0..<document.length))
+            .write(to: URL(fileURLWithPath: path), options: .atomic)
+        let saved = MappedFile(path: path)!
+        let index = LineIndex()
+        index.buildSynchronously(from: saved)
+
+        view.load(file: saved, index: index, inheritingHistory: true, keepingViewMode: true)
+        view.viewport.applyCSVChosenColumnWidths([2: 7])
+        view.viewport.onCSVColumnResize?()
+
+        XCTAssertEqual(storedWidths(of: view), [2: 7])
+    }
+
     func testColumnsChangeInWindows1252() {
         let view = open("navn,by\nÅse,Ørsta\n", encoding: .windows1252)
         placeCaret(view, at: 1)

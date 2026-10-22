@@ -65,6 +65,7 @@ extension DocumentView {
             }
             viewport.setScrollRow(scrollRow)
             viewport.moveToCell(inRow: caretRow, column: .index(selectedColumn(after: change)))
+            unsavedColumnChanges += 1
             rememberViewState()
         }
     }

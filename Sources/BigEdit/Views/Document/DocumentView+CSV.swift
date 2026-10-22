@@ -20,6 +20,8 @@ extension DocumentView {
         applyCSVRendering(enabled: bar.mode == .csv, dialect: dialect)
         if keepsColumns {
             viewport.applyCSVChosenColumnWidths(chosenWidths)
+        } else {
+            columnWidthsOnDisk = [:]
         }
         rememberViewState()
     }

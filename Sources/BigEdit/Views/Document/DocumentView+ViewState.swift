@@ -5,11 +5,17 @@ import AppKit
 /// language.
 extension DocumentView {
 
-    /// Stores the current view state under the file's path.
+    /// Stores the current view state under the file's path. While column
+    /// changes are unsaved, the widths stored are the ones that fit the file
+    /// on disk, so a document closed without saving, or a change undone,
+    /// never leaves them shifted against its columns.
     func rememberViewState() {
+        if unsavedColumnChanges == 0 {
+            columnWidthsOnDisk = viewport.csvChosenColumnWidths
+        }
         if let path = mappedFile?.path {
             let state = DocumentViewState(mode: formatBar.mode, dialect: formatBar.dialect,
-                                          columnWidths: viewport.csvChosenColumnWidths,
+                                          columnWidths: columnWidthsOnDisk,
                                           language: chosenLanguage)
             viewStateStore.store(state, forPath: path)
         }

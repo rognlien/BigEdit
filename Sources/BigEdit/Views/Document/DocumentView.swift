@@ -51,6 +51,15 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
     /// widths can be re-measured when an option changes.
     var mappedFile: MappedFile?
 
+    /// Column changes applied since the file on disk was last read or
+    /// written: up with each change and redo, down with each undo, which
+    /// can reach back past a save.
+    var unsavedColumnChanges = 0
+
+    /// The resized widths as they fit the file on disk, which is what is
+    /// remembered while column changes are unsaved.
+    var columnWidthsOnDisk: [Int: Int] = [:]
+
     /// The language detected for the current file.
     var detectedLanguage = Language.plain
 
@@ -147,7 +156,8 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
         viewport.onCSVColumnChange = { [weak self] change in
             self?.changeCSVColumns(change)
         }
-        viewport.onCSVColumnChangeReplay = { [weak self] _ in
+        viewport.onCSVColumnChangeReplay = { [weak self] isUndo in
+            self?.unsavedColumnChanges += isUndo ? -1 : 1
             self?.rememberViewState()
         }
         viewport.onCSVColumnResize = { [weak self] in
@@ -175,6 +185,7 @@ final class DocumentView: NSView, FindBarDelegate, FormatBarDelegate {
         let previousMode = formatBar.mode
         let previousDialect = formatBar.dialect
         let previousLanguage = keepingViewMode ? chosenLanguage : nil
+        unsavedColumnChanges = 0
         resetSearch()
         editModel.clear()
         replaceAllScan?.cancel()
