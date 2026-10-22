@@ -350,6 +350,16 @@ final class EmacsKeyBindingTests: XCTestCase {
         XCTAssertEqual(viewport.scrollRow, 0, accuracy: 0.01)
     }
 
+    func testControlQuoteTypesAStraightQuote() {
+        let (viewport, document) = makeViewport("ab", caret: 1)
+
+        viewport.insertSingleQuoteIgnoringSubstitution(nil)
+        viewport.insertDoubleQuoteIgnoringSubstitution(nil)
+
+        XCTAssertEqual(text(of: document), "a'\"b")
+        XCTAssertEqual(viewport.caretByteOffset, 3)
+    }
+
     func testControlYYanksTheKilledText() {
         let (viewport, document) = makeViewport("one two\nthree\n", caret: 3)
         viewport.deleteToEndOfParagraph(nil)

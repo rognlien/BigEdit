@@ -312,6 +312,17 @@ extension ViewportView {
         insertBytesAtSelection(document?.newlineBytes ?? [0x0A])
     }
 
+    // Control-' and Control-" are bound to these in the standard key
+    // bindings, for a straight quote where typing would curl it. Nothing
+    // curls quotes here, so they type the quote.
+    override func insertSingleQuoteIgnoringSubstitution(_ sender: Any?) {
+        insertText("'", replacementRange: NSRange(location: NSNotFound, length: 0))
+    }
+
+    override func insertDoubleQuoteIgnoringSubstitution(_ sender: Any?) {
+        insertText("\"", replacementRange: NSRange(location: NSNotFound, length: 0))
+    }
+
     override func insertBacktab(_ sender: Any?) {
         if isCSVRenderingActive {
             moveToAdjacentCSVCell(forward: false)
