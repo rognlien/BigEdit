@@ -145,4 +145,73 @@ final class WordMovementTests: XCTestCase {
         viewport.moveWordBackward(nil)
         XCTAssertEqual(viewport.caretByteOffset, 5)
     }
+
+    // MARK: - Deleting by word
+
+    private func text(of document: EditedDocument) -> String {
+        String(decoding: document.bytes(in: 0..<document.length), as: UTF8.self)
+    }
+
+    func testOptionBackspaceDeletesWhatNSTextViewDeletes() {
+        for sample in samples {
+            for position in caretPositions(in: sample) {
+                let (viewport, document) = makeViewport(sample, caret: position.byte)
+                let view = textView(sample, selection: NSRange(location: position.utf16, length: 0))
+
+                viewport.deleteWordBackward(nil)
+                view.deleteWordBackward(nil)
+
+                XCTAssertEqual(text(of: document), view.string, "from \(position.utf16) in \(sample.debugDescription)")
+            }
+        }
+    }
+
+    func testOptionDeleteDeletesWhatNSTextViewDeletes() {
+        for sample in samples {
+            for position in caretPositions(in: sample) {
+                let (viewport, document) = makeViewport(sample, caret: position.byte)
+                let view = textView(sample, selection: NSRange(location: position.utf16, length: 0))
+
+                viewport.deleteWordForward(nil)
+                view.deleteWordForward(nil)
+
+                XCTAssertEqual(text(of: document), view.string, "from \(position.utf16) in \(sample.debugDescription)")
+            }
+        }
+    }
+
+    func testOptionBackspaceDeletesASelectionAsItIs() {
+        let (viewport, document) = makeViewport("one two three", caret: 0)
+        viewport.selection = TextSelection(anchorOffset: 5, activeOffset: 9)
+
+        viewport.deleteWordBackward(nil)
+
+        XCTAssertEqual(text(of: document), "one three")
+    }
+
+    func testAnOptionBackspaceRunUndoesInOneStep() {
+        let (viewport, document) = makeViewport("one two three", caret: 13)
+
+        viewport.deleteWordBackward(nil)
+        viewport.deleteWordBackward(nil)
+        XCTAssertEqual(text(of: document), "one ")
+        viewport.undo(nil)
+
+        XCTAssertEqual(text(of: document), "one two three")
+    }
+
+    func testOptionBackspaceInACSVCellKeepsTheDelimiter() {
+        let (viewport, document) = makeViewport("ab,cd ef\n", caret: 3)
+        let dialect = CSVDialect()
+        viewport.setCSVRendering(dialect: dialect,
+                                 columnLayout: CSVColumnLayout.measure(file: document.file, dialect: dialect,
+                                                                       encoding: .utf8))
+
+        viewport.deleteWordBackward(nil)
+
+        XCTAssertEqual(text(of: document), ",cd ef\n")
+        viewport.selection = TextSelection(anchorOffset: 1, activeOffset: 1)
+        viewport.deleteWordForward(nil)
+        XCTAssertEqual(text(of: document), ", ef\n")
+    }
 }

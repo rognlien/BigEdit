@@ -205,6 +205,33 @@ extension ViewportView {
         }
     }
 
+    // Option-Backspace and Option-Delete are bound to these in the standard
+    // key bindings.
+    override func deleteWordBackward(_ sender: Any?) {
+        deleteSelectionOrToCaret { self.previousWordOffset(before: $0, skippingPunctuation: false) }
+    }
+
+    override func deleteWordForward(_ sender: Any?) {
+        deleteSelectionOrToCaret { self.nextWordOffset(after: $0, skippingPunctuation: false) }
+    }
+
+    /// Deletes the selection, or from the caret to `boundary(caret)`. Under
+    /// CSV columns that clears cell content and keeps the delimiters.
+    private func deleteSelectionOrToCaret(_ boundary: (Int) -> Int) {
+        if hasColumnSelectionContent {
+            deleteColumnSelection()
+        } else if let selection {
+            let range = selection.isEmpty ? TextSelection(anchorOffset: selection.activeOffset,
+                                                          activeOffset: boundary(selection.activeOffset)).range
+                                          : selection.range
+            if !range.isEmpty {
+                deleteKeepingCells(range)
+            }
+        } else {
+            NSSound.beep()
+        }
+    }
+
     /// Under CSV columns Return moves down a row, as in a spreadsheet: a
     /// line break would end the row, and quoted inside a field it would
     /// still be drawn as a row of its own. Otherwise it types a line ending.

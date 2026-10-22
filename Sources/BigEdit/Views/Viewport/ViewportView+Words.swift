@@ -16,28 +16,30 @@ extension ViewportView {
     /// in parts.
     static let wordLookLength = 4096
 
-    /// The end of the word `offset` is in, or of the next one.
-    func nextWordOffset(after offset: Int) -> Int {
-        wordOffset(from: offset, forward: true)
+    /// The end of the word `offset` is in, or of the next one. A move skips
+    /// runs of punctuation, symbols and spaces, as the system text views'
+    /// moves do; a delete, like theirs, stops after one.
+    func nextWordOffset(after offset: Int, skippingPunctuation: Bool = true) -> Int {
+        wordOffset(from: offset, forward: true, skippingPunctuation: skippingPunctuation)
     }
 
     /// The start of the word `offset` is in or after, or of the one before.
-    func previousWordOffset(before offset: Int) -> Int {
-        wordOffset(from: offset, forward: false)
+    func previousWordOffset(before offset: Int, skippingPunctuation: Bool = true) -> Int {
+        wordOffset(from: offset, forward: false, skippingPunctuation: skippingPunctuation)
     }
 
-    private func wordOffset(from offset: Int, forward: Bool) -> Int {
+    private func wordOffset(from offset: Int, forward: Bool, skippingPunctuation: Bool) -> Int {
         var result = offset
         if let window = wordWindow(around: offset) {
-            let index = wordBoundary(in: window.text, from: window.caret, forward: forward)
+            let index = skippingPunctuation
+                ? wordBoundary(in: window.text, from: window.caret, forward: forward)
+                : window.text.nextWord(from: window.caret, forward: forward)
             result = window.start + byteLength(of: window.text.string, upTo: index)
         }
         return result
     }
 
-    /// The next boundary from `index` that steps over a letter or digit:
-    /// like the system text views, a move skips runs of punctuation,
-    /// symbols and spaces rather than stopping at each.
+    /// The next boundary from `index` that steps over a letter or digit.
     private func wordBoundary(in text: NSAttributedString, from index: Int, forward: Bool) -> Int {
         var boundary = index
         var steppedOverWord = false
