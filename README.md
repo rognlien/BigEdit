@@ -58,6 +58,12 @@ them everything else works the same.
 - **Click and type.** Undo and redo (**⌘Z** / **⇧⌘Z**) reach back across a
   save. **⌘S** saves atomically through a temporary file, with a progress
   sheet for large files.
+- **The keys you know from other Mac apps:** Backspace and Delete remove
+  whole characters (an emoji, a flag, an accented letter), Option moves and
+  deletes by word, and the Control keys from the system's text bindings work
+  — Control-A/E/F/B/N/P/K/Y/T/O and the rest.
+- **Huge pastes** go to a temporary file on disk instead of memory once they
+  pass 8 MB, so pasting a few hundred megabytes does not cost that much RAM.
 - **Crash recovery.** Unsaved edits are written to a journal as you make
   them. If BigEdit crashes or is force-quit, opening the file again offers to
   recover them — and if the file changed on disk in the meantime, BigEdit
@@ -116,6 +122,10 @@ pinning the header while scrolling, and trimming spaces.
   undoable edit.
 - **Drag a column's edge** to resize it; double-click the edge to fit it to
   its content.
+- The **Table** menu, and the right-click menu on a cell, add a row above or
+  below, add a column before or after, and delete rows (**⌥⌘⌫**) or a column
+  (**⌃⌘⌫**), as in Numbers. Adding or deleting a column rewrites every line,
+  so it is limited to files up to 32 MB.
 
 ### Markdown
 
