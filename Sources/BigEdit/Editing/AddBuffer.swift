@@ -18,13 +18,21 @@ protocol AddedByteStore: AnyObject {
 
     /// Copies the bytes in `range`.
     func bytes(in range: Range<Int>) -> [UInt8]
+}
 
-    /// Calls `body` with a zero-copy view of the bytes in `range` — for
-    /// streaming writers that must not materialise large pieces.
-    func withUnsafeBytes<Result>(
-        in range: Range<Int>,
-        _ body: (UnsafeRawBufferPointer) throws -> Result
-    ) rethrows -> Result
+extension AddedByteStore {
+
+    /// Calls `body` with the bytes in `range`, at most `chunkLength` at a
+    /// time — for streaming writers that must not materialise large pieces.
+    func forEachChunk(in range: Range<Int>, chunkLength: Int = 4 * 1024 * 1024,
+                      _ body: ([UInt8]) throws -> Void) rethrows {
+        var offset = range.lowerBound
+        while offset < range.upperBound {
+            let end = min(range.upperBound, offset + chunkLength)
+            try body(bytes(in: offset..<end))
+            offset = end
+        }
+    }
 }
 
 /// The in-memory added-byte store used while editing.
@@ -56,16 +64,5 @@ final class AddBuffer: AddedByteStore {
         lock.lock()
         defer { lock.unlock() }
         return Array(storage[range])
-    }
-
-    func withUnsafeBytes<Result>(
-        in range: Range<Int>,
-        _ body: (UnsafeRawBufferPointer) throws -> Result
-    ) rethrows -> Result {
-        lock.lock()
-        defer { lock.unlock() }
-        return try storage.withUnsafeBytes { buffer in
-            try body(UnsafeRawBufferPointer(rebasing: buffer[range]))
-        }
     }
 }

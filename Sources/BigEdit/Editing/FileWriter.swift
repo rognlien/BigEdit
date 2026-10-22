@@ -159,8 +159,8 @@ enum FileWriter {
         return result
     }
 
-    /// The piece-walking loop: every piece streams zero-copy from its backing
-    /// store in `writeChunkSize` slices.
+    /// The piece-walking loop: every piece streams from its backing store in
+    /// `writeChunkSize` slices, zero-copy from a mapping.
     private static func streamPieces(
         fd: Int32,
         document: EditedDocument,
@@ -222,16 +222,8 @@ enum FileWriter {
                                     cancelToken: cancelToken, progress: pieceProgress)
             }
         case .added:
-            result = document.addBuffer.withUnsafeBytes(in: piece.start..<piece.end) { raw in
-                var written: Result<Void, WriteError> = .success(())
-                if let base = raw.baseAddress {
-                    written = writeRange(fd: fd, base: base, range: 0..<raw.count,
-                                         cancelToken: cancelToken) { offset in
-                        progress(writtenBefore + offset)
-                    }
-                }
-                return written
-            }
+            result = writeAddedRange(fd: fd, added: document.addBuffer, range: piece.start..<piece.end,
+                                     cancelToken: cancelToken, progress: pieceProgress)
         }
         return result
     }
@@ -323,6 +315,30 @@ enum FileWriter {
             result = writeBytes(fd: fd, pointer: base + offset, count: length)
             if result.isSuccess {
                 offset += length
+                progress(offset)
+            }
+        }
+        return result
+    }
+
+    /// Writes a range of the add buffer in `writeChunkSize` pieces, each
+    /// copied out of the store as it is written.
+    private static func writeAddedRange(
+        fd: Int32,
+        added: AddedByteStore,
+        range: Range<Int>,
+        cancelToken: CancelToken,
+        progress: (Int) -> Void
+    ) -> Result<Void, WriteError> {
+        var result: Result<Void, WriteError> = .success(())
+        var offset = range.lowerBound
+        while offset < range.upperBound && result.isSuccess {
+            if cancelToken.isCancelled {
+                result = .failure(.cancelled)
+            } else {
+                let end = min(range.upperBound, offset + writeChunkSize)
+                result = writeReplacement(fd: fd, bytes: added.bytes(in: offset..<end))
+                offset = end
                 progress(offset)
             }
         }

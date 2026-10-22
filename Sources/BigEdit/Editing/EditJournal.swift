@@ -253,9 +253,14 @@ final class EditJournal {
     private func rewriteBytes(from addedBytes: AddedByteStore?) {
         bytesHandle?.closeFile()
         bytesHandle = nil
-        let count = addedBytes?.count ?? 0
-        let data = addedBytes?.withUnsafeBytes(in: 0..<count) { Data($0) } ?? Data()
-        try? data.write(to: bytesURL)
+        try? Data().write(to: bytesURL)
+        if let addedBytes {
+            let handle = try? FileHandle(forWritingTo: bytesURL)
+            addedBytes.forEachChunk(in: 0..<addedBytes.count) { chunk in
+                handle?.write(Data(chunk))
+            }
+            handle?.closeFile()
+        }
     }
 
     /// Records `file` as the baseline without touching the ops: after the
