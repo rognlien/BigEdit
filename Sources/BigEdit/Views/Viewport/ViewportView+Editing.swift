@@ -177,6 +177,18 @@ extension ViewportView {
         }
     }
 
+    /// Control-Backspace: takes the last mark off the character before the
+    /// caret, so é becomes e and a Hangul syllable loses its final jamo, or
+    /// deletes it when it has none, as NSTextView does.
+    override func deleteBackwardByDecomposingPreviousCharacter(_ sender: Any?) {
+        if let document, let selection, selection.isEmpty, !hasColumnSelectionContent,
+           let edit = document.decomposingDeletion(before: selection.activeOffset) {
+            insertKeepingCells(edit.bytes, replacing: edit.range)
+        } else {
+            deleteBackward(sender)
+        }
+    }
+
     override func deleteForward(_ sender: Any?) {
         if hasColumnSelectionContent {
             deleteColumnSelection()

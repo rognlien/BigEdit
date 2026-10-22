@@ -293,6 +293,15 @@ final class EditedDocument {
             ?? nextCharacterOffset(after: offset)
     }
 
+    /// The edit Control-Backspace makes at `offset`: the character before it
+    /// replaced by its decomposition less the last scalar. Nil when that
+    /// would leave nothing, so a plain Backspace applies.
+    func decomposingDeletion(before offset: Int) -> (range: Range<Int>, bytes: [UInt8])? {
+        encoding.decomposingDeletion(endOf: bytes(in: lookBehindRange(before: offset))).map {
+            (max(0, offset - $0.length)..<offset, $0.bytes)
+        }
+    }
+
     /// The bytes a step back from `offset` looks at, starting on a
     /// character boundary.
     private func lookBehindRange(before offset: Int) -> Range<Int> {

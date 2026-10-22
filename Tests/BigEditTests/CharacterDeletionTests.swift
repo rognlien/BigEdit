@@ -93,6 +93,19 @@ final class CharacterDeletionTests: XCTestCase {
         }
     }
 
+    func testControlBackspaceDecomposesAsNSTextViewDoes() {
+        for sample in samples + ["a각", "a\u{0BCA}", "abc"] {
+            let (viewport, document) = makeViewport(sample, caret: sample.utf8.count)
+            let oracle = textView(sample, caret: sample.utf16.count)
+
+            viewport.deleteBackwardByDecomposingPreviousCharacter(nil)
+            oracle.deleteBackwardByDecomposingPreviousCharacter(nil)
+
+            XCTAssertEqual(scalars(text(of: document)), scalars(oracle.string), scalars(sample))
+            XCTAssertEqual(viewport.caretByteOffset, document.length, scalars(sample))
+        }
+    }
+
     // MARK: - Backspace
 
     func testBackspaceRemovesAWholeEmoji() {
@@ -169,6 +182,24 @@ final class CharacterDeletionTests: XCTestCase {
         viewport.deleteForward(nil)
 
         XCTAssertEqual(text(of: document), "af")
+    }
+
+    func testControlBackspaceInWindows1252TakesTheAccentOff() {
+        let (viewport, document) = makeViewport("café", encoding: .windows1252, caret: 4)
+
+        viewport.deleteBackwardByDecomposingPreviousCharacter(nil)
+
+        XCTAssertEqual(text(of: document), "cafe")
+        XCTAssertEqual(viewport.caretByteOffset, 4)
+    }
+
+    func testControlBackspaceDeletesASelection() {
+        let (viewport, document) = makeViewport("café", caret: 0)
+        viewport.selection = TextSelection(anchorOffset: 1, activeOffset: 5)
+
+        viewport.deleteBackwardByDecomposingPreviousCharacter(nil)
+
+        XCTAssertEqual(text(of: document), "c")
     }
 
     func testWindows1252DeletesACRLFPairAsOne() {

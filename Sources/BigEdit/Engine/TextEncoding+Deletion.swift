@@ -20,6 +20,25 @@ extension TextEncoding {
         multiScalarByteLength(of: firstComposedCharacter(in: decode(bytes)).map(TextEncoding.endingAtFirstVirama))
     }
 
+    /// What Control-Backspace leaves of the character at the end of
+    /// `bytes`: its canonical decomposition less the last scalar, encoded,
+    /// and the byte length of the character it replaces. Nil when nothing
+    /// would be left or the rest cannot be encoded, for a plain Backspace.
+    func decomposingDeletion<Bytes: Collection>(endOf bytes: Bytes) -> (length: Int, bytes: [UInt8])?
+    where Bytes.Element == UInt8 {
+        var result: (length: Int, bytes: [UInt8])?
+        let string = decode(bytes) as NSString
+        if string.length > 0 {
+            let character = string.substring(with: string.rangeOfComposedCharacterSequence(at: string.length - 1))
+            var remaining = character.decomposedStringWithCanonicalMapping.unicodeScalars
+            remaining.removeLast()
+            if !remaining.isEmpty, let encoded = encode(String(remaining)) {
+                result = (character.unicodeScalars.reduce(0) { $0 + byteLength(of: $1) }, encoded)
+            }
+        }
+        return result
+    }
+
     private func lastDeletionCluster(in text: String) -> [Unicode.Scalar]? {
         let string = text as NSString
         var result: [Unicode.Scalar]?
