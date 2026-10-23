@@ -3,13 +3,13 @@
 What is actually left. Everything above the "Done" section is open work;
 `[x]` items in Done are recorded so this file stops re-proposing them.
 
-Last audited against the code on 2026-10-22, at v0.1.24 plus the work that
+Last audited against the code on 2026-10-23, at v0.1.24 plus the work that
 followed it: the highlighter refactor finished, safe crash recovery,
 Windows-1252 and Latin-1 editing, CSV cell editing, per-file view state,
 adaptive limits for small documents, the README rewrite, the input-method
 test pass, untitled documents, sampled encoding detection, character-wise
-deleting and the standard key bindings, the CSV Table menu, journal flushing
-and disk-backed pastes.
+deleting and the standard key bindings, the CSV Table menu, journal flushing,
+disk-backed pastes, JSON and XML formatting, and invisibles.
 
 ## Beta polish
 
@@ -81,6 +81,17 @@ and disk-backed pastes.
       the close sheet and quit-and-relaunch want a click-through. Replace in File,
       Convert to UTF-8 and Follow write into the placeholder and leave the
       document untitled.
+- [ ] **Formatting.** JSON with comments (JSONC) is refused, though the
+      highlighter colours it; HTML is detected as XML, so `<br>` is an error.
+      An error does not move the caret to its line. If an element's first
+      non-whitespace text comes more than 64 KB into it, the whitespace
+      before it may already be reformatted. The Settings window resizing
+      between its panes is untested in the running app.
+- [ ] **Invisibles.** A carriage return or zero-width character inside a line
+      has no width, so its mark is a thin upright stroke that overlaps its
+      neighbours and looks a little like a grey I-beam cursor. Scrolled fully
+      right, the widest row's `¬` can be cut off. During a find-and-replace
+      preview, line endings are read from the document's own bytes.
 - [ ] **CSV.**
       - **Cell editing gaps.** Ctrl-K is not cell-aware; lines of 1024 bytes
         or more keep plain-text typing and deleting; clearing a selection
@@ -145,7 +156,7 @@ they are not proposed again.
 - [x] **Dock-click reopen** (`applicationShouldHandleReopen`).
 - [x] **Cancel `LineIndex` indexing** when the file changes — `LineIndex` has
       `cancel()` alongside `SearchScan` and `StatisticsScan`.
-- [x] **Unit tests.** 850 XCTests, run by the release workflow and on demand
+- [x] **Unit tests.** 975 XCTests, run by the release workflow and on demand
       from the Actions tab, plus the headless cross-checks below. CI stopped
       running per push while the repository was private; now that it is
       public, standard runners are free and per-push runs could return.
@@ -281,6 +292,10 @@ they are not proposed again.
       widths follow undo, and resized widths survive a save.
 - [x] **Journal flushing** and **tests kept out of Application Support**.
 - [x] **Disk-backed add buffer** — a 1 GB paste went from +3.3 GB to +0.3 GB.
+- [x] **Pretty Print and Compact** for JSON and XML, with a Formatting pane in
+      Settings.
+- [x] **View ▸ Invisibles** — faint marks for spaces, tabs and line endings,
+      stronger ones for a stray CR, unusual spaces and zero-width characters.
 
 ## Verification scripts to keep around
 
