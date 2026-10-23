@@ -38,6 +38,11 @@ them everything else works the same.
 - **Syntax colouring** for JSON, XML, Markdown, YAML, SQL and shell scripts,
   chosen from the file's name or its first bytes. **View ▸ Syntax Coloring**,
   or the language name at the right of the status bar, picks another.
+- **View ▸ Invisibles (⌥⌘I)** marks spaces, tabs and line endings faintly,
+  with CRLF distinct from LF, and marks the characters people go looking
+  for — a stray carriage return, a no-break space, a zero-width character —
+  a little more strongly. The marks are drawn over the text and change
+  nothing in it.
 - **Many documents in one window**, listed in a sidebar. The open documents,
   their scroll positions and the window are restored at the next launch, and
   each file remembers how it was shown — Text, CSV or Markdown, its CSV
@@ -77,6 +82,14 @@ them everything else works the same.
   it has, or keep what is in only one. Lines can be matched trimmed, ignoring
   case, or by a regular expression, so two CSV exports can be intersected on
   one column.
+- **Edit ▸ Format ▸ Pretty Print (⌃⇧I) and Compact** for JSON and XML, on
+  the selection or the whole document. Only the whitespace between values
+  changes: key order, numbers and strings stay exactly as written. Pretty
+  Print keeps a short object, array or element on one line when it fits the
+  line width (80 columns by default), so the result is formatted but still
+  compact; mixed XML content and `xml:space="preserve"` are left alone.
+  Invalid input changes nothing and names the line and column. Large files
+  are formatted with a progress sheet, and ⌘Z undoes it in one step.
 - **Edit ▸ Compare Documents (⇧⌘D):** two documents as sets of lines (only
   in the first, only in the second, in both) and as a unified diff that
   `patch` reads.
@@ -138,7 +151,9 @@ runs no scripts; links open in your browser.
 
 Appearance (System, Light or Dark), the editor font and size (**⌘+** /
 **⌘−** / **⌘0**), whether rendered Markdown loads pictures from the web, and
-automatic update checks.
+automatic update checks. The Formatting pane sets the indentation (two or
+four spaces, or a tab) and line width for JSON and XML, and whether JSON has
+a space after `:` and `,`.
 
 ## The `bigedit` command
 
