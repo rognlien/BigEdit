@@ -68,6 +68,14 @@ final class ViewportView: NSView {
     /// and mapping a click back to a byte. Set from the detected file format.
     var textEncoding: TextEncoding = .utf8
 
+    /// Whether spaces, line endings and other invisible characters are
+    /// marked. The marks are drawn over the text and never take up room.
+    var showsInvisibles = false {
+        didSet {
+            needsDisplay = true
+        }
+    }
+
     /// Asks the container to sort the table by a column: `descending` is nil
     /// for a header click, which toggles the direction on the sorted column.
     var onCSVSortRequest: ((_ column: Int, _ descending: Bool?) -> Void)?

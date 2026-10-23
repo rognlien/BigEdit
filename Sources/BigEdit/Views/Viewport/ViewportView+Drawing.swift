@@ -202,6 +202,8 @@ extension ViewportView {
             attributed.draw(at: NSPoint(x: textOriginX - horizontalOffset, y: y))
             if !isCSVRenderingActive {
                 drawTabMarks(in: attributed, rowY: y, rowX: textOriginX - horizontalOffset)
+                drawInvisibles(for: visualLine, drawnAs: attributed, rowY: y,
+                               rowX: textOriginX - horizontalOffset)
             }
             if visualLine.documentLine == 0 && !isPinnedHeaderVisible {
                 drawCSVSortIndicator(rowY: y)
