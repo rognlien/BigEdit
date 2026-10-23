@@ -64,10 +64,22 @@ extension ViewportView {
     /// caret before them.
     func replaceFormatted(_ range: Range<Int>, with bytes: [UInt8], selectingResult: Bool) {
         if let document, isEditingAllowed {
+            replaceFormatted(range, withAdded: document.appendToAddBuffer(bytes),
+                             containsNewline: bytes.contains(0x0A), selectingResult: selectingResult)
+        } else {
+            NSSound.beep()
+        }
+    }
+
+    /// The same, with the formatted bytes already in the add buffer.
+    func replaceFormatted(_ range: Range<Int>, withAdded added: Range<Int>, containsNewline: Bool,
+                          selectingResult: Bool) {
+        if let document, isEditingAllowed {
             document.undoStack.breakCoalescing()
-            document.replace(range, with: bytes, selectionBefore: selection)
+            document.replace(range, withAdded: added, insertedContainsNewline: containsNewline,
+                             selectionBefore: selection)
             document.undoStack.breakCoalescing()
-            finishFormatting(range.lowerBound..<(range.lowerBound + bytes.count), selectingResult: selectingResult)
+            finishFormatting(range.lowerBound..<(range.lowerBound + added.count), selectingResult: selectingResult)
         } else {
             NSSound.beep()
         }

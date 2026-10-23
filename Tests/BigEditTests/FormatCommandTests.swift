@@ -197,6 +197,74 @@ final class FormatCommandTests: XCTestCase {
         XCTAssertFalse(table.canFormat)
     }
 
+    // MARK: - Text longer than the in-place limit
+
+    /// Formats `view` through the streamed path, and waits for it.
+    @discardableResult
+    private func formatStreamed(_ view: DocumentView, _ style: FormattingStyle = .pretty) -> FormattingError? {
+        let limit = DocumentView.formattingInPlaceLimit
+        DocumentView.formattingInPlaceLimit = 8
+        defer { DocumentView.formattingInPlaceLimit = limit }
+        let finished = expectation(description: "formatted")
+        var failure: FormattingError?
+        view.format(style, options: FormattingOptions()) { result in
+            if case .failure(let error) = result {
+                failure = error
+            }
+            finished.fulfill()
+        }
+        wait(for: [finished], timeout: 10)
+        return failure
+    }
+
+    func testLongTextStreamsInAsOneUndoableEdit() throws {
+        let original = "{\"list\": [" + (1...300).map { "{\"n\":\($0)}" }.joined(separator: ",") + "]}\n"
+        let view = open(original)
+        var formatter = JSONFormatter(style: .pretty)
+        let formatted = try formatter.format(Array(original.utf8))
+
+        XCTAssertNil(formatStreamed(view))
+
+        XCTAssertEqual(bytes(of: view), formatted)
+        XCTAssertEqual(view.viewport.selection?.range, 0..<0)
+        view.viewport.undo(nil)
+        XCTAssertEqual(text(of: view), original)
+        view.viewport.redo(nil)
+        XCTAssertEqual(bytes(of: view), formatted)
+    }
+
+    func testALongSelectionStreamsInAndIsSelected() {
+        let view = open("<a>\n<b><c/><d/></b>\n</a>\n", extension: "xml")
+        let start = "<a>\n".utf8.count
+        select(start..<(start + "<b><c/><d/></b>".utf8.count), in: view)
+
+        formatStreamed(view)
+
+        XCTAssertEqual(text(of: view), "<a>\n<b>\n  <c/>\n  <d/>\n</b>\n</a>\n")
+        XCTAssertEqual(view.viewport.selection?.range, start..<(start + "<b>\n  <c/>\n  <d/>\n</b>".utf8.count))
+    }
+
+    func testInvalidLongTextChangesNothing() {
+        let original = "[\n  1,\n  2\n  3\n]"
+        let view = open(original)
+
+        let error = formatStreamed(view)
+
+        XCTAssertEqual(error?.line, 4)
+        XCTAssertEqual(error?.column, 3)
+        XCTAssertEqual(text(of: view), original)
+        XCTAssertFalse(view.viewport.document!.hasEdits)
+    }
+
+    func testLongTextAlreadyFormattedIsLeftWithoutAnEdit() {
+        let line = String(repeating: "x", count: 90)
+        let view = open("[\n  \"\(line)\",\n  2\n]\n")
+
+        XCTAssertNil(formatStreamed(view))
+
+        XCTAssertFalse(view.viewport.document!.hasEdits)
+    }
+
     func testTheMenuItemsAreDisabledWithoutADocument() {
         let delegate = AppDelegate()
         let menu = delegate.buildFormatMenu()
