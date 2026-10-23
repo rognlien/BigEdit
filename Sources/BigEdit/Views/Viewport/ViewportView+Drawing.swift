@@ -323,7 +323,9 @@ extension ViewportView {
     func highlightedRow(_ text: String, startState: HighlightState)
         -> (NSAttributedString, HighlightState) {
         let (tokens, endState) = rowTokenCache.tokens(text, startState: startState)
-        return (theme.attributedRow(text, tokens: tokens, font: font, paragraphStyle: tabStops), endState)
+        let row = theme.attributedRow(ViewportView.singleLineText(text), tokens: tokens, font: font,
+                                      paragraphStyle: tabStops)
+        return (row, endState)
     }
 
     private func drawMatchHighlights(

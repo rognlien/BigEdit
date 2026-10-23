@@ -837,10 +837,29 @@ final class ViewportView: NSView {
     func textWidth(ofBytes range: Range<Int>) -> CGFloat {
         var width: CGFloat = 0
         if let document, !range.isEmpty {
-            let text = textEncoding.decode(document.bytes(in: range)) as NSString
+            let text = ViewportView.singleLineText(textEncoding.decode(document.bytes(in: range))) as NSString
             width = text.size(withAttributes: [.font: font, .paragraphStyle: tabStops]).width
         }
         return width
+    }
+
+    /// `text` with every character that would start a new drawn line — a
+    /// carriage return, vertical tab, form feed, next line, or line or
+    /// paragraph separator — swapped for a zero-width space, so a row is
+    /// drawn and measured on one line and each UTF-16 offset still names the
+    /// same character.
+    static func singleLineText(_ text: String) -> String {
+        var result = text
+        if text.unicodeScalars.contains(where: isLineBreaking) {
+            result = String(String.UnicodeScalarView(text.unicodeScalars.map {
+                isLineBreaking($0) ? "\u{200B}" : $0
+            }))
+        }
+        return result
+    }
+
+    private static func isLineBreaking(_ scalar: Unicode.Scalar) -> Bool {
+        (0x0A...0x0D).contains(scalar.value) || [0x85, 0x2028, 0x2029].contains(scalar.value)
     }
 
     /// The gutter width needed to show line numbers for `totalLines`.
