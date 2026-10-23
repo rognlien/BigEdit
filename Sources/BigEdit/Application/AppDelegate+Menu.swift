@@ -404,7 +404,7 @@ extension AppDelegate {
         findMenu.addItem(previousItem)
 
         let resultsItem = NSMenuItem(title: "Search Results", action: #selector(toggleSearchResults),
-                                     keyEquivalent: "l")
+                                     keyEquivalent: "r")
         resultsItem.keyEquivalentModifierMask = [.command, .option]
         resultsItem.target = self
         findMenu.addItem(resultsItem)
