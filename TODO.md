@@ -209,7 +209,7 @@ they are not proposed again.
 - [x] **Windows-1252 / Latin-1 decoding** — files that are not valid UTF-8
       read, copy, search and count correctly, labelled in the status bar.
       Cross-checked against `iconv` by `scripts/verify-encodings.sh`.
-- [x] **Search results list (⌥⌘L)** — every match with line number and
+- [x] **Search results list (⌥⌘R)** — every match with line number and
       snippet, built row by row on demand; click to jump.
 - [x] **Highlighter refactor** — `RowScanner`, tokens and a theme, a
       `Highlighter` protocol with per-language state and a `LanguageRegistry`
