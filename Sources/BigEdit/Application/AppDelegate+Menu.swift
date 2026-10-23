@@ -350,6 +350,14 @@ extension AppDelegate {
         syntaxColoringMenu.delegate = self
         syntaxColoringItem.submenu = syntaxColoringMenu
         viewMenu.addItem(syntaxColoringItem)
+        let invisiblesItem = NSMenuItem(
+            title: "Invisibles",
+            action: #selector(toggleInvisibles),
+            keyEquivalent: "i"
+        )
+        invisiblesItem.keyEquivalentModifierMask = [.command, .option]
+        invisiblesItem.target = self
+        viewMenu.addItem(invisiblesItem)
 
         viewMenu.addItem(NSMenuItem.separator())
         let followItem = NSMenuItem(
@@ -445,6 +453,12 @@ extension AppDelegate {
 
     @objc func actualSize() {
         setEditorFontSize(ViewportView.defaultFontSize)
+    }
+
+    /// Shows or hides invisible characters in every open document, and
+    /// remembers the choice.
+    @objc func toggleInvisibles() {
+        settings.showsInvisibles.toggle()
     }
 
     /// Sets the editor font size, which Settings applies to every open

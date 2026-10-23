@@ -35,6 +35,7 @@ final class AppSettings: ObservableObject {
     static let fontFamilyKey = "BigEditFontFamily"
     static let fontSizeKey = "BigEditFontSize"
     static let loadsRemoteImagesKey = "BigEditLoadsRemoteImages"
+    static let showsInvisiblesKey = "BigEditShowsInvisibles"
 
     /// Called after any setting changes.
     var onChange: (() -> Void)?
@@ -72,6 +73,15 @@ final class AppSettings: ObservableObject {
         }
     }
 
+    /// Whether the editor marks spaces, line endings and other invisible
+    /// characters, chosen with View ▸ Invisibles.
+    @Published var showsInvisibles: Bool {
+        didSet {
+            defaults.set(showsInvisibles, forKey: AppSettings.showsInvisiblesKey)
+            onChange?()
+        }
+    }
+
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         let storedAppearance = defaults.string(forKey: AppSettings.appearanceKey) ?? ""
@@ -80,6 +90,7 @@ final class AppSettings: ObservableObject {
         let storedSize = defaults.double(forKey: AppSettings.fontSizeKey)
         fontSize = storedSize > 0 ? CGFloat(storedSize) : ViewportView.defaultFontSize
         loadsRemoteImages = defaults.object(forKey: AppSettings.loadsRemoteImagesKey) as? Bool ?? true
+        showsInvisibles = defaults.bool(forKey: AppSettings.showsInvisiblesKey)
     }
 
     /// The editor font these settings describe.

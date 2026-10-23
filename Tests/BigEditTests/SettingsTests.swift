@@ -86,6 +86,43 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(viewport.characterWidth, ViewportView.characterWidth(for: viewport.font))
     }
 
+    func testInvisiblesAreHiddenUntilShownAndTheChoiceIsKept() {
+        let settings = AppSettings(defaults: defaults)
+        var changes = 0
+        settings.onChange = { changes += 1 }
+
+        XCTAssertFalse(settings.showsInvisibles)
+        settings.showsInvisibles = true
+
+        XCTAssertEqual(changes, 1)
+        XCTAssertTrue(AppSettings(defaults: defaults).showsInvisibles)
+    }
+
+    func testADocumentShowsInvisiblesWhenTheSettingsDo() {
+        let settings = AppSettings(defaults: defaults)
+        let view = TestHelpers.isolatedDocumentView()
+
+        settings.showsInvisibles = true
+        view.apply(settings)
+        let shown = view.viewport.showsInvisibles
+        settings.showsInvisibles = false
+        view.apply(settings)
+
+        XCTAssertTrue(shown)
+        XCTAssertFalse(view.viewport.showsInvisibles)
+    }
+
+    func testTheInvisiblesItemIsCheckedWhileTheyAreShown() {
+        let delegate = AppDelegate()
+        let item = NSMenuItem(title: "Invisibles", action: #selector(AppDelegate.toggleInvisibles),
+                              keyEquivalent: "")
+
+        let enabled = delegate.validateMenuItem(item)
+
+        XCTAssertTrue(enabled)
+        XCTAssertEqual(item.state, delegate.settings.showsInvisibles ? .on : .off)
+    }
+
     func testRemoteImagesFollowTheSetting() {
         let markdown = Array("![badge](https://example.com/badge.svg)".utf8)
 

@@ -26,6 +26,8 @@ extension AppDelegate {
         case #selector(toggleInfoPane):
             menuItem.state = (activeView?.isInfoPaneVisible ?? false) ? .on : .off
             enabled = activeDocument != nil
+        case #selector(toggleInvisibles):
+            menuItem.state = settings.showsInvisibles ? .on : .off
         case #selector(toggleSearchResults):
             enabled = activeDocument != nil
         case #selector(performGoToLine), #selector(performFind),
