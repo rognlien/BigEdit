@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The single pane of the Settings window, grouped like System Settings.
+/// The General pane of the Settings window, grouped like System Settings.
 struct SettingsView: View {
 
     @ObservedObject var settings: AppSettings

@@ -36,6 +36,11 @@ final class AppSettings: ObservableObject {
     static let fontSizeKey = "BigEditFontSize"
     static let loadsRemoteImagesKey = "BigEditLoadsRemoteImages"
     static let showsInvisiblesKey = "BigEditShowsInvisibles"
+    static let jsonIndentationKey = "BigEditJSONIndentation"
+    static let jsonLineWidthKey = "BigEditJSONLineWidth"
+    static let jsonSpacesAfterSeparatorsKey = "BigEditJSONSpacesAfterSeparators"
+    static let xmlIndentationKey = "BigEditXMLIndentation"
+    static let xmlLineWidthKey = "BigEditXMLLineWidth"
 
     /// Called after any setting changes.
     var onChange: (() -> Void)?
@@ -82,6 +87,53 @@ final class AppSettings: ObservableObject {
         }
     }
 
+    @Published var jsonIndentation: FormattingOptions.Indentation {
+        didSet {
+            defaults.set(jsonIndentation.rawValue, forKey: AppSettings.jsonIndentationKey)
+            onChange?()
+        }
+    }
+
+    /// The width a JSON container is fitted within to stay on one line.
+    @Published var jsonLineWidth: Int {
+        didSet {
+            let clamped = AppSettings.clampedLineWidth(jsonLineWidth)
+            if clamped != jsonLineWidth {
+                jsonLineWidth = clamped
+            } else {
+                defaults.set(jsonLineWidth, forKey: AppSettings.jsonLineWidthKey)
+                onChange?()
+            }
+        }
+    }
+
+    @Published var jsonSpacesAfterSeparators: Bool {
+        didSet {
+            defaults.set(jsonSpacesAfterSeparators, forKey: AppSettings.jsonSpacesAfterSeparatorsKey)
+            onChange?()
+        }
+    }
+
+    @Published var xmlIndentation: FormattingOptions.Indentation {
+        didSet {
+            defaults.set(xmlIndentation.rawValue, forKey: AppSettings.xmlIndentationKey)
+            onChange?()
+        }
+    }
+
+    /// The width a start tag is fitted within before its attributes wrap.
+    @Published var xmlLineWidth: Int {
+        didSet {
+            let clamped = AppSettings.clampedLineWidth(xmlLineWidth)
+            if clamped != xmlLineWidth {
+                xmlLineWidth = clamped
+            } else {
+                defaults.set(xmlLineWidth, forKey: AppSettings.xmlLineWidthKey)
+                onChange?()
+            }
+        }
+    }
+
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         let storedAppearance = defaults.string(forKey: AppSettings.appearanceKey) ?? ""
@@ -91,10 +143,44 @@ final class AppSettings: ObservableObject {
         fontSize = storedSize > 0 ? CGFloat(storedSize) : ViewportView.defaultFontSize
         loadsRemoteImages = defaults.object(forKey: AppSettings.loadsRemoteImagesKey) as? Bool ?? true
         showsInvisibles = defaults.bool(forKey: AppSettings.showsInvisiblesKey)
+        jsonIndentation = AppSettings.indentation(in: defaults, forKey: AppSettings.jsonIndentationKey)
+        jsonLineWidth = AppSettings.lineWidth(in: defaults, forKey: AppSettings.jsonLineWidthKey)
+        jsonSpacesAfterSeparators = defaults.object(forKey: AppSettings.jsonSpacesAfterSeparatorsKey) as? Bool ?? true
+        xmlIndentation = AppSettings.indentation(in: defaults, forKey: AppSettings.xmlIndentationKey)
+        xmlLineWidth = AppSettings.lineWidth(in: defaults, forKey: AppSettings.xmlLineWidthKey)
     }
 
     /// The editor font these settings describe.
     var editorFont: NSFont {
         EditorFont.font(family: fontFamily, size: fontSize)
+    }
+
+    /// How Pretty Print lays out JSON.
+    var jsonFormattingOptions: FormattingOptions {
+        var options = FormattingOptions()
+        options.indentation = jsonIndentation
+        options.lineWidth = jsonLineWidth
+        options.spacesAfterSeparators = jsonSpacesAfterSeparators
+        return options
+    }
+
+    /// How Pretty Print lays out XML.
+    var xmlFormattingOptions: FormattingOptions {
+        var options = FormattingOptions()
+        options.indentation = xmlIndentation
+        options.lineWidth = xmlLineWidth
+        return options
+    }
+
+    private static func indentation(in defaults: UserDefaults, forKey key: String) -> FormattingOptions.Indentation {
+        FormattingOptions.Indentation(rawValue: defaults.string(forKey: key) ?? "") ?? .twoSpaces
+    }
+
+    private static func lineWidth(in defaults: UserDefaults, forKey key: String) -> Int {
+        clampedLineWidth(defaults.object(forKey: key) as? Int ?? FormattingOptions.defaultLineWidth)
+    }
+
+    private static func clampedLineWidth(_ width: Int) -> Int {
+        min(max(width, FormattingOptions.lineWidthRange.lowerBound), FormattingOptions.lineWidthRange.upperBound)
     }
 }

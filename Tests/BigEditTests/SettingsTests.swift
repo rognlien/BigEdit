@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import XCTest
 @testable import BigEdit
 
@@ -43,6 +44,46 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(reloaded.fontFamily, "Menlo")
         XCTAssertEqual(reloaded.fontSize, 15)
         XCTAssertFalse(reloaded.loadsRemoteImages)
+    }
+
+    func testFormattingDefaultsWhenNothingIsStored() {
+        let settings = AppSettings(defaults: defaults)
+
+        XCTAssertEqual(settings.jsonFormattingOptions, FormattingOptions())
+        XCTAssertEqual(settings.xmlIndentation, .twoSpaces)
+        XCTAssertEqual(settings.xmlLineWidth, 80)
+        XCTAssertTrue(settings.jsonSpacesAfterSeparators)
+    }
+
+    func testFormattingChangesPersistAndAreReported() {
+        let settings = AppSettings(defaults: defaults)
+        var changes = 0
+        settings.onChange = { changes += 1 }
+
+        settings.jsonIndentation = .tab
+        settings.jsonLineWidth = 0
+        settings.jsonSpacesAfterSeparators = false
+        settings.xmlIndentation = .fourSpaces
+        settings.xmlLineWidth = 120
+
+        let reloaded = AppSettings(defaults: defaults)
+        XCTAssertEqual(changes, 5)
+        XCTAssertEqual(reloaded.jsonFormattingOptions.indentation, .tab)
+        XCTAssertEqual(reloaded.jsonFormattingOptions.lineWidth, 0)
+        XCTAssertFalse(reloaded.jsonFormattingOptions.spacesAfterSeparators)
+        XCTAssertEqual(reloaded.xmlFormattingOptions.indentation, .fourSpaces)
+        XCTAssertEqual(reloaded.xmlFormattingOptions.lineWidth, 120)
+    }
+
+    func testLineWidthsStayWithinTheirRange() {
+        let settings = AppSettings(defaults: defaults)
+
+        settings.jsonLineWidth = -5
+        settings.xmlLineWidth = 10_000
+
+        XCTAssertEqual(settings.jsonLineWidth, 0)
+        XCTAssertEqual(settings.xmlLineWidth, FormattingOptions.lineWidthRange.upperBound)
+        XCTAssertEqual(AppSettings(defaults: defaults).xmlLineWidth, FormattingOptions.lineWidthRange.upperBound)
     }
 
     func testFontSizeKeepsTheKeyZoomAlreadyUsed() {
@@ -132,5 +173,29 @@ final class SettingsTests: XCTestCase {
         XCTAssertTrue(allowing.contains("img-src file: data: https:"), allowing)
         XCTAssertTrue(blocking.contains("img-src file: data:;"), blocking)
         XCTAssertFalse(blocking.contains("https:;"), blocking)
+    }
+
+    func testTheSettingsWindowSizesItselfToThePaneChosen() {
+        let panes = SettingsTabViewController()
+        panes.tabStyle = .toolbar
+        for (title, height) in [("Small", 100.0), ("Tall", 300.0)] {
+            let controller = NSViewController()
+            controller.view = NSView(frame: NSRect(x: 0, y: 0, width: 400, height: height))
+            controller.preferredContentSize = NSSize(width: 400, height: height)
+            controller.title = title
+            panes.addTabViewItem(NSTabViewItem(viewController: controller))
+        }
+        let window = NSWindow(contentViewController: panes)
+
+        panes.selectedTabViewItemIndex = 1
+
+        XCTAssertEqual(window.contentRect(forFrameRect: window.frame).height, 300, accuracy: 1)
+    }
+
+    func testTheFormattingPaneLaysOut() {
+        let controller = NSHostingController(rootView: FormattingSettingsView(settings: AppSettings(defaults: defaults)))
+
+        XCTAssertGreaterThan(controller.view.fittingSize.height, 150)
+        XCTAssertEqual(controller.view.fittingSize.width, 520, accuracy: 1)
     }
 }
