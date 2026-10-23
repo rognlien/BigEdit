@@ -82,7 +82,7 @@ them everything else works the same.
   it has, or keep what is in only one. Lines can be matched trimmed, ignoring
   case, or by a regular expression, so two CSV exports can be intersected on
   one column.
-- **Edit ▸ Format ▸ Pretty Print (⌃⇧I) and Compact** for JSON and XML, on
+- **Edit ▸ Format ▸ Pretty Print (⌥⌘L) and Compact** for JSON and XML, on
   the selection or the whole document. Only the whitespace between values
   changes: key order, numbers and strings stay exactly as written. Pretty
   Print keeps a short object, array or element on one line when it fits the
@@ -101,7 +101,7 @@ them everything else works the same.
   Expression, Dot Matches Newline and a regular-expression reference card.
 - **Search runs in the background** with live progress, so a search through
   many gigabytes never freezes the window.
-- **⌥⌘L** lists every match with its line number and a snippet; click one to
+- **⌥⌘R** lists every match with its line number and a snippet; click one to
   jump to it.
 - **Regular expressions, as you type:** a pattern that does not compile is
   explained before you press Enter, and in replace mode the second row shows

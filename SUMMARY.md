@@ -88,7 +88,7 @@ there — a deliberate bound that keeps cost tied to the viewport, not the file.
 ## What the user gets
 
 - `⌘O` open · `⌘L` go to line.
-- `⌘F` find · `⌥⌘F` find & replace · `⌘G` / `⇧⌘G` next / previous · `⌥⌘L` list every match. Match Case and Regular Expression are in the search field's menu. Status shows `Searching… 23%` so long scans don't look frozen.
+- `⌘F` find · `⌥⌘F` find & replace · `⌘G` / `⇧⌘G` next / previous · `⌥⌘R` list every match. Match Case and Regular Expression are in the search field's menu. Status shows `Searching… 23%` so long scans don't look frozen.
 - `⌘S` save (atomic) · `⇧⌘S` save as. Progress sheet during save.
 - `⌘C` copy · `⌘A` select all. Right-click → Copy. Select All is deliberately absent from the right-click menu (selecting many GB onto the pasteboard would try to materialise it).
 - `⌘I` toggle Info Inspector.
