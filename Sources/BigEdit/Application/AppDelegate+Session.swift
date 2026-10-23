@@ -27,9 +27,11 @@ extension AppDelegate {
         let savedActive = defaults.integer(forKey: AppDelegate.activeIndexDefaultsKey)
         let activePath = paths.indices.contains(savedActive) ? paths[savedActive] : nil
 
-        // Keep each surviving path with its saved scroll position.
+        // Keep each surviving path with its saved scroll position, once: a
+        // session saved while a file was open twice restores it once.
         var restorable: [(path: String, scroll: Double)] = []
-        for (i, path) in paths.enumerated() where FileManager.default.fileExists(atPath: path) {
+        for (i, path) in paths.enumerated() where FileManager.default.fileExists(atPath: path)
+            && !restorable.contains(sameFileAs: path) {
             restorable.append((path, i < scrolls.count ? scrolls[i] : 0))
         }
         if restorable.isEmpty {
@@ -101,5 +103,13 @@ extension AppDelegate {
     func recentDocumentURLs() -> [URL] {
         let paths = UserDefaults.standard.stringArray(forKey: AppDelegate.recentDocumentsDefaultsKey) ?? []
         return paths.map { URL(fileURLWithPath: $0) }
+    }
+}
+
+private extension Array where Element == (path: String, scroll: Double) {
+
+    func contains(sameFileAs path: String) -> Bool {
+        FileIdentity.firstIndex(of: URL(fileURLWithPath: path),
+                                in: map { URL(fileURLWithPath: $0.path) }) != nil
     }
 }
