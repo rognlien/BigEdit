@@ -156,12 +156,13 @@ bigedit --help
 It is a link rather than a copy, so updating BigEdit updates the command.
 Files go to the BigEdit that is already running.
 
-`/usr/local/bin` belongs to root, so the first install asks for permission
-through a small privileged helper — the supported way for an app to do
-privileged work — and the system's dialog accepts **Touch ID** as well as a
-password. You are asked once. The helper does one thing (link this tool into
-one of a fixed list of directories), runs no shell, and only accepts
-connections from BigEdit itself.
+`/usr/local/bin` belongs to root, so BigEdit links the tool through a small
+privileged helper — the supported way for an app to do privileged work. The
+first time, macOS asks you to allow BigEdit under **System Settings ▸
+General ▸ Login Items ▸ Allow in the Background**, and BigEdit offers to open
+that page; after that, installing asks nothing. The helper does one thing
+(link this tool into one of a fixed list of directories), runs no shell, and
+only accepts connections from BigEdit itself.
 
 ## Limitations
 
