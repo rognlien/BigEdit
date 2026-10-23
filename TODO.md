@@ -101,10 +101,16 @@ and disk-backed pastes.
       - **Sandboxing.** The temp-file-next-to-destination save interacts with
         sandbox file access and would need security-scoped bookmarks for the
         destination directory.
-      - **The privileged helper.** `SMJobBless` and a root helper are not
-        allowed in a sandboxed app, so the `bigedit` command's installer would
+      - **The privileged helper.** A root launch daemon is not allowed in a
+        sandboxed app, so the `bigedit` command's installer would
         have to become a user-run script (or a symlink the user creates from a
         sheet's instructions) in the App Store build.
+- [ ] **SMAppService in a signed build.** Registering the daemon, the Login
+      Items approval and the helper connection only work in a signed,
+      notarized build and are untested; try a dry-run Release build before
+      the next release. The old blessed helper
+      (`io.maendeleo.BigEdit.helper`) stays installed on Macs that used it
+      and can only be removed with root.
 - [ ] **Crash reporting.** Apple already collects crashes; integrate
       Sentry/Bugsnag/KSCrash only if you want them yourself.
 
@@ -162,8 +168,9 @@ they are not proposed again.
       Cross-checked against awk, grep, sort and sed by
       `scripts/verify-process-lines.sh`.
 - [x] **The `bigedit` command line tool.** Bundled in the app, installed from
-      the app menu via a privileged helper whose authorisation accepts Touch ID.
-      `scripts/verify-helper.sh` checks the SMJobBless preconditions in CI.
+      the app menu via a privileged helper registered with `SMAppService`
+      and allowed once under Login Items. `scripts/verify-helper.sh` checks
+      the daemon's layout in the bundle.
 - [x] **Word/character statistics over the edited document.**
 - [x] **`⌘N` new empty document.**
 - [x] **Return at the end of a document.** A trailing newline now has a visual
