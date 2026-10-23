@@ -273,16 +273,16 @@ final class FormatCommandTests: XCTestCase {
         XCTAssertFalse(menu.items.contains { delegate.validateMenuItem($0) })
     }
 
-    /// ⌃⇧I is free in AppKit's standard key bindings, which write Control
-    /// as `^` and Shift as `$` or as an upper-case letter.
+    /// ⌥⌘L is free in AppKit's standard key bindings, which write Option
+    /// as `~` and Command as `@`.
     func testThePrettyPrintShortcutOverridesNoStandardKeyBinding() throws {
         let item = AppDelegate().buildFormatMenu().items[0]
         let url = URL(fileURLWithPath: "/System/Library/Frameworks/AppKit.framework/Resources/StandardKeyBinding.dict")
         let bindings = try XCTUnwrap(NSDictionary(contentsOf: url) as? [String: Any])
 
-        XCTAssertEqual(item.keyEquivalent, "i")
-        XCTAssertEqual(item.keyEquivalentModifierMask, [.control, .shift])
-        for key in ["^I", "^$i", "^$I", "$^i", "$^I"] {
+        XCTAssertEqual(item.keyEquivalent, "l")
+        XCTAssertEqual(item.keyEquivalentModifierMask, [.command, .option])
+        for key in ["~@l", "@~l"] {
             XCTAssertNil(bindings[key], key)
         }
     }

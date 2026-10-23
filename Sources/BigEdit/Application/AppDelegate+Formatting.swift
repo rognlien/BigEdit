@@ -11,13 +11,13 @@ extension AppDelegate {
         formatActiveDocument(.compact)
     }
 
-    /// The Format submenu of the Edit menu. Pretty Print takes ⌃⇧I, the
-    /// shortcut of Xcode's Format File, which no standard key binding uses.
+    /// The Format submenu of the Edit menu. Pretty Print takes ⌥⌘L, the
+    /// shortcut of Reformat Code in IntelliJ, which no standard key binding uses.
     func buildFormatMenu() -> NSMenu {
         let menu = NSMenu(title: "Format")
         let prettyPrintItem = NSMenuItem(title: "Pretty Print", action: #selector(formatPrettyPrint),
-                                         keyEquivalent: "i")
-        prettyPrintItem.keyEquivalentModifierMask = [.control, .shift]
+                                         keyEquivalent: "l")
+        prettyPrintItem.keyEquivalentModifierMask = [.command, .option]
         prettyPrintItem.target = self
         menu.addItem(prettyPrintItem)
         let compactItem = NSMenuItem(title: "Compact", action: #selector(formatCompact), keyEquivalent: "")
