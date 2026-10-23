@@ -59,6 +59,27 @@ extension ViewportView {
         }
     }
 
+    /// Replaces `range` with its formatted `bytes` in one undoable step of
+    /// its own, and selects them when `selectingResult`, or else puts the
+    /// caret before them.
+    func replaceFormatted(_ range: Range<Int>, with bytes: [UInt8], selectingResult: Bool) {
+        if let document, isEditingAllowed {
+            document.undoStack.breakCoalescing()
+            document.replace(range, with: bytes, selectionBefore: selection)
+            document.undoStack.breakCoalescing()
+            finishFormatting(range.lowerBound..<(range.lowerBound + bytes.count), selectingResult: selectingResult)
+        } else {
+            NSSound.beep()
+        }
+    }
+
+    private func finishFormatting(_ formatted: Range<Int>, selectingResult: Bool) {
+        finishEdit(caret: formatted.lowerBound)
+        if selectingResult {
+            selection = TextSelection(anchorOffset: formatted.lowerBound, activeOffset: formatted.upperBound)
+        }
+    }
+
     /// Replaces `range` with `bytes`, collapses the caret to the end of the
     /// insertion — or `bytesAfterCaret` before it — and refreshes everything
     /// that depends on the content.

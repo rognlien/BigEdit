@@ -306,6 +306,10 @@ extension AppDelegate {
         compareItem.target = self
         editMenu.addItem(compareItem)
 
+        let formatItem = NSMenuItem(title: "Format", action: nil, keyEquivalent: "")
+        formatItem.submenu = buildFormatMenu()
+        editMenu.addItem(formatItem)
+
         editMenu.addItem(NSMenuItem.separator())
         editMenu.addItem(NSMenuItem(
             title: "Select All",

@@ -61,7 +61,7 @@ extension DocumentView {
         return endLine - startLine + 1
     }
 
-    private func documentLine(forByteOffset offset: Int, layout: EditedLayout) -> Int {
+    func documentLine(forByteOffset offset: Int, layout: EditedLayout) -> Int {
         let row = layout.visualRow(forLogicalByteOffset: offset)
         return layout.visualLines(forRows: row..<(row + 1)).first?.documentLine ?? 0
     }

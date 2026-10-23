@@ -13,6 +13,8 @@ extension AppDelegate {
             enabled = activeDocument != nil && activeView?.canFollow == true
         case #selector(showProcessLines):
             enabled = activeView?.canProcessLines == true
+        case #selector(formatPrettyPrint), #selector(formatCompact):
+            enabled = activeView?.canFormat == true
         case #selector(showCompareDocuments):
             enabled = canCompareDocuments
         case #selector(save), #selector(saveAs):
