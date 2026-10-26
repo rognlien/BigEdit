@@ -3,8 +3,8 @@
 What is actually left. Everything above the "Done" section is open work;
 `[x]` items in Done are recorded so this file stops re-proposing them.
 
-Last audited against the code on 2026-10-23, at v0.1.24 plus the work that
-followed it: the highlighter refactor finished, safe crash recovery,
+Last audited against the code on 2026-10-26, at v0.1.26. Since v0.1.24:
+the highlighter refactor finished, safe crash recovery,
 Windows-1252 and Latin-1 editing, CSV cell editing, per-file view state,
 adaptive limits for small documents, the README rewrite, the input-method
 test pass, untitled documents, sampled encoding detection, character-wise
@@ -15,8 +15,8 @@ disk-backed pastes, JSON and XML formatting, and invisibles.
 
 - [ ] **SMAppService in a signed build.** Registering the daemon, the Login
       Items approval and the helper connection only work in a signed,
-      notarized build and are untested; try a dry-run Release build before
-      the next release. The old blessed helper
+      notarized build. v0.1.26 is the first release that ships it; install
+      it and try BigEdit ▸ Install Command Line Tool… before relying on it. The old blessed helper
       (`io.maendeleo.BigEdit.helper`) stays installed on Macs that used it
       and can only be removed with root.
 - [ ] **README screenshots.** The text is rewritten for the beta; it still
