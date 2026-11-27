@@ -9,6 +9,7 @@ extension AppDelegate {
     @objc func newDocument() {
         if let url = untitledDocuments.makePlaceholder() {
             openDocuments(at: [url])
+            activeView?.viewport.selection = TextSelection(anchorOffset: 0, activeOffset: 0)
         } else {
             presentError("Could not create a new document.")
         }
