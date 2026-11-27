@@ -209,6 +209,12 @@ extension AppDelegate {
         fileMenu.addItem(newItem)
         fileMenu.addItem(openItem)
 
+        let openPathItem = NSMenuItem(title: "Open Path…", action: #selector(showOpenPath),
+                                      keyEquivalent: "o")
+        openPathItem.keyEquivalentModifierMask = [.command, .shift]
+        openPathItem.target = self
+        fileMenu.addItem(openPathItem)
+
         let openRecentItem = NSMenuItem(title: "Open Recent", action: nil, keyEquivalent: "")
         openRecentMenu.delegate = self
         openRecentMenu.autoenablesItems = false
